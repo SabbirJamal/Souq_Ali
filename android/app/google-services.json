@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "330917548315",
+    "project_id": "souqali-42fd9",
+    "storage_bucket": "souqali-42fd9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:330917548315:android:980503bfd5b06cbb84c3be",
+        "android_client_info": {
+          "package_name": "com.example.souqali"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyANwbWB5_Bed2gL4ie989QyEGoYCJfF004"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
