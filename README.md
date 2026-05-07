@@ -4,14 +4,13 @@ A new Flutter project.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
+so the app uses firebase clean up method to automatically delete data from the database and storage.
+now in cloud, i have set firebase to give a check on database every 24hrs and delete data.
+this data deletion algorithm is - the seller uploads at 1pm with time period 3hrs, the app automatically 
+calculates how much time is 3hrs from time uploaded and sets the into expires_at column = 4pm.
+after 24hrs google console does a cleanup check, and when it finds out that expires time is less than current time
+it delete the record along with images everything.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+if you want to change cleanup from 24 hrs to some other time then head to functions/index.js
+there will be a query schedule: "every 24 hours", change 24 to any value desired. And after doing it,
+open powershell, head to root folder, and run this command 'firebase.cmd deploy --only functions:cleanupExpiredItems'

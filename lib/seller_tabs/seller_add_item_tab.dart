@@ -71,7 +71,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   String _weightUnit = 'kg';
   String _priceUnit = 'per kg';
-  int _timePeriodHours = 6;
+  int _timePeriodHours = 18;
   bool _isUploading = false;
 
   @override
@@ -354,7 +354,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _selectedMedia.clear();
       _weightUnit = 'kg';
       _priceUnit = 'per kg';
-      _timePeriodHours = 6;
+      _timePeriodHours = 18;
     });
   }
 
@@ -644,17 +644,37 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: _TimePeriodOption(
-              label: '6hrs',
-              isSelected: _timePeriodHours == 6,
-              onTap: () => setState(() => _timePeriodHours = 6),
-            )),
-            const SizedBox(width: 10),
-            Expanded(child: _TimePeriodOption(
-              label: '12hrs',
-              isSelected: _timePeriodHours == 12,
-              onTap: () => setState(() => _timePeriodHours = 12),
-            )),
+            Expanded(
+              child: _TimePeriodOption(
+                label: '3hrs',
+                isSelected: _timePeriodHours == 3,
+                onTap: () => setState(() => _timePeriodHours = 3),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _TimePeriodOption(
+                label: '6hrs',
+                isSelected: _timePeriodHours == 6,
+                onTap: () => setState(() => _timePeriodHours = 6),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _TimePeriodOption(
+                label: '12hrs',
+                isSelected: _timePeriodHours == 12,
+                onTap: () => setState(() => _timePeriodHours = 12),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _TimePeriodOption(
+                label: '18hrs',
+                isSelected: _timePeriodHours == 18,
+                onTap: () => setState(() => _timePeriodHours = 18),
+              ),
+            ),
           ],
         ),
       ],

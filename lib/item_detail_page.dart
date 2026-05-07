@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'phone_utils.dart';
 import 'share_listing_page.dart';
 import 'widgets/media_carousel.dart';
 
@@ -44,7 +43,6 @@ class ItemDetailPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final mediaItems = mediaItemsFromMap(itemData);
     final sellerPhone = itemData['seller_phone']?.toString() ?? '';
-    final displayPhone = maskedPhoneNumber(sellerPhone);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -72,7 +70,7 @@ class ItemDetailPage extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFFD00000),
+                        color: Colors.black,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -81,27 +79,17 @@ class ItemDetailPage extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: Colors.black87,
+                        color: Color(0xFFD00000),
                       ),
                     ),
                     const SizedBox(height: 18),
                     Row(
                       children: [
                         Expanded(
-                          child: ElevatedButton.icon(
+                          child: ElevatedButton(
                             onPressed: sellerPhone.isEmpty
                                 ? null
                                 : () => _launchPhone(sellerPhone),
-                            icon: const Icon(Icons.phone),
-                            label: Text(
-                              displayPhone,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF0A84FF),
                               foregroundColor: Colors.white,
@@ -110,6 +98,7 @@ class ItemDetailPage extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
+                            child: const Icon(Icons.phone, size: 27),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -173,7 +162,7 @@ class ItemDetailPage extends StatelessWidget {
                       rows: [
                         _DetailData(label: 'Origin', value: itemData['origin']),
                         _DetailData(
-                          label: 'Current location',
+                          label: 'Location',
                           value: itemData['location'],
                         ),
                         _DetailData(
@@ -188,7 +177,10 @@ class ItemDetailPage extends StatelessWidget {
                           label: 'Weight unit',
                           value: itemData['weight_unit'],
                         ),
-                        _DetailData(label: 'Phone', value: displayPhone),
+                        _DetailData(
+                          label: 'Seller',
+                          value: itemData['seller_name'],
+                        ),
                       ],
                     ),
                     const SizedBox(height: 120),

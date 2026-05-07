@@ -218,6 +218,7 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
   bool _isReady = false;
   bool _hasError = false;
   bool _didFinish = false;
+  double _progress = 0;
 
   @override
   void initState() {
@@ -254,9 +255,20 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
 
     final position = _controller.value.position;
     final duration = _controller.value.duration;
+    if (duration.inMilliseconds > 0) {
+      final nextProgress =
+          position.inMilliseconds / duration.inMilliseconds;
+      if ((nextProgress - _progress).abs() >= 0.01 && mounted) {
+        setState(() => _progress = nextProgress.clamp(0, 1));
+      }
+    }
+
     if (duration.inMilliseconds > 0 &&
         position >= duration - const Duration(milliseconds: 250)) {
       _didFinish = true;
+      if (mounted) {
+        setState(() => _progress = 1);
+      }
       widget.onFinished();
     }
   }
@@ -279,6 +291,14 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
           )
         else
           const Center(child: CircularProgressIndicator()),
+        Positioned(
+          left: 14,
+          right: 14,
+          top: 8,
+          child: SafeArea(
+            child: _StoryProgressBar(progress: _progress),
+          ),
+        ),
         Positioned.fill(
           child: Row(
             children: [
@@ -394,6 +414,33 @@ class _StoryItemInfo extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _StoryProgressBar extends StatelessWidget {
+  const _StoryProgressBar({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        height: 2.5,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Container(color: Colors.white.withValues(alpha: 0.35)),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: progress.clamp(0, 1),
+              child: Container(color: Colors.white),
+            ),
+          ],
+        ),
       ),
     );
   }

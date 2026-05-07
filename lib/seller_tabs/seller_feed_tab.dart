@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -13,12 +15,25 @@ class SellerFeedTab extends StatefulWidget {
 
 class _SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
+  Timer? _clockTimer;
   bool _isSearchOpen = false;
   bool _isGridView = false;
   String _query = '';
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        setState(() => _now = DateTime.now());
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _clockTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -67,7 +82,11 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
       builder: (context, snapshot) {
         final isLoading = snapshot.connectionState == ConnectionState.waiting;
         final hasError = snapshot.hasError;
-        final docs = _filterDocs(snapshot.data?.docs ?? []);
+        final docs = _filterDocs(
+          (snapshot.data?.docs ?? [])
+              .where((doc) => _isItemActive(doc.data(), _now))
+              .toList(),
+        );
 
         return CustomScrollView(
           slivers: [
@@ -82,6 +101,7 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
             ),
             SliverToBoxAdapter(
               child: _StoryStrip(
+                activeNow: _now,
                 isGridView: _isGridView,
                 onToggleGrid: () {
                   setState(() => _isGridView = !_isGridView);
@@ -146,8 +166,13 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
 }
 
 class _StoryStrip extends StatelessWidget {
-  const _StoryStrip({required this.isGridView, required this.onToggleGrid});
+  const _StoryStrip({
+    required this.activeNow,
+    required this.isGridView,
+    required this.onToggleGrid,
+  });
 
+  final DateTime activeNow;
   final bool isGridView;
   final VoidCallback onToggleGrid;
 
@@ -174,7 +199,7 @@ class _StoryStrip extends StatelessWidget {
         }
 
         return FutureBuilder<List<_SellerStory>>(
-          future: _sellerStoriesFromDocs(docs),
+          future: _sellerStoriesFromDocs(docs, activeNow),
           builder: (context, activeStoriesSnapshot) {
             final stories = activeStoriesSnapshot.data ?? [];
             if (stories.isEmpty) {
@@ -232,11 +257,12 @@ class _StoryStrip extends StatelessWidget {
 
   Future<List<_SellerStory>> _sellerStoriesFromDocs(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    DateTime activeNow,
   ) async {
     final stories = <_SellerStory>[];
     for (final doc in docs) {
       final story = doc.data();
-      final videos = await _storyVideosFromMap(story);
+      final videos = await _storyVideosFromMap(story, activeNow);
       if (videos.isEmpty) {
         continue;
       }
@@ -252,6 +278,7 @@ class _StoryStrip extends StatelessWidget {
 
   Future<List<StoryVideo>> _storyVideosFromMap(
     Map<String, dynamic> story,
+    DateTime activeNow,
   ) async {
     final sellerName = story['seller_name']?.toString() ?? 'Seller';
     final sellerPhone = story['seller_phone']?.toString() ?? '';
@@ -291,6 +318,9 @@ class _StoryStrip extends StatelessWidget {
           .get();
       if (itemDoc.exists) {
         final item = itemDoc.data() ?? {};
+        if (!_isItemActive(item, activeNow)) {
+          continue;
+        }
         activeVideos.add(
           video.storyVideo.copyWith(
             itemName: item['item_name']?.toString(),
@@ -301,6 +331,17 @@ class _StoryStrip extends StatelessWidget {
     }
     return activeVideos;
   }
+}
+
+bool _isItemActive(Map<String, dynamic> item, DateTime now) {
+  final expiresAt = item['expires_at'];
+  if (expiresAt is Timestamp) {
+    return expiresAt.toDate().isAfter(now);
+  }
+  if (expiresAt is DateTime) {
+    return expiresAt.isAfter(now);
+  }
+  return true;
 }
 
 class _SellerStory {

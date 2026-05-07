@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../item_detail_page.dart';
-import '../phone_utils.dart';
 import 'media_carousel.dart';
 
 class ItemCard extends StatefulWidget {
@@ -40,7 +39,6 @@ class _ItemCardState extends State<ItemCard> {
     final item = widget.item;
     final mediaItems = mediaItemsFromMap(item);
     final sellerPhone = item['seller_phone'] ?? '';
-    final displayPhone = maskedPhoneNumber(sellerPhone.toString());
     final uploadedAgo = _uploadedAgo(item['created_at']);
     final isCompact = widget.isCompact;
 
@@ -87,7 +85,7 @@ class _ItemCardState extends State<ItemCard> {
                 style: TextStyle(
                   fontSize: isCompact ? 16 : 21,
                   fontWeight: FontWeight.bold,
-                  color: const Color(0xFFD00000),
+                  color: Colors.black,
                 ),
                 maxLines: isCompact ? 2 : 1,
                 overflow: TextOverflow.ellipsis,
@@ -98,7 +96,7 @@ class _ItemCardState extends State<ItemCard> {
                 style: TextStyle(
                   fontSize: isCompact ? 13 : 16,
                   fontWeight: FontWeight.w700,
-                  color: const Color(0xDD000000),
+                  color: const Color(0xFFD00000),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -106,66 +104,45 @@ class _ItemCardState extends State<ItemCard> {
               SizedBox(height: isCompact ? 8 : 12),
               _InfoRow(
                 icon: Icons.place,
-                text: 'Originated from: ${item['origin'] ?? ''}',
+                text: 'Origin: ${item['origin'] ?? ''}',
                 isCompact: isCompact,
               ),
               SizedBox(height: isCompact ? 4 : 6),
               _InfoRow(
                 icon: Icons.location_on,
-                text: 'Current location: ${item['location'] ?? ''}',
+                text: item['location']?.toString() ?? '',
                 isCompact: isCompact,
               ),
               SizedBox(height: isCompact ? 4 : 6),
               _InfoRow(
                 icon: Icons.business,
-                text: 'Company Name: ${item['seller_name'] ?? ''}',
+                text: item['seller_name']?.toString() ?? '',
                 isCompact: isCompact,
+                isStrong: true,
               ),
               SizedBox(height: isCompact ? 9 : 16),
               Row(
                 children: [
                   Expanded(
-                    child: isCompact
-                        ? ElevatedButton(
-                            onPressed: sellerPhone.isEmpty
-                                ? null
-                                : () => _launchPhone(sellerPhone),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0A84FF),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                            child: const Icon(Icons.phone, size: 18),
-                          )
-                        : ElevatedButton.icon(
-                            onPressed: sellerPhone.isEmpty
-                                ? null
-                                : () => _launchPhone(sellerPhone),
-                            icon: const Icon(Icons.phone, size: 18),
-                            label: Text(
-                              displayPhone,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0A84FF),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                          ),
+                    child: ElevatedButton(
+                      onPressed: sellerPhone.isEmpty
+                          ? null
+                          : () => _launchPhone(sellerPhone),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0A84FF),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: EdgeInsets.symmetric(
+                          vertical: isCompact ? 10 : 12,
+                        ),
+                      ),
+                      child: Icon(Icons.phone, size: isCompact ? 18 : 22),
+                    ),
                   ),
                   SizedBox(width: isCompact ? 8 : 12),
-                  SizedBox(
-                    width: isCompact ? 44 : 78,
+                  Expanded(
                     child: ElevatedButton(
                       onPressed: sellerPhone.isEmpty
                           ? null
@@ -230,11 +207,13 @@ class _InfoRow extends StatelessWidget {
     required this.icon,
     required this.text,
     required this.isCompact,
+    this.isStrong = false,
   });
 
   final IconData icon;
   final String text;
   final bool isCompact;
+  final bool isStrong;
 
   @override
   Widget build(BuildContext context) {
@@ -246,8 +225,9 @@ class _InfoRow extends StatelessWidget {
           child: Text(
             text,
             style: TextStyle(
-              color: Colors.grey[600],
+              color: isStrong ? Colors.black : Colors.grey[600],
               fontSize: isCompact ? 11 : 13,
+              fontWeight: isStrong ? FontWeight.bold : FontWeight.normal,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

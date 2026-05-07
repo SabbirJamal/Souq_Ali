@@ -60,12 +60,11 @@ class MediaCarousel extends StatefulWidget {
 
 class _MediaCarouselState extends State<MediaCarousel> {
   late final PageController _pageController;
-  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-_pageController = PageController(
+    _pageController = PageController(
       viewportFraction: widget.peekSideItems ? 0.985 : 1,
     );
   }
@@ -78,6 +77,9 @@ _pageController = PageController(
 
   @override
   Widget build(BuildContext context) {
+    final imageCount = widget.mediaItems.where((media) => !media.isVideo).length;
+    final videoCount = widget.mediaItems.where((media) => media.isVideo).length;
+
     if (widget.mediaItems.isEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -102,9 +104,6 @@ _pageController = PageController(
                   controller: _pageController,
                   clipBehavior: Clip.none,
                   padEnds: false,
-                  onPageChanged: (index) {
-                    setState(() => _currentIndex = index);
-                  },
                   itemCount: widget.mediaItems.length,
                   itemBuilder: (context, index) {
                     final media = widget.mediaItems[index];
@@ -147,64 +146,61 @@ _pageController = PageController(
                   },
                 ),
               ),
-              if (widget.showCountBadge && widget.mediaItems.length > 1)
+              if (widget.showCountBadge && (imageCount > 0 || videoCount > 0))
                 Positioned(
                   left: widget.peekSideItems ? 28 : 10,
                   bottom: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.photo_camera,
-                          color: Colors.white,
-                          size: 16,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (imageCount > 0)
+                        _MediaCountBadge(
+                          icon: Icons.photo_camera,
+                          count: imageCount,
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${widget.mediaItems.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+                      if (imageCount > 0 && videoCount > 0)
+                        const SizedBox(width: 6),
+                      if (videoCount > 0)
+                        _MediaCountBadge(icon: Icons.videocam, count: videoCount),
+                    ],
                   ),
                 ),
             ],
           ),
         ),
-        if (widget.mediaItems.length > 1)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                widget.mediaItems.length,
-                (index) => Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _currentIndex == index
-                        ? const Color(0xFF075E54)
-                        : Colors.grey[300],
-                  ),
-                ),
-              ),
+      ],
+    );
+  }
+}
+
+class _MediaCountBadge extends StatelessWidget {
+  const _MediaCountBadge({required this.icon, required this.count});
+
+  final IconData icon;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 17),
+          const SizedBox(width: 4),
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }
