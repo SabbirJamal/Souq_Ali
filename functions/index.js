@@ -41,16 +41,12 @@ exports.cleanupExpiredItems = onSchedule(
 async function cleanupItem(itemDoc) {
   const itemId = itemDoc.id;
   const item = itemDoc.data();
-  const sellerId = item.seller_uid || "";
 
   logger.info(`Cleaning expired item ${itemId}.`);
 
   const mediaUrls = collectMediaUrls(item);
   await deleteStorageFiles(mediaUrls);
-
-  if (sellerId) {
-    await removeItemVideosFromStory(sellerId, itemId);
-  }
+  await removeItemStories(itemId);
 
   await itemDoc.ref.delete();
   logger.info(`Deleted expired item ${itemId}.`);
@@ -121,43 +117,20 @@ function storagePathFromUrl(url) {
   return "";
 }
 
-async function removeItemVideosFromStory(sellerId, itemId) {
-  const storyRef = db.collection("stories").doc(sellerId);
-  const storyDoc = await storyRef.get();
-  if (!storyDoc.exists) {
+async function removeItemStories(itemId) {
+  const stories = await db
+    .collection("stories")
+    .where("item_id", "==", itemId)
+    .get();
+
+  if (stories.empty) {
     return;
   }
 
-  const story = storyDoc.data() || {};
-  const videos = Array.isArray(story.videos) ? story.videos : [];
-  const remainingVideos = videos.filter((video) => video.item_id !== itemId);
-
-  if (remainingVideos.length === videos.length) {
-    return;
+  const batch = db.batch();
+  for (const story of stories.docs) {
+    batch.delete(story.ref);
   }
-
-  if (remainingVideos.length === 0) {
-    await storyRef.delete();
-    logger.info(`Deleted empty story document for seller ${sellerId}.`);
-    return;
-  }
-
-  await storyRef.update({
-    videos: remainingVideos,
-    latest_created_at: latestCreatedAt(remainingVideos),
-  });
-  logger.info(`Removed expired item videos from seller ${sellerId} story.`);
-}
-
-function latestCreatedAt(videos) {
-  return videos.reduce((latest, video) => {
-    const createdAt = video.created_at;
-    if (!latest) {
-      return createdAt || Timestamp.now();
-    }
-    if (createdAt && createdAt.toMillis && createdAt.toMillis() > latest.toMillis()) {
-      return createdAt;
-    }
-    return latest;
-  }, null) || Timestamp.now();
+  await batch.commit();
+  logger.info(`Deleted ${stories.size} story document(s) for item ${itemId}.`);
 }

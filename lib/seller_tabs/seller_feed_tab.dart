@@ -97,15 +97,15 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                 onOpenSearch: _openSearch,
                 onCloseSearch: _closeSearch,
                 onQueryChanged: (value) => setState(() => _query = value),
+                isGridView: _isGridView,
+                onToggleGrid: () {
+                  setState(() => _isGridView = !_isGridView);
+                },
               ),
             ),
             SliverToBoxAdapter(
               child: _StoryStrip(
                 activeNow: _now,
-                isGridView: _isGridView,
-                onToggleGrid: () {
-                  setState(() => _isGridView = !_isGridView);
-                },
               ),
             ),
             if (isLoading)
@@ -130,7 +130,9 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.all(16),
+                padding: _isGridView
+                    ? const EdgeInsets.all(16)
+                    : const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
                 sliver: _isGridView
                     ? SliverGrid.builder(
                         gridDelegate:
@@ -168,20 +170,16 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
 class _StoryStrip extends StatelessWidget {
   const _StoryStrip({
     required this.activeNow,
-    required this.isGridView,
-    required this.onToggleGrid,
   });
 
   final DateTime activeNow;
-  final bool isGridView;
-  final VoidCallback onToggleGrid;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('stories')
-          .orderBy('latest_created_at', descending: true)
+          .orderBy('created_at', descending: true)
           .limit(20)
           .snapshots(includeMetadataChanges: true),
       builder: (context, snapshot) {
@@ -189,10 +187,9 @@ class _StoryStrip extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        final docs = (snapshot.data?.docs ?? []).where((doc) {
-          final videos = doc.data()['videos'];
-          return videos is List && videos.isNotEmpty;
-        }).toList();
+        final docs = (snapshot.data?.docs ?? [])
+            .where((doc) => (doc.data()['video_url']?.toString() ?? '').isNotEmpty)
+            .toList();
 
         if (docs.isEmpty) {
           return const SizedBox.shrink();
@@ -207,9 +204,9 @@ class _StoryStrip extends StatelessWidget {
             }
 
             return Container(
-              height: 84,
+              height: 72,
               color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
               child: Row(
                 children: [
                   Expanded(
@@ -241,11 +238,6 @@ class _StoryStrip extends StatelessWidget {
                       },
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  _GridToggleButton(
-                    isGridView: isGridView,
-                    onTap: onToggleGrid,
-                  ),
                 ],
               ),
             );
@@ -262,74 +254,58 @@ class _StoryStrip extends StatelessWidget {
     final stories = <_SellerStory>[];
     for (final doc in docs) {
       final story = doc.data();
-      final videos = await _storyVideosFromMap(story, activeNow);
-      if (videos.isEmpty) {
+      final storyVideo = await _storyVideoFromMap(story, activeNow);
+      if (storyVideo == null) {
         continue;
       }
       stories.add(
         _SellerStory(
           sellerName: story['seller_name']?.toString() ?? 'Seller',
-          videos: videos,
+          videos: [storyVideo],
         ),
       );
     }
     return stories;
   }
 
-  Future<List<StoryVideo>> _storyVideosFromMap(
+  Future<StoryVideo?> _storyVideoFromMap(
     Map<String, dynamic> story,
     DateTime activeNow,
   ) async {
     final sellerName = story['seller_name']?.toString() ?? 'Seller';
     final sellerPhone = story['seller_phone']?.toString() ?? '';
-    final videos = story['videos'];
-    if (videos is! List) {
-      return [];
+    final itemId = story['item_id']?.toString() ?? '';
+    final videoUrl = story['video_url']?.toString() ?? '';
+    if (itemId.isEmpty || videoUrl.isEmpty) {
+      return null;
     }
 
-    final parsedVideos = videos
-        .whereType<Map>()
-        .map((video) {
-          final data = Map<String, dynamic>.from(video);
-          return _StoryVideoData(
-            itemId: data['item_id']?.toString() ?? '',
-            storyVideo: StoryVideo(
-              url: data['url']?.toString() ?? '',
-              itemName: data['item_name']?.toString() ?? 'Item',
-              itemPrice: data['item_price']?.toString() ?? '',
-              sellerName: sellerName,
-              sellerPhone: sellerPhone,
-            ),
-          );
-        })
-        .where((video) => video.storyVideo.url.isNotEmpty)
-        .toList()
-        .reversed
-        .toList();
-
-    final activeVideos = <StoryVideo>[];
-    for (final video in parsedVideos) {
-      if (video.itemId.isEmpty) {
-        continue;
-      }
-      final itemDoc = await FirebaseFirestore.instance
-          .collection('items')
-          .doc(video.itemId)
-          .get();
-      if (itemDoc.exists) {
-        final item = itemDoc.data() ?? {};
-        if (!_isItemActive(item, activeNow)) {
-          continue;
-        }
-        activeVideos.add(
-          video.storyVideo.copyWith(
-            itemName: item['item_name']?.toString(),
-            itemPrice: item['item_price']?.toString(),
-          ),
-        );
-      }
+    final itemDoc = await FirebaseFirestore.instance
+        .collection('items')
+        .doc(itemId)
+        .get();
+    if (!itemDoc.exists) {
+      return null;
     }
-    return activeVideos;
+
+    final item = itemDoc.data() ?? {};
+    if (!_isItemActive(item, activeNow)) {
+      return null;
+    }
+
+    return StoryVideo(
+      url: videoUrl,
+      itemName:
+          item['item_name']?.toString() ??
+          story['item_name']?.toString() ??
+          'Item',
+      itemPrice:
+          item['item_price']?.toString() ??
+          story['item_price']?.toString() ??
+          '',
+      sellerName: sellerName,
+      sellerPhone: sellerPhone,
+    );
   }
 }
 
@@ -351,23 +327,21 @@ class _SellerStory {
   final List<StoryVideo> videos;
 }
 
-class _StoryVideoData {
-  const _StoryVideoData({required this.itemId, required this.storyVideo});
-
-  final String itemId;
-  final StoryVideo storyVideo;
-}
-
 class _GridToggleButton extends StatelessWidget {
-  const _GridToggleButton({required this.isGridView, required this.onTap});
+  const _GridToggleButton({
+    required this.isGridView,
+    required this.onTap,
+    this.bottomPadding = 23,
+  });
 
   final bool isGridView;
   final VoidCallback onTap;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 23),
+      padding: EdgeInsets.only(bottom: bottomPadding),
       child: Material(
         color: const Color(0xFF1877F2),
         shape: const CircleBorder(),
@@ -438,6 +412,8 @@ class _FeedHeader extends StatelessWidget {
     required this.onOpenSearch,
     required this.onCloseSearch,
     required this.onQueryChanged,
+    required this.isGridView,
+    required this.onToggleGrid,
   });
 
   final bool isSearchOpen;
@@ -445,15 +421,17 @@ class _FeedHeader extends StatelessWidget {
   final VoidCallback onOpenSearch;
   final VoidCallback onCloseSearch;
   final ValueChanged<String> onQueryChanged;
+  final bool isGridView;
+  final VoidCallback onToggleGrid;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF25D366),
+      color: const Color(0xFFFF7801),
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: SizedBox(
             height: 48,
             child: LayoutBuilder(
@@ -461,27 +439,23 @@ class _FeedHeader extends StatelessWidget {
                 return Stack(
                   alignment: Alignment.center,
                   children: [
-                    AnimatedOpacity(
-                      opacity: isSearchOpen ? 0 : 1,
-                      duration: const Duration(milliseconds: 160),
-                      child: const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'SOOQ ALI',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
+                    const Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        'BIZ SOOQ',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                     Align(
-                      alignment: Alignment.centerRight,
+                      alignment: Alignment.centerLeft,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 260),
                         curve: Curves.easeOutCubic,
-                        width: isSearchOpen ? constraints.maxWidth : 48,
+                        width: isSearchOpen ? constraints.maxWidth - 56 : 48,
                         height: 48,
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -503,7 +477,7 @@ class _FeedHeader extends StatelessWidget {
                                     const SizedBox(width: 12),
                                     const Icon(
                                       Icons.search,
-                                      color: Color(0xFF128C4A),
+                                      color: Color(0xFFFF7801),
                                     ),
                                     const SizedBox(width: 8),
                                     Expanded(
@@ -521,7 +495,7 @@ class _FeedHeader extends StatelessWidget {
                                     IconButton(
                                       onPressed: onCloseSearch,
                                       icon: const Icon(Icons.close),
-                                      color: const Color(0xFF128C4A),
+                                      color: const Color(0xFFFF7801),
                                     ),
                                   ],
                                 )
@@ -529,11 +503,20 @@ class _FeedHeader extends StatelessWidget {
                                   key: const ValueKey('search-button'),
                                   onPressed: onOpenSearch,
                                   icon: const Icon(Icons.search),
-                                  color: const Color(0xFF128C4A),
+                                  color: const Color(0xFFFF7801),
                                 ),
                         ),
                       ),
                     ),
+                    if (!isSearchOpen)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: _GridToggleButton(
+                          isGridView: isGridView,
+                          onTap: onToggleGrid,
+                          bottomPadding: 0,
+                        ),
+                      ),
                   ],
                 );
               },

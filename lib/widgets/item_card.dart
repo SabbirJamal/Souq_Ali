@@ -55,118 +55,142 @@ class _ItemCardState extends State<ItemCard> {
         elevation: 6,
         shadowColor: Colors.black.withValues(alpha: 0.18),
         color: Colors.white,
-        margin: const EdgeInsets.only(bottom: 16),
+        margin: EdgeInsets.only(bottom: isCompact ? 16 : 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        child: Padding(
-          padding: EdgeInsets.all(isCompact ? 8 : 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  uploadedAgo,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isCompact) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _UploadedAgoText(uploadedAgo: uploadedAgo),
                 ),
               ),
-              SizedBox(height: isCompact ? 7 : 10),
-              MediaCarousel(
+              const SizedBox(height: 7),
+            ],
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                isCompact ? 8 : 0,
+                isCompact ? 0 : 0,
+                isCompact ? 8 : 0,
+                0,
+              ),
+              child: MediaCarousel(
                 mediaItems: mediaItems,
                 height: isCompact ? 150 : 280,
-                peekSideItems: !isCompact,
+                peekSideItems: false,
+                borderRadius: isCompact ? 8 : 0,
               ),
-              SizedBox(height: isCompact ? 8 : 12),
-              Text(
-                item['item_name'] ?? 'No name',
-                style: TextStyle(
-                  fontSize: isCompact ? 16 : 21,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-                maxLines: isCompact ? 2 : 1,
-                overflow: TextOverflow.ellipsis,
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                isCompact ? 8 : 12,
+                isCompact ? 8 : 12,
+                isCompact ? 8 : 12,
+                isCompact ? 8 : 12,
               ),
-              SizedBox(height: isCompact ? 5 : 8),
-              Text(
-                item['item_price'] ?? '',
-                style: TextStyle(
-                  fontSize: isCompact ? 13 : 16,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFFD00000),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              SizedBox(height: isCompact ? 8 : 12),
-              _InfoRow(
-                icon: Icons.place,
-                text: 'Origin: ${item['origin'] ?? ''}',
-                isCompact: isCompact,
-              ),
-              SizedBox(height: isCompact ? 4 : 6),
-              _InfoRow(
-                icon: Icons.location_on,
-                text: item['location']?.toString() ?? '',
-                isCompact: isCompact,
-              ),
-              SizedBox(height: isCompact ? 4 : 6),
-              _InfoRow(
-                icon: Icons.business,
-                text: item['seller_name']?.toString() ?? '',
-                isCompact: isCompact,
-                isStrong: true,
-              ),
-              SizedBox(height: isCompact ? 9 : 16),
-              Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: sellerPhone.isEmpty
-                          ? null
-                          : () => _launchPhone(sellerPhone),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0A84FF),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: EdgeInsets.symmetric(
-                          vertical: isCompact ? 10 : 12,
-                        ),
-                      ),
-                      child: Icon(Icons.phone, size: isCompact ? 18 : 22),
+                  Text(
+                    item['item_name'] ?? 'No name',
+                    style: TextStyle(
+                      fontSize: isCompact ? 16 : 21,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
                     ),
+                    maxLines: isCompact ? 2 : 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  SizedBox(width: isCompact ? 8 : 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: sellerPhone.isEmpty
-                          ? null
-                          : () => _launchWhatsApp(sellerPhone),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: FaIcon(
-                        FontAwesomeIcons.whatsapp,
-                        size: isCompact ? 18 : 22,
-                      ),
+                  SizedBox(height: isCompact ? 5 : 8),
+                  Text(
+                    item['item_price'] ?? '',
+                    style: TextStyle(
+                      fontSize: isCompact ? 13 : 16,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFD00000),
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  SizedBox(height: isCompact ? 8 : 12),
+                  _InfoRow(
+                    icon: Icons.place,
+                    text: 'Origin: ${item['origin'] ?? ''}',
+                    isCompact: isCompact,
+                  ),
+                  SizedBox(height: isCompact ? 4 : 6),
+                  _InfoRow(
+                    icon: Icons.location_on,
+                    text: item['location']?.toString() ?? '',
+                    isCompact: isCompact,
+                  ),
+                  SizedBox(height: isCompact ? 4 : 6),
+                  _InfoRow(
+                    icon: Icons.business,
+                    text: item['seller_name']?.toString() ?? '',
+                    isCompact: isCompact,
+                    isStrong: true,
+                  ),
+                  SizedBox(height: isCompact ? 9 : 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: sellerPhone.isEmpty
+                              ? null
+                              : () => _launchPhone(sellerPhone),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0A84FF),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              vertical: isCompact ? 10 : 12,
+                            ),
+                          ),
+                          child: Icon(Icons.phone, size: isCompact ? 18 : 22),
+                        ),
+                      ),
+                      SizedBox(width: isCompact ? 8 : 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: sellerPhone.isEmpty
+                              ? null
+                              : () => _launchWhatsApp(sellerPhone),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF25D366),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          child: FaIcon(
+                            FontAwesomeIcons.whatsapp,
+                            size: isCompact ? 18 : 22,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!isCompact) ...[
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: _UploadedAgoText(uploadedAgo: uploadedAgo),
+                    ),
+                  ],
                 ],
               ),
-            ],
+            ),
+          ],
           ),
         ),
-      ),
     );
   }
 
@@ -199,6 +223,24 @@ class _ItemCardState extends State<ItemCard> {
       return 'Uploaded ${difference.inDays ~/ 7} weeks ago';
     }
     return 'Uploaded ${difference.inDays ~/ 30} months ago';
+  }
+}
+
+class _UploadedAgoText extends StatelessWidget {
+  const _UploadedAgoText({required this.uploadedAgo});
+
+  final String uploadedAgo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      uploadedAgo,
+      style: TextStyle(
+        color: Colors.grey[600],
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+      ),
+    );
   }
 }
 

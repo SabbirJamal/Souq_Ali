@@ -18,7 +18,7 @@ class SouqaliApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Souqali',
+      title: 'BIZSOOQ',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E7C66)),
         useMaterial3: true,

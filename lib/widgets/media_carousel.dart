@@ -102,7 +102,7 @@ class _MediaCarouselState extends State<MediaCarousel> {
               Positioned.fill(
                 child: PageView.builder(
                   controller: _pageController,
-                  clipBehavior: Clip.none,
+                  clipBehavior: widget.peekSideItems ? Clip.none : Clip.hardEdge,
                   padEnds: false,
                   itemCount: widget.mediaItems.length,
                   itemBuilder: (context, index) {

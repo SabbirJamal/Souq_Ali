@@ -31,7 +31,7 @@ class ItemDetailPage extends StatelessWidget {
   ) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _FullscreenMediaPage(
+        builder: (_) => _StackedMediaPage(
           mediaItems: mediaItems,
           initialIndex: initialIndex,
         ),
@@ -295,8 +295,8 @@ class _DetailData {
   final String valueText;
 }
 
-class _FullscreenMediaPage extends StatefulWidget {
-  const _FullscreenMediaPage({
+class _StackedMediaPage extends StatefulWidget {
+  const _StackedMediaPage({
     required this.mediaItems,
     required this.initialIndex,
   });
@@ -305,18 +305,92 @@ class _FullscreenMediaPage extends StatefulWidget {
   final int initialIndex;
 
   @override
-  State<_FullscreenMediaPage> createState() => _FullscreenMediaPageState();
+  State<_StackedMediaPage> createState() => _StackedMediaPageState();
 }
 
-class _FullscreenMediaPageState extends State<_FullscreenMediaPage> {
-  late final PageController _pageController;
-  late int _currentIndex;
+class _StackedMediaPageState extends State<_StackedMediaPage> {
+  late final ScrollController _scrollController;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
+    _scrollController = ScrollController();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients || widget.initialIndex <= 0) {
+        return;
+      }
+      _scrollController.jumpTo(398.0 * widget.initialIndex);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    super.dispose();
+  }
+
+  void _openSingleMedia(int index) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _SingleMediaPage(media: widget.mediaItems[index]),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          ListView.separated(
+            controller: _scrollController,
+            padding: EdgeInsets.zero,
+            itemCount: widget.mediaItems.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              return GestureDetector(
+                onTap: () => _openSingleMedia(index),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 390,
+                  child: _FullscreenMediaView(media: widget.mediaItems[index]),
+                ),
+              );
+            },
+          ),
+          Positioned(
+            left: 14,
+            top: 14,
+            child: SafeArea(
+              child: _FullscreenBackButton(onTap: () => Navigator.pop(context)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SingleMediaPage extends StatefulWidget {
+  const _SingleMediaPage({required this.media});
+
+  final MediaItem media;
+
+  @override
+  State<_SingleMediaPage> createState() => _SingleMediaPageState();
+}
+
+class _SingleMediaPageState extends State<_SingleMediaPage> {
+  @override
+  void initState() {
+    super.initState();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -325,7 +399,6 @@ class _FullscreenMediaPageState extends State<_FullscreenMediaPage> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
@@ -334,47 +407,79 @@ class _FullscreenMediaPageState extends State<_FullscreenMediaPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text('${_currentIndex + 1}/${widget.mediaItems.length}'),
-      ),
-      body: PageView.builder(
-        controller: _pageController,
-        scrollDirection: Axis.vertical,
-        itemCount: widget.mediaItems.length,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        itemBuilder: (context, index) {
-          final media = widget.mediaItems[index];
-          if (media.isVideo) {
-            return Center(
-              child: AspectRatio(
-                aspectRatio: 9 / 16,
-                child: VideoPreview(url: media.url, fit: BoxFit.contain),
-              ),
-            );
-          }
-
-          return Center(
-            child: InteractiveViewer(
-              minScale: 1,
-              maxScale: 4,
-              child: CachedNetworkImage(
-                imageUrl: media.url,
-                width: double.infinity,
-                height: double.infinity,
-                fit: BoxFit.contain,
-                placeholder: (context, url) =>
-                    const Center(child: CircularProgressIndicator()),
-                errorWidget: (context, url, error) => const Icon(
-                  Icons.broken_image,
-                  color: Colors.white,
-                  size: 54,
-                ),
-              ),
+      body: Stack(
+        children: [
+          Positioned.fill(child: _FullscreenMediaView(media: widget.media)),
+          Positioned(
+            left: 14,
+            top: 14,
+            child: SafeArea(
+              child: _FullscreenBackButton(onTap: () => Navigator.pop(context)),
             ),
-          );
-        },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FullscreenMediaView extends StatelessWidget {
+  const _FullscreenMediaView({required this.media});
+
+  final MediaItem media;
+
+  @override
+  Widget build(BuildContext context) {
+    if (media.isVideo) {
+      return Center(
+        child: AspectRatio(
+          aspectRatio: 9 / 16,
+          child: VideoPreview(url: media.url, fit: BoxFit.contain),
+        ),
+      );
+    }
+
+    return Center(
+      child: InteractiveViewer(
+        minScale: 1,
+        maxScale: 4,
+        child: CachedNetworkImage(
+          imageUrl: media.url,
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.contain,
+          placeholder: (context, url) =>
+              const Center(child: CircularProgressIndicator()),
+          errorWidget: (context, url, error) => const Icon(
+            Icons.broken_image,
+            color: Colors.white,
+            size: 54,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FullscreenBackButton extends StatelessWidget {
+  const _FullscreenBackButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(Icons.arrow_back, color: Colors.black),
+        ),
       ),
     );
   }

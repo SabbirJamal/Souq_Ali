@@ -115,9 +115,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF111614),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
+      shape: const RoundedRectangleBorder(),
       builder: (context) {
         return _MediaPickerSheet(
           selectedIds: _selectedMedia
@@ -363,7 +361,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       return;
     }
 
-    await showDialog<void>(
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
@@ -372,31 +370,34 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: () {
-              Navigator.pop(dialogContext);
-              widget.onItemAddedDone?.call();
-            },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 22, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle, color: Colors.teal, size: 52),
-                  SizedBox(height: 12),
-                  Text(
-                    'Done',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, color: Colors.teal, size: 56),
+                SizedBox(height: 14),
+                Text(
+                  'Item added successfully',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
           ),
         );
       },
     );
+
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (!mounted) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+    widget.onItemAddedDone?.call();
   }
 
   void _showMessage(String message) {
@@ -784,12 +785,20 @@ class _MediaPickerSheet extends StatefulWidget {
 }
 
 class _MediaPickerSheetState extends State<_MediaPickerSheet> {
+  static const _pageSize = 90;
+
   final Set<String> _selectedIds = {};
   final List<AssetEntity> _pendingAssets = [];
+  List<AssetPathEntity> _albums = [];
   List<AssetEntity> _assets = [];
+  AssetPathEntity? _selectedAlbum;
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreAssets = true;
   bool _hasPermission = true;
   bool _hasLimitedPermission = false;
+  int _currentPage = 0;
+  int _loadToken = 0;
 
   @override
   void initState() {
@@ -818,53 +827,101 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
       return;
     }
 
-    final assetsById = <String, AssetEntity>{};
-    for (final album in albums) {
-      final assetCount = await album.assetCountAsync;
-      if (assetCount == 0) {
-        continue;
-      }
-      final albumAssets = await album.getAssetListPaged(
-        page: 0,
-        size: assetCount,
-      );
-      for (final asset in albumAssets) {
-        if (asset.type != AssetType.image && asset.type != AssetType.video) {
-          continue;
-        }
-        assetsById[asset.id] = asset;
-      }
-    }
-
-    final assets = assetsById.values.toList()
-      ..sort((first, second) {
-        return second.createDateTime.compareTo(first.createDateTime);
-      });
-
     setState(() {
-      _assets = assets;
+      _albums = albums;
+      _selectedAlbum = albums.first;
       _hasLimitedPermission = hasLimitedPermission;
       _isLoading = false;
     });
+    await _loadFirstAlbumPage();
   }
 
   Future<List<AssetPathEntity>> _loadMediaAlbums() async {
     final albumsById = <String, AssetPathEntity>{};
-    for (final type in [
-      RequestType.common,
-      RequestType.image,
-      RequestType.video,
-      RequestType.all,
-    ]) {
-      final albums = await PhotoManager.getAssetPathList(
-        type: type,
-        onlyAll: false,
-      );
-      for (final album in albums) {
-        albumsById[album.id] = album;
-      }
+    final albums = await PhotoManager.getAssetPathList(
+      type: RequestType.common,
+      onlyAll: false,
+      filterOption: FilterOptionGroup(
+        orders: [
+          const OrderOption(type: OrderOptionType.createDate, asc: false),
+        ],
+      ),
+    );
+    for (final album in albums) {
+      albumsById[album.id] = album;
     }
-    return albumsById.values.toList();
+    final sortedAlbums = albumsById.values.toList();
+    sortedAlbums.sort((first, second) {
+      if (first.isAll != second.isAll) {
+        return first.isAll ? -1 : 1;
+      }
+      return first.name.toLowerCase().compareTo(second.name.toLowerCase());
+    });
+    return sortedAlbums;
+  }
+
+  Future<void> _changeAlbum(AssetPathEntity album) async {
+    if (_selectedAlbum?.id == album.id) {
+      return;
+    }
+    setState(() {
+      _selectedAlbum = album;
+      _assets = [];
+      _currentPage = 0;
+      _hasMoreAssets = true;
+      _isLoadingMore = false;
+    });
+    await _loadFirstAlbumPage();
+  }
+
+  Future<void> _loadFirstAlbumPage() async {
+    final token = ++_loadToken;
+    setState(() {
+      _assets = [];
+      _currentPage = 0;
+      _hasMoreAssets = true;
+      _isLoadingMore = true;
+    });
+    await _loadMoreAssets(token: token);
+  }
+
+  Future<void> _loadMoreAssets({int? token}) async {
+    final album = _selectedAlbum;
+    if (album == null || _isLoadingMore && token == null || !_hasMoreAssets) {
+      return;
+    }
+
+    final activeToken = token ?? _loadToken;
+    if (token == null) {
+      setState(() => _isLoadingMore = true);
+    }
+
+    final nextAssets = await album.getAssetListPaged(
+      page: _currentPage,
+      size: _pageSize,
+    );
+    if (!mounted || activeToken != _loadToken) {
+      return;
+    }
+
+    final visibleAssets = nextAssets
+        .where(
+          (asset) => asset.type == AssetType.image || asset.type == AssetType.video,
+        )
+        .toList();
+
+    setState(() {
+      _assets.addAll(visibleAssets);
+      _currentPage += 1;
+      _hasMoreAssets = nextAssets.length == _pageSize;
+      _isLoadingMore = false;
+    });
+  }
+
+  void _maybeLoadMore(int index) {
+    if (index >= _assets.length - 18 && _hasMoreAssets && !_isLoadingMore) {
+      _loadMoreAssets();
+    }
   }
 
   Future<void> _toggleAsset(AssetEntity asset) async {
@@ -902,12 +959,12 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      top: false,
+      top: true,
       child: DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.88,
-        minChildSize: 0.45,
-        maxChildSize: 0.95,
+        initialChildSize: 1,
+        minChildSize: 0.25,
+        maxChildSize: 1,
         builder: (context, scrollController) {
           return Stack(
             children: [
@@ -946,6 +1003,7 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                               );
                             }
                             final asset = _assets[index - 1];
+                            _maybeLoadMore(index - 1);
                             final selectedIndex = _selectedIds
                                 .toList()
                                 .indexOf(asset.id);
@@ -959,6 +1017,13 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                           }, childCount: _assets.length + 1),
                         ),
                       ),
+                      if (_isLoadingMore)
+                        const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.only(bottom: 96),
+                            child: Center(child: CircularProgressIndicator()),
+                          ),
+                        ),
                     ],
                 ],
               ),
@@ -1012,22 +1077,52 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel', style: TextStyle(color: Colors.white)),
           ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A2D2F),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text(
-              'Photos',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
+          Expanded(
+            child: Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2D2F),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedAlbum?.id,
+                    dropdownColor: const Color(0xFF2A2D2F),
+                    iconEnabledColor: Colors.white,
+                    isExpanded: true,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    items: _albums
+                        .map(
+                          (album) => DropdownMenuItem<String>(
+                            value: album.id,
+                            child: Text(
+                              album.isAll ? 'Recent' : album.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (albumId) {
+                      if (albumId == null) {
+                        return;
+                      }
+                      final album = _albums.firstWhere(
+                        (album) => album.id == albumId,
+                        orElse: () => _albums.first,
+                      );
+                      _changeAlbum(album);
+                    },
+                  ),
+                ),
               ),
             ),
           ),
-          const Spacer(),
           TextButton(
             onPressed: _finishSelection,
             child: Text(

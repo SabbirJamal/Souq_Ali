@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../item_detail_page.dart';
 import '../item_edit_page.dart';
 import '../seller_session.dart';
 import '../story_repository.dart';
@@ -86,9 +87,20 @@ class SellerListingsTab extends StatelessWidget {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Row(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ItemDetailPage(itemData: item, itemId: docId),
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Row(
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(8),
@@ -201,6 +213,7 @@ class SellerListingsTab extends StatelessWidget {
                           icon: const Icon(Icons.delete, color: Colors.red),
                         ),
                       ],
+                      ),
                     ),
                   ),
                 );

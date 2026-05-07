@@ -43,8 +43,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
       appBar: _currentIndex == 0
           ? null
           : AppBar(
-              title: const Text('SOOQ ALI'),
-              backgroundColor: const Color(0xFF25D366),
+              title: const Text('BIZ SOOQ'),
+              backgroundColor: const Color(0xFFFF7801),
               foregroundColor: Colors.white,
             ),
       body: _pages[_currentIndex],

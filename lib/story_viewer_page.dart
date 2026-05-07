@@ -90,6 +90,16 @@ class _StoryViewerPageState extends State<StoryViewerPage> {
     );
   }
 
+  void _goPrevious() {
+    if (_currentStoryIndex <= 0) {
+      return;
+    }
+    _pageController.previousPage(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -105,6 +115,8 @@ class _StoryViewerPageState extends State<StoryViewerPage> {
             key: ValueKey(sellerStory.sellerName),
             videos: sellerStory.videos,
             onFinished: _goNext,
+            onNextStory: _goNext,
+            onPreviousStory: _goPrevious,
             onCall: (phone) => _launchPhone(phone),
             onWhatsApp: (phone) => _launchWhatsApp(phone),
           );
@@ -119,12 +131,16 @@ class _SellerStoryPage extends StatefulWidget {
     super.key,
     required this.videos,
     required this.onFinished,
+    required this.onNextStory,
+    required this.onPreviousStory,
     required this.onCall,
     required this.onWhatsApp,
   });
 
   final List<StoryVideo> videos;
   final VoidCallback onFinished;
+  final VoidCallback onNextStory;
+  final VoidCallback onPreviousStory;
   final ValueChanged<String> onCall;
   final ValueChanged<String> onWhatsApp;
 
@@ -149,6 +165,10 @@ class _SellerStoryPageState extends State<_SellerStoryPage> {
   }
 
   void _goNextVideo() {
+    if (widget.videos.length == 1) {
+      widget.onNextStory();
+      return;
+    }
     if (_currentVideoIndex >= widget.videos.length - 1) {
       widget.onFinished();
       return;
@@ -160,6 +180,10 @@ class _SellerStoryPageState extends State<_SellerStoryPage> {
   }
 
   void _goPreviousVideo() {
+    if (widget.videos.length == 1) {
+      widget.onPreviousStory();
+      return;
+    }
     if (_currentVideoIndex <= 0) {
       return;
     }
