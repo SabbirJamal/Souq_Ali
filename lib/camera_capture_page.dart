@@ -58,7 +58,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
 
     final controller = CameraController(
       backCamera,
-      ResolutionPreset.high,
+      ResolutionPreset.medium,
       enableAudio: true,
     );
     _controller = controller;

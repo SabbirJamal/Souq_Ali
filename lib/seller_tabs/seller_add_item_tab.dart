@@ -188,7 +188,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<List<_UploadedMedia>> _uploadMedia(String sellerUid) async {
-    final uploaded = <_UploadedMedia>[];
     final orderedMedia = [..._selectedMedia]
       ..sort((first, second) {
         if (first.isVideo == second.isVideo) {
@@ -197,36 +196,58 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         return first.isVideo ? 1 : -1;
       });
 
+    final compressed = List<File?>.filled(orderedMedia.length, null);
+    final imageJobs = <Future<void>>[];
     for (var i = 0; i < orderedMedia.length; i++) {
       final media = orderedMedia[i];
-      final compressed = media.isVideo
-          ? await _compressVideo(media.file)
-          : await _compressImage(media.file);
-      final extension = media.isVideo ? 'mp4' : 'jpg';
-      final contentType = media.isVideo ? 'video/mp4' : 'image/jpeg';
-      final fileName = DateTime.now().millisecondsSinceEpoch;
-      final ref = FirebaseStorage.instance.ref().child(
-        'items/$sellerUid/${fileName}_$i.$extension',
-      );
+      if (media.isVideo) {
+        compressed[i] = await _compressVideo(media.file);
+      } else {
+        final index = i;
+        imageJobs.add(() async {
+          compressed[index] = await _compressImage(media.file);
+        }());
+      }
+    }
+    await Future.wait(imageJobs);
 
-      final uploadSnapshot = await ref.putFile(
-        compressed,
-        SettableMetadata(contentType: contentType),
-      );
-      uploaded.add(
-        _UploadedMedia(
-          url: await uploadSnapshot.ref.getDownloadURL(),
-          type: media.type,
-        ),
+    final uploadStartedAt = DateTime.now().millisecondsSinceEpoch;
+    final uploads = <Future<_UploadedMedia>>[];
+    for (var i = 0; i < orderedMedia.length; i++) {
+      uploads.add(
+        _uploadOne(sellerUid, orderedMedia[i], compressed[i]!, i, uploadStartedAt),
       );
     }
-    return uploaded;
+    return Future.wait(uploads);
+  }
+
+  Future<_UploadedMedia> _uploadOne(
+    String sellerUid,
+    _SelectedMedia media,
+    File compressed,
+    int index,
+    int uploadStartedAt,
+  ) async {
+    final extension = media.isVideo ? 'mp4' : 'jpg';
+    final contentType = media.isVideo ? 'video/mp4' : 'image/jpeg';
+    final ref = FirebaseStorage.instance.ref().child(
+      'items/$sellerUid/${uploadStartedAt}_$index.$extension',
+    );
+
+    final uploadSnapshot = await ref.putFile(
+      compressed,
+      SettableMetadata(contentType: contentType),
+    );
+    return _UploadedMedia(
+      url: await uploadSnapshot.ref.getDownloadURL(),
+      type: media.type,
+    );
   }
 
   Future<File> _compressImage(File file) async {
     final tempDir = await getTemporaryDirectory();
     final targetPath =
-        '${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
+        '${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}_${file.path.hashCode}.jpg';
 
     final result = await FlutterImageCompress.compressAndGetFile(
       file.absolute.path,
@@ -1223,7 +1244,7 @@ class _CameraTile extends StatelessWidget {
   }
 }
 
-class _AssetTile extends StatelessWidget {
+class _AssetTile extends StatefulWidget {
   const _AssetTile({
     required this.asset,
     required this.selectionNumber,
@@ -1235,28 +1256,55 @@ class _AssetTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  State<_AssetTile> createState() => _AssetTileState();
+}
+
+class _AssetTileState extends State<_AssetTile> {
+  late Future<Uint8List?> _thumbnailFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _thumbnailFuture = widget.asset.thumbnailDataWithSize(
+      const ThumbnailSize.square(240),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _AssetTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.asset.id != widget.asset.id) {
+      _thumbnailFuture = widget.asset.thumbnailDataWithSize(
+        const ThumbnailSize.square(240),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Stack(
         fit: StackFit.expand,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: FutureBuilder<Uint8List?>(
-              future: asset.thumbnailDataWithSize(
-                const ThumbnailSize.square(240),
-              ),
+              future: _thumbnailFuture,
               builder: (context, snapshot) {
                 final bytes = snapshot.data;
                 if (bytes == null) {
                   return Container(color: const Color(0xFF252A28));
                 }
-                return Image.memory(bytes, fit: BoxFit.cover);
+                return Image.memory(
+                  bytes,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                );
               },
             ),
           ),
-          if (asset.type == AssetType.video)
+          if (widget.asset.type == AssetType.video)
             const Positioned(
               left: 6,
               bottom: 6,
@@ -1267,11 +1315,11 @@ class _AssetTile extends StatelessWidget {
             right: 6,
             child: CircleAvatar(
               radius: 12,
-              backgroundColor: selectionNumber != null
+              backgroundColor: widget.selectionNumber != null
                   ? const Color(0xFF25D366)
                   : Colors.black54,
               child: Text(
-                selectionNumber?.toString() ?? '',
+                widget.selectionNumber?.toString() ?? '',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,

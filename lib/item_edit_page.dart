@@ -180,34 +180,55 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<List<MediaItem>> _uploadNewMedia(String sellerUid) async {
-    final uploaded = <MediaItem>[];
+    final compressed = List<File?>.filled(_newMedia.length, null);
+    final imageJobs = <Future<void>>[];
     for (var i = 0; i < _newMedia.length; i++) {
       final media = _newMedia[i];
-      final compressed = media.isVideo
-          ? await _compressVideo(media.file)
-          : await _compressImage(media.file);
-      final extension = media.isVideo ? 'mp4' : 'jpg';
-      final contentType = media.isVideo ? 'video/mp4' : 'image/jpeg';
-      final fileName = DateTime.now().millisecondsSinceEpoch;
-      final ref = FirebaseStorage.instance.ref().child(
-        'items/$sellerUid/${fileName}_edit_$i.$extension',
-      );
+      if (media.isVideo) {
+        compressed[i] = await _compressVideo(media.file);
+      } else {
+        final index = i;
+        imageJobs.add(() async {
+          compressed[index] = await _compressImage(media.file);
+        }());
+      }
+    }
+    await Future.wait(imageJobs);
 
-      final snapshot = await ref.putFile(
-        compressed,
-        SettableMetadata(contentType: contentType),
-      );
-      uploaded.add(
-        MediaItem(url: await snapshot.ref.getDownloadURL(), type: media.type),
+    final uploadStartedAt = DateTime.now().millisecondsSinceEpoch;
+    final uploads = <Future<MediaItem>>[];
+    for (var i = 0; i < _newMedia.length; i++) {
+      uploads.add(
+        _uploadOne(sellerUid, _newMedia[i], compressed[i]!, i, uploadStartedAt),
       );
     }
-    return uploaded;
+    return Future.wait(uploads);
+  }
+
+  Future<MediaItem> _uploadOne(
+    String sellerUid,
+    _SelectedMedia media,
+    File compressed,
+    int index,
+    int uploadStartedAt,
+  ) async {
+    final extension = media.isVideo ? 'mp4' : 'jpg';
+    final contentType = media.isVideo ? 'video/mp4' : 'image/jpeg';
+    final ref = FirebaseStorage.instance.ref().child(
+      'items/$sellerUid/${uploadStartedAt}_edit_$index.$extension',
+    );
+
+    final snapshot = await ref.putFile(
+      compressed,
+      SettableMetadata(contentType: contentType),
+    );
+    return MediaItem(url: await snapshot.ref.getDownloadURL(), type: media.type);
   }
 
   Future<File> _compressImage(File file) async {
     final tempDir = await getTemporaryDirectory();
     final targetPath =
-        '${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
+        '${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}_${file.path.hashCode}.jpg';
     final result = await FlutterImageCompress.compressAndGetFile(
       file.absolute.path,
       targetPath,

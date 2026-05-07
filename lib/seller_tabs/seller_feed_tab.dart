@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -15,25 +13,12 @@ class SellerFeedTab extends StatefulWidget {
 
 class _SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
-  Timer? _clockTimer;
   bool _isSearchOpen = false;
   bool _isGridView = false;
   String _query = '';
-  DateTime _now = DateTime.now();
-
-  @override
-  void initState() {
-    super.initState();
-    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) {
-        setState(() => _now = DateTime.now());
-      }
-    });
-  }
 
   @override
   void dispose() {
-    _clockTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -74,17 +59,19 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('items')
           .orderBy('created_at', descending: true)
+          .limit(50)
           .snapshots(),
       builder: (context, snapshot) {
         final isLoading = snapshot.connectionState == ConnectionState.waiting;
         final hasError = snapshot.hasError;
         final docs = _filterDocs(
           (snapshot.data?.docs ?? [])
-              .where((doc) => _isItemActive(doc.data(), _now))
+              .where((doc) => _isItemActive(doc.data(), now))
               .toList(),
         );
 
@@ -103,11 +90,7 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                 },
               ),
             ),
-            SliverToBoxAdapter(
-              child: _StoryStrip(
-                activeNow: _now,
-              ),
-            ),
+            const SliverToBoxAdapter(child: _StoryStrip()),
             if (isLoading)
               const SliverFillRemaining(
                 hasScrollBody: false,
@@ -148,6 +131,7 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                           return ItemCard(
                             docId: doc.id,
                             item: doc.data(),
+                            now: now,
                             isCompact: true,
                           );
                         },
@@ -156,7 +140,11 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                         itemCount: docs.length,
                         itemBuilder: (context, index) {
                           final doc = docs[index];
-                          return ItemCard(docId: doc.id, item: doc.data());
+                          return ItemCard(
+                            docId: doc.id,
+                            item: doc.data(),
+                            now: now,
+                          );
                         },
                       ),
               ),
@@ -167,12 +155,16 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
   }
 }
 
-class _StoryStrip extends StatelessWidget {
-  const _StoryStrip({
-    required this.activeNow,
-  });
+class _StoryStrip extends StatefulWidget {
+  const _StoryStrip();
 
-  final DateTime activeNow;
+  @override
+  State<_StoryStrip> createState() => _StoryStripState();
+}
+
+class _StoryStripState extends State<_StoryStrip> {
+  String _cachedDocsKey = '';
+  Future<List<_SellerStory>>? _storiesFuture;
 
   @override
   Widget build(BuildContext context) {
@@ -181,12 +173,8 @@ class _StoryStrip extends StatelessWidget {
           .collection('stories')
           .orderBy('created_at', descending: true)
           .limit(20)
-          .snapshots(includeMetadataChanges: true),
+          .snapshots(),
       builder: (context, snapshot) {
-        if (snapshot.data?.metadata.isFromCache ?? false) {
-          return const SizedBox.shrink();
-        }
-
         final docs = (snapshot.data?.docs ?? [])
             .where((doc) => (doc.data()['video_url']?.toString() ?? '').isNotEmpty)
             .toList();
@@ -195,8 +183,14 @@ class _StoryStrip extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
+        final docsKey = docs.map((doc) => doc.id).join(',');
+        if (docsKey != _cachedDocsKey) {
+          _cachedDocsKey = docsKey;
+          _storiesFuture = _sellerStoriesFromDocs(docs);
+        }
+
         return FutureBuilder<List<_SellerStory>>(
-          future: _sellerStoriesFromDocs(docs, activeNow),
+          future: _storiesFuture,
           builder: (context, activeStoriesSnapshot) {
             final stories = activeStoriesSnapshot.data ?? [];
             if (stories.isEmpty) {
@@ -249,63 +243,66 @@ class _StoryStrip extends StatelessWidget {
 
   Future<List<_SellerStory>> _sellerStoriesFromDocs(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-    DateTime activeNow,
   ) async {
+    final itemIds = <String>{};
+    for (final doc in docs) {
+      final id = doc.data()['item_id']?.toString() ?? '';
+      if (id.isNotEmpty) {
+        itemIds.add(id);
+      }
+    }
+
+    final itemsById = <String, Map<String, dynamic>>{};
+    final idList = itemIds.toList();
+    for (var i = 0; i < idList.length; i += 10) {
+      final chunk = idList.sublist(
+        i,
+        i + 10 > idList.length ? idList.length : i + 10,
+      );
+      final query = await FirebaseFirestore.instance
+          .collection('items')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final itemDoc in query.docs) {
+        itemsById[itemDoc.id] = itemDoc.data();
+      }
+    }
+
+    final activeNow = DateTime.now();
     final stories = <_SellerStory>[];
     for (final doc in docs) {
       final story = doc.data();
-      final storyVideo = await _storyVideoFromMap(story, activeNow);
-      if (storyVideo == null) {
+      final itemId = story['item_id']?.toString() ?? '';
+      final videoUrl = story['video_url']?.toString() ?? '';
+      if (itemId.isEmpty || videoUrl.isEmpty) {
+        continue;
+      }
+      final item = itemsById[itemId];
+      if (item == null || !_isItemActive(item, activeNow)) {
         continue;
       }
       stories.add(
         _SellerStory(
           sellerName: story['seller_name']?.toString() ?? 'Seller',
-          videos: [storyVideo],
+          videos: [
+            StoryVideo(
+              url: videoUrl,
+              itemName:
+                  item['item_name']?.toString() ??
+                  story['item_name']?.toString() ??
+                  'Item',
+              itemPrice:
+                  item['item_price']?.toString() ??
+                  story['item_price']?.toString() ??
+                  '',
+              sellerName: story['seller_name']?.toString() ?? 'Seller',
+              sellerPhone: story['seller_phone']?.toString() ?? '',
+            ),
+          ],
         ),
       );
     }
     return stories;
-  }
-
-  Future<StoryVideo?> _storyVideoFromMap(
-    Map<String, dynamic> story,
-    DateTime activeNow,
-  ) async {
-    final sellerName = story['seller_name']?.toString() ?? 'Seller';
-    final sellerPhone = story['seller_phone']?.toString() ?? '';
-    final itemId = story['item_id']?.toString() ?? '';
-    final videoUrl = story['video_url']?.toString() ?? '';
-    if (itemId.isEmpty || videoUrl.isEmpty) {
-      return null;
-    }
-
-    final itemDoc = await FirebaseFirestore.instance
-        .collection('items')
-        .doc(itemId)
-        .get();
-    if (!itemDoc.exists) {
-      return null;
-    }
-
-    final item = itemDoc.data() ?? {};
-    if (!_isItemActive(item, activeNow)) {
-      return null;
-    }
-
-    return StoryVideo(
-      url: videoUrl,
-      itemName:
-          item['item_name']?.toString() ??
-          story['item_name']?.toString() ??
-          'Item',
-      itemPrice:
-          item['item_price']?.toString() ??
-          story['item_price']?.toString() ??
-          '',
-      sellerName: sellerName,
-      sellerPhone: sellerPhone,
-    );
   }
 }
 

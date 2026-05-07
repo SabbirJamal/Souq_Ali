@@ -11,11 +11,13 @@ class ItemCard extends StatefulWidget {
     super.key,
     required this.docId,
     required this.item,
+    this.now,
     this.isCompact = false,
   });
 
   final String docId;
   final Map<String, dynamic> item;
+  final DateTime? now;
   final bool isCompact;
 
   @override
@@ -206,7 +208,8 @@ class _ItemCardState extends State<ItemCard> {
       return 'Uploaded just now';
     }
 
-    final difference = DateTime.now().difference(uploadedAt);
+    final reference = widget.now ?? DateTime.now();
+    final difference = reference.difference(uploadedAt);
     if (difference.inMinutes < 1) {
       return 'Uploaded just now';
     }

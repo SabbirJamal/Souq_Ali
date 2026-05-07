@@ -282,7 +282,7 @@ class _CollagePreview extends StatelessWidget {
   }
 }
 
-class _SinglePicturePreview extends StatelessWidget {
+class _SinglePicturePreview extends StatefulWidget {
   const _SinglePicturePreview({
     super.key,
     required this.imageUrls,
@@ -299,7 +299,32 @@ class _SinglePicturePreview extends StatelessWidget {
   final ValueChanged<int> onChanged;
 
   @override
+  State<_SinglePicturePreview> createState() => _SinglePicturePreviewState();
+}
+
+class _SinglePicturePreviewState extends State<_SinglePicturePreview> {
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(
+      viewportFraction: 0.58,
+      initialPage: widget.imageUrls.isEmpty
+          ? 0
+          : widget.selectedIndex.clamp(0, widget.imageUrls.length - 1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final imageUrls = widget.imageUrls;
     if (imageUrls.isEmpty) {
       return const SizedBox(width: 210, height: 260, child: _EmptyPreview());
     }
@@ -307,14 +332,11 @@ class _SinglePicturePreview extends StatelessWidget {
     return SizedBox(
       height: 290,
       child: PageView.builder(
-        controller: PageController(
-          viewportFraction: 0.58,
-          initialPage: selectedIndex.clamp(0, imageUrls.length - 1),
-        ),
+        controller: _pageController,
         itemCount: imageUrls.length,
-        onPageChanged: onChanged,
+        onPageChanged: widget.onChanged,
         itemBuilder: (context, index) {
-          final isSelected = selectedIndex == index;
+          final isSelected = widget.selectedIndex == index;
           return AnimatedScale(
             scale: isSelected ? 1 : 0.92,
             duration: const Duration(milliseconds: 180),
@@ -349,7 +371,10 @@ class _SinglePicturePreview extends StatelessWidget {
                         ),
                       ),
                     ),
-                    _PreviewCaption(itemName: itemName, itemPrice: itemPrice),
+                    _PreviewCaption(
+                      itemName: widget.itemName,
+                      itemPrice: widget.itemPrice,
+                    ),
                   ],
                 ),
               ),
