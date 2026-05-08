@@ -3,28 +3,36 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
+import 'item_detail_page.dart';
+
 class StoryVideo {
   const StoryVideo({
     required this.url,
+    required this.itemId,
     required this.itemName,
     required this.itemPrice,
     required this.sellerName,
     required this.sellerPhone,
+    this.itemData,
   });
 
   final String url;
+  final String itemId;
   final String itemName;
   final String itemPrice;
   final String sellerName;
   final String sellerPhone;
+  final Map<String, dynamic>? itemData;
 
   StoryVideo copyWith({String? itemName, String? itemPrice}) {
     return StoryVideo(
       url: url,
+      itemId: itemId,
       itemName: itemName ?? this.itemName,
       itemPrice: itemPrice ?? this.itemPrice,
       sellerName: sellerName,
       sellerPhone: sellerPhone,
+      itemData: itemData,
     );
   }
 }
@@ -41,10 +49,14 @@ class StoryViewerPage extends StatefulWidget {
     super.key,
     required this.stories,
     required this.initialStoryIndex,
+    this.showCloseButton = true,
+    this.popOnComplete = true,
   });
 
   final List<StorySeller> stories;
   final int initialStoryIndex;
+  final bool showCloseButton;
+  final bool popOnComplete;
 
   @override
   State<StoryViewerPage> createState() => _StoryViewerPageState();
@@ -81,7 +93,9 @@ class _StoryViewerPageState extends State<StoryViewerPage> {
 
   void _goNext() {
     if (_currentStoryIndex >= widget.stories.length - 1) {
-      Navigator.pop(context);
+      if (widget.popOnComplete && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
       return;
     }
     _pageController.nextPage(
@@ -119,6 +133,7 @@ class _StoryViewerPageState extends State<StoryViewerPage> {
             onPreviousStory: _goPrevious,
             onCall: (phone) => _launchPhone(phone),
             onWhatsApp: (phone) => _launchWhatsApp(phone),
+            showCloseButton: widget.showCloseButton,
           );
         },
       ),
@@ -135,6 +150,7 @@ class _SellerStoryPage extends StatefulWidget {
     required this.onPreviousStory,
     required this.onCall,
     required this.onWhatsApp,
+    required this.showCloseButton,
   });
 
   final List<StoryVideo> videos;
@@ -143,6 +159,7 @@ class _SellerStoryPage extends StatefulWidget {
   final VoidCallback onPreviousStory;
   final ValueChanged<String> onCall;
   final ValueChanged<String> onWhatsApp;
+  final bool showCloseButton;
 
   @override
   State<_SellerStoryPage> createState() => _SellerStoryPageState();
@@ -209,6 +226,7 @@ class _SellerStoryPageState extends State<_SellerStoryPage> {
           onPrevious: _goPreviousVideo,
           onCall: () => widget.onCall(story.sellerPhone),
           onWhatsApp: () => widget.onWhatsApp(story.sellerPhone),
+          showCloseButton: widget.showCloseButton,
         );
       },
     );
@@ -224,6 +242,7 @@ class _StoryVideoPage extends StatefulWidget {
     required this.onPrevious,
     required this.onCall,
     required this.onWhatsApp,
+    required this.showCloseButton,
   });
 
   final StoryVideo story;
@@ -232,6 +251,7 @@ class _StoryVideoPage extends StatefulWidget {
   final VoidCallback onPrevious;
   final VoidCallback onCall;
   final VoidCallback onWhatsApp;
+  final bool showCloseButton;
 
   @override
   State<_StoryVideoPage> createState() => _StoryVideoPageState();
@@ -343,19 +363,20 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
             ],
           ),
         ),
-        Positioned(
-          left: 8,
-          top: 8,
-          child: SafeArea(
-            child: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.close, color: Colors.white),
-              style: IconButton.styleFrom(
-                backgroundColor: Colors.black.withValues(alpha: 0.24),
+        if (widget.showCloseButton)
+          Positioned(
+            left: 8,
+            top: 8,
+            child: SafeArea(
+              child: IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: Colors.white),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black.withValues(alpha: 0.24),
+                ),
               ),
             ),
           ),
-        ),
         Positioned(
           left: 16,
           bottom: 84,
@@ -386,7 +407,15 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
           right: 16,
           bottom: 94,
           child: SafeArea(
-            child: _StoryItemInfo(story: widget.story),
+            child: _StoryItemInfo(
+              story: widget.story,
+              onBeforeOpen: () => _controller.pause(),
+              onAfterReturn: () {
+                if (mounted && _controller.value.isInitialized && !_didFinish) {
+                  _controller.play();
+                }
+              },
+            ),
           ),
         ),
       ],
@@ -395,49 +424,73 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
 }
 
 class _StoryItemInfo extends StatelessWidget {
-  const _StoryItemInfo({required this.story});
+  const _StoryItemInfo({
+    required this.story,
+    required this.onBeforeOpen,
+    required this.onAfterReturn,
+  });
 
   final StoryVideo story;
+  final VoidCallback onBeforeOpen;
+  final VoidCallback onAfterReturn;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 170),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.36),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            story.itemName,
-            textAlign: TextAlign.right,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (story.itemPrice.trim().isNotEmpty) ...[
-            const SizedBox(height: 5),
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: story.itemData == null || story.itemId.isEmpty
+          ? null
+          : () async {
+              onBeforeOpen();
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ItemDetailPage(
+                    itemData: story.itemData!,
+                    itemId: story.itemId,
+                  ),
+                ),
+              );
+              onAfterReturn();
+            },
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 170),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.36),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
             Text(
-              story.itemPrice,
+              story.itemName,
               textAlign: TextAlign.right,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                color: Color(0xFFFFD8D8),
-                fontSize: 14,
+                color: Colors.white,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
               ),
             ),
+            if (story.itemPrice.trim().isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                story.itemPrice,
+                textAlign: TextAlign.right,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFFFFD8D8),
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

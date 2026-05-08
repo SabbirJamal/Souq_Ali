@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../story_viewer_page.dart';
 import '../widgets/item_card.dart';
 
 class SellerFeedTab extends StatefulWidget {
@@ -103,11 +102,6 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                 },
               ),
             ),
-            SliverToBoxAdapter(
-              child: _StoryStrip(
-                activeNow: _now,
-              ),
-            ),
             if (isLoading)
               const SliverFillRemaining(
                 hasScrollBody: false,
@@ -131,27 +125,10 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
             else
               SliverPadding(
                 padding: _isGridView
-                    ? const EdgeInsets.all(16)
+                    ? const EdgeInsets.symmetric(horizontal: 5, vertical: 12)
                     : const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
                 sliver: _isGridView
-                    ? SliverGrid.builder(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: 0.48,
-                            ),
-                        itemCount: docs.length,
-                        itemBuilder: (context, index) {
-                          final doc = docs[index];
-                          return ItemCard(
-                            docId: doc.id,
-                            item: doc.data(),
-                            isCompact: true,
-                          );
-                        },
-                      )
+                    ? SliverToBoxAdapter(child: _MasonryItemGrid(docs: docs))
                     : SliverList.builder(
                         itemCount: docs.length,
                         itemBuilder: (context, index) {
@@ -167,144 +144,46 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
   }
 }
 
-class _StoryStrip extends StatelessWidget {
-  const _StoryStrip({
-    required this.activeNow,
-  });
+class _MasonryItemGrid extends StatelessWidget {
+  const _MasonryItemGrid({required this.docs});
 
-  final DateTime activeNow;
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('stories')
-          .orderBy('created_at', descending: true)
-          .limit(20)
-          .snapshots(includeMetadataChanges: true),
-      builder: (context, snapshot) {
-        if (snapshot.data?.metadata.isFromCache ?? false) {
-          return const SizedBox.shrink();
-        }
+    final leftDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    final rightDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
-        final docs = (snapshot.data?.docs ?? [])
-            .where((doc) => (doc.data()['video_url']?.toString() ?? '').isNotEmpty)
-            .toList();
+    for (var i = 0; i < docs.length; i++) {
+      if (i.isEven) {
+        leftDocs.add(docs[i]);
+      } else {
+        rightDocs.add(docs[i]);
+      }
+    }
 
-        if (docs.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return FutureBuilder<List<_SellerStory>>(
-          future: _sellerStoriesFromDocs(docs, activeNow),
-          builder: (context, activeStoriesSnapshot) {
-            final stories = activeStoriesSnapshot.data ?? [];
-            if (stories.isEmpty) {
-              return const SizedBox.shrink();
-            }
-
-            return Container(
-              height: 72,
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: stories.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 14),
-                      itemBuilder: (context, index) {
-                        return _StoryCircle(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => StoryViewerPage(
-                                  stories: stories
-                                      .map(
-                                        (story) => StorySeller(
-                                          sellerName: story.sellerName,
-                                          videos: story.videos,
-                                        ),
-                                      )
-                                      .toList(),
-                                  initialStoryIndex: index,
-                                ),
-                              ),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _MasonryColumn(docs: leftDocs)),
+        const SizedBox(width: 10),
+        Expanded(child: _MasonryColumn(docs: rightDocs)),
+      ],
     );
   }
+}
 
-  Future<List<_SellerStory>> _sellerStoriesFromDocs(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-    DateTime activeNow,
-  ) async {
-    final stories = <_SellerStory>[];
-    for (final doc in docs) {
-      final story = doc.data();
-      final storyVideo = await _storyVideoFromMap(story, activeNow);
-      if (storyVideo == null) {
-        continue;
-      }
-      stories.add(
-        _SellerStory(
-          sellerName: story['seller_name']?.toString() ?? 'Seller',
-          videos: [storyVideo],
-        ),
-      );
-    }
-    return stories;
-  }
+class _MasonryColumn extends StatelessWidget {
+  const _MasonryColumn({required this.docs});
 
-  Future<StoryVideo?> _storyVideoFromMap(
-    Map<String, dynamic> story,
-    DateTime activeNow,
-  ) async {
-    final sellerName = story['seller_name']?.toString() ?? 'Seller';
-    final sellerPhone = story['seller_phone']?.toString() ?? '';
-    final itemId = story['item_id']?.toString() ?? '';
-    final videoUrl = story['video_url']?.toString() ?? '';
-    if (itemId.isEmpty || videoUrl.isEmpty) {
-      return null;
-    }
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
 
-    final itemDoc = await FirebaseFirestore.instance
-        .collection('items')
-        .doc(itemId)
-        .get();
-    if (!itemDoc.exists) {
-      return null;
-    }
-
-    final item = itemDoc.data() ?? {};
-    if (!_isItemActive(item, activeNow)) {
-      return null;
-    }
-
-    return StoryVideo(
-      url: videoUrl,
-      itemName:
-          item['item_name']?.toString() ??
-          story['item_name']?.toString() ??
-          'Item',
-      itemPrice:
-          item['item_price']?.toString() ??
-          story['item_price']?.toString() ??
-          '',
-      sellerName: sellerName,
-      sellerPhone: sellerPhone,
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: docs.map((doc) {
+        return ItemCard(docId: doc.id, item: doc.data(), isCompact: true);
+      }).toList(),
     );
   }
 }
@@ -318,13 +197,6 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
     return expiresAt.isAfter(now);
   }
   return true;
-}
-
-class _SellerStory {
-  const _SellerStory({required this.sellerName, required this.videos});
-
-  final String sellerName;
-  final List<StoryVideo> videos;
 }
 
 class _GridToggleButton extends StatelessWidget {
@@ -356,47 +228,6 @@ class _GridToggleButton extends StatelessWidget {
               isGridView ? Icons.grid_view : Icons.view_agenda,
               color: Colors.white,
               size: 24,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StoryCircle extends StatelessWidget {
-  const _StoryCircle({required this.onTap});
-
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      customBorder: const CircleBorder(),
-      onTap: onTap,
-      child: SizedBox(
-        width: 64,
-        child: Center(
-          child: Container(
-            width: 60,
-            height: 60,
-            padding: const EdgeInsets.all(3),
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [Color(0xFF25D366), Color(0xFF0A84FF)],
-              ),
-            ),
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.person,
-                color: Color(0xFF128C4A),
-                size: 34,
-              ),
             ),
           ),
         ),

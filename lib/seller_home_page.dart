@@ -4,6 +4,7 @@ import 'seller_tabs/seller_add_item_tab.dart';
 import 'seller_tabs/seller_feed_tab.dart';
 import 'seller_tabs/seller_listings_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
+import 'seller_tabs/seller_stories_tab.dart';
 
 class SellerHomePage extends StatefulWidget {
   const SellerHomePage({super.key});
@@ -18,6 +19,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
   late final List<Widget> _pages = [
     const SellerFeedTab(),
+    const SellerStoriesTab(),
     SellerAddItemTab(key: _addItemKey, onItemAddedDone: _showFeedTab),
     const SellerListingsTab(),
     const SellerSettingsTab(),
@@ -30,7 +32,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _onTabTapped(int index) {
     setState(() => _currentIndex = index);
 
-    if (index == 1) {
+    if (index == 2) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _addItemKey.currentState?.openMediaSheet();
       });
@@ -40,7 +42,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: _currentIndex == 0
+      appBar: _currentIndex == 0 || _currentIndex == 1
           ? null
           : AppBar(
               title: const Text('BIZ SOOQ'),
@@ -56,6 +58,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.play_circle_fill),
+            label: 'Stories',
+          ),
           BottomNavigationBarItem(
             icon: Icon(Icons.add_circle_outline),
             label: 'Add',

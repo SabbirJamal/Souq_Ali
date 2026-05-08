@@ -61,28 +61,27 @@ class _ItemCardState extends State<ItemCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (isCompact) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _UploadedAgoText(uploadedAgo: uploadedAgo),
-                ),
-              ),
-              const SizedBox(height: 7),
-            ],
             Padding(
               padding: EdgeInsets.fromLTRB(
-                isCompact ? 8 : 0,
-                isCompact ? 0 : 0,
-                isCompact ? 8 : 0,
+                0,
+                0,
+                0,
                 0,
               ),
-              child: MediaCarousel(
-                mediaItems: mediaItems,
-                height: isCompact ? 150 : 280,
-                peekSideItems: false,
-                borderRadius: isCompact ? 8 : 0,
+              child: Stack(
+                children: [
+                  MediaCarousel(
+                    mediaItems: mediaItems,
+                    height: isCompact ? 150 : 280,
+                    peekSideItems: false,
+                    borderRadius: 0,
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: _UploadedAgoBadge(uploadedAgo: uploadedAgo),
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -128,13 +127,6 @@ class _ItemCardState extends State<ItemCard> {
                     text: item['location']?.toString() ?? '',
                     isCompact: isCompact,
                   ),
-                  SizedBox(height: isCompact ? 4 : 6),
-                  _InfoRow(
-                    icon: Icons.business,
-                    text: item['seller_name']?.toString() ?? '',
-                    isCompact: isCompact,
-                    isStrong: true,
-                  ),
                   SizedBox(height: isCompact ? 9 : 16),
                   Row(
                     children: [
@@ -178,13 +170,6 @@ class _ItemCardState extends State<ItemCard> {
                       ),
                     ],
                   ),
-                  if (!isCompact) ...[
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: _UploadedAgoText(uploadedAgo: uploadedAgo),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -203,42 +188,49 @@ class _ItemCardState extends State<ItemCard> {
     }
 
     if (uploadedAt == null) {
-      return 'Uploaded just now';
+      return 'just now';
     }
 
     final difference = DateTime.now().difference(uploadedAt);
     if (difference.inMinutes < 1) {
-      return 'Uploaded just now';
+      return 'just now';
     }
     if (difference.inMinutes < 60) {
-      return 'Uploaded ${difference.inMinutes} min ago';
+      return '${difference.inMinutes} min ago';
     }
     if (difference.inHours < 24) {
-      return 'Uploaded ${difference.inHours} hrs ago';
+      return '${difference.inHours} hrs ago';
     }
     if (difference.inDays < 7) {
-      return 'Uploaded ${difference.inDays} days ago';
+      return '${difference.inDays} days ago';
     }
     if (difference.inDays < 30) {
-      return 'Uploaded ${difference.inDays ~/ 7} weeks ago';
+      return '${difference.inDays ~/ 7} weeks ago';
     }
-    return 'Uploaded ${difference.inDays ~/ 30} months ago';
+    return '${difference.inDays ~/ 30} months ago';
   }
 }
 
-class _UploadedAgoText extends StatelessWidget {
-  const _UploadedAgoText({required this.uploadedAgo});
+class _UploadedAgoBadge extends StatelessWidget {
+  const _UploadedAgoBadge({required this.uploadedAgo});
 
   final String uploadedAgo;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      uploadedAgo,
-      style: TextStyle(
-        color: Colors.grey[600],
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        uploadedAgo,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -249,13 +241,11 @@ class _InfoRow extends StatelessWidget {
     required this.icon,
     required this.text,
     required this.isCompact,
-    this.isStrong = false,
   });
 
   final IconData icon;
   final String text;
   final bool isCompact;
-  final bool isStrong;
 
   @override
   Widget build(BuildContext context) {
@@ -267,9 +257,8 @@ class _InfoRow extends StatelessWidget {
           child: Text(
             text,
             style: TextStyle(
-              color: isStrong ? Colors.black : Colors.grey[600],
+              color: Colors.grey[600],
               fontSize: isCompact ? 11 : 13,
-              fontWeight: isStrong ? FontWeight.bold : FontWeight.normal,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
