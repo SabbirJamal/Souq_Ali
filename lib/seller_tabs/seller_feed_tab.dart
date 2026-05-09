@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../widgets/item_card.dart';
 
+enum _FeedLayoutMode { list, grid, imageFilled }
+
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({super.key});
 
@@ -16,7 +18,7 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
   Timer? _clockTimer;
   bool _isSearchOpen = false;
-  bool _isGridView = false;
+  _FeedLayoutMode _layoutMode = _FeedLayoutMode.list;
   String _query = '';
   DateTime _now = DateTime.now();
 
@@ -46,6 +48,16 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
     setState(() {
       _isSearchOpen = false;
       _query = '';
+    });
+  }
+
+  void _toggleLayoutMode() {
+    setState(() {
+      _layoutMode = switch (_layoutMode) {
+        _FeedLayoutMode.list => _FeedLayoutMode.grid,
+        _FeedLayoutMode.grid => _FeedLayoutMode.imageFilled,
+        _FeedLayoutMode.imageFilled => _FeedLayoutMode.list,
+      };
     });
   }
 
@@ -96,10 +108,8 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                 onOpenSearch: _openSearch,
                 onCloseSearch: _closeSearch,
                 onQueryChanged: (value) => setState(() => _query = value),
-                isGridView: _isGridView,
-                onToggleGrid: () {
-                  setState(() => _isGridView = !_isGridView);
-                },
+                layoutMode: _layoutMode,
+                onToggleGrid: _toggleLayoutMode,
               ),
             ),
             if (isLoading)
@@ -124,16 +134,22 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
               )
             else
               SliverPadding(
-                padding: _isGridView
+                padding: _layoutMode == _FeedLayoutMode.grid
                     ? const EdgeInsets.symmetric(horizontal: 5, vertical: 12)
                     : const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
-                sliver: _isGridView
+                sliver: _layoutMode == _FeedLayoutMode.grid
                     ? SliverToBoxAdapter(child: _MasonryItemGrid(docs: docs))
                     : SliverList.builder(
                         itemCount: docs.length,
                         itemBuilder: (context, index) {
                           final doc = docs[index];
-                          return ItemCard(docId: doc.id, item: doc.data());
+                          return ItemCard(
+                            docId: doc.id,
+                            item: doc.data(),
+                            style: _layoutMode == _FeedLayoutMode.imageFilled
+                                ? ItemCardStyle.imageFilled
+                                : ItemCardStyle.standard,
+                          );
                         },
                       ),
               ),
@@ -201,12 +217,12 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
 
 class _GridToggleButton extends StatelessWidget {
   const _GridToggleButton({
-    required this.isGridView,
+    required this.layoutMode,
     required this.onTap,
     this.bottomPadding = 23,
   });
 
-  final bool isGridView;
+  final _FeedLayoutMode layoutMode;
   final VoidCallback onTap;
   final double bottomPadding;
 
@@ -225,7 +241,11 @@ class _GridToggleButton extends StatelessWidget {
             width: 46,
             height: 46,
             child: Icon(
-              isGridView ? Icons.grid_view : Icons.view_agenda,
+              switch (layoutMode) {
+                _FeedLayoutMode.list => Icons.grid_view,
+                _FeedLayoutMode.grid => Icons.image,
+                _FeedLayoutMode.imageFilled => Icons.view_agenda,
+              },
               color: Colors.white,
               size: 24,
             ),
@@ -243,7 +263,7 @@ class _FeedHeader extends StatelessWidget {
     required this.onOpenSearch,
     required this.onCloseSearch,
     required this.onQueryChanged,
-    required this.isGridView,
+    required this.layoutMode,
     required this.onToggleGrid,
   });
 
@@ -252,16 +272,22 @@ class _FeedHeader extends StatelessWidget {
   final VoidCallback onOpenSearch;
   final VoidCallback onCloseSearch;
   final ValueChanged<String> onQueryChanged;
-  final bool isGridView;
+  final _FeedLayoutMode layoutMode;
   final VoidCallback onToggleGrid;
 
   @override
   Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+
     return Container(
-      color: const Color(0xFFFF7801),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
+      color: Colors.black,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(height: topInset),
+          Container(
+            color: const Color(0xFFFF7801),
+            child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: SizedBox(
             height: 48,
@@ -343,7 +369,7 @@ class _FeedHeader extends StatelessWidget {
                       Align(
                         alignment: Alignment.centerRight,
                         child: _GridToggleButton(
-                          isGridView: isGridView,
+                          layoutMode: layoutMode,
                           onTap: onToggleGrid,
                           bottomPadding: 0,
                         ),
@@ -354,6 +380,8 @@ class _FeedHeader extends StatelessWidget {
             ),
           ),
         ),
+          ),
+        ],
       ),
     );
   }

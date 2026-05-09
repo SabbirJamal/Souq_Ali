@@ -6,17 +6,21 @@ import 'package:url_launcher/url_launcher.dart';
 import '../item_detail_page.dart';
 import 'media_carousel.dart';
 
+enum ItemCardStyle { standard, compact, imageFilled }
+
 class ItemCard extends StatefulWidget {
   const ItemCard({
     super.key,
     required this.docId,
     required this.item,
     this.isCompact = false,
+    this.style,
   });
 
   final String docId;
   final Map<String, dynamic> item;
   final bool isCompact;
+  final ItemCardStyle? style;
 
   @override
   State<ItemCard> createState() => _ItemCardState();
@@ -40,7 +44,75 @@ class _ItemCardState extends State<ItemCard> {
     final mediaItems = mediaItemsFromMap(item);
     final sellerPhone = item['seller_phone'] ?? '';
     final uploadedAgo = _uploadedAgo(item['created_at']);
-    final isCompact = widget.isCompact;
+    final cardStyle = widget.style ??
+        (widget.isCompact ? ItemCardStyle.compact : ItemCardStyle.standard);
+    final isCompact = cardStyle == ItemCardStyle.compact;
+    final imageCount = mediaItems.where((media) => !media.isVideo).length;
+    final videoCount = mediaItems.where((media) => media.isVideo).length;
+
+    if (cardStyle == ItemCardStyle.imageFilled) {
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  ItemDetailPage(itemData: item, itemId: widget.docId),
+            ),
+          );
+        },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cardHeight = (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
+
+            return Card(
+              elevation: 6,
+              shadowColor: Colors.black.withValues(alpha: 0.18),
+              color: Colors.white,
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                height: cardHeight,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: MediaCarousel(
+                        mediaItems: mediaItems,
+                        height: cardHeight,
+                        peekSideItems: false,
+                        borderRadius: 0,
+                        showCountBadge: false,
+                      ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: _MediaCountBadges(
+                        imageCount: imageCount,
+                        videoCount: videoCount,
+                      ),
+                    ),
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: _UploadedAgoBadge(uploadedAgo: uploadedAgo),
+                    ),
+                    Positioned(
+                      left: 14,
+                      bottom: 18,
+                      child: _ImageFilledDetails(item: item),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: () {
@@ -72,7 +144,7 @@ class _ItemCardState extends State<ItemCard> {
                 children: [
                   MediaCarousel(
                     mediaItems: mediaItems,
-                    height: isCompact ? 150 : 280,
+                    height: isCompact ? 168 : 298,
                     peekSideItems: false,
                     borderRadius: 0,
                   ),
@@ -208,6 +280,148 @@ class _ItemCardState extends State<ItemCard> {
       return '${difference.inDays ~/ 7} weeks ago';
     }
     return '${difference.inDays ~/ 30} months ago';
+  }
+}
+
+class _ImageFilledDetails extends StatelessWidget {
+  const _ImageFilledDetails({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: MediaQuery.sizeOf(context).width * 0.58,
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            item['item_name'] ?? 'No name',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 23,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            item['item_price'] ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFFD00000),
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _OverlayInfoRow(
+            icon: Icons.place,
+            text: 'Origin: ${item['origin'] ?? ''}',
+          ),
+          const SizedBox(height: 7),
+          _OverlayInfoRow(
+            icon: Icons.location_on,
+            text: item['location']?.toString() ?? '',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OverlayInfoRow extends StatelessWidget {
+  const _OverlayInfoRow({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 22, color: Colors.grey[500]),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.grey[700],
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MediaCountBadges extends StatelessWidget {
+  const _MediaCountBadges({
+    required this.imageCount,
+    required this.videoCount,
+  });
+
+  final int imageCount;
+  final int videoCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (imageCount > 0)
+          _TopMediaBadge(icon: Icons.photo_camera, count: imageCount),
+        if (imageCount > 0 && videoCount > 0) const SizedBox(width: 8),
+        if (videoCount > 0)
+          _TopMediaBadge(icon: Icons.videocam, count: videoCount),
+      ],
+    );
+  }
+}
+
+class _TopMediaBadge extends StatelessWidget {
+  const _TopMediaBadge({required this.icon, required this.count});
+
+  final IconData icon;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 20),
+          const SizedBox(width: 5),
+          Text(
+            '$count',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:video_trimmer/video_trimmer.dart';
 import 'package:video_player/video_player.dart';
 
 class CapturedMedia {
@@ -22,6 +24,8 @@ class CameraCapturePage extends StatefulWidget {
 }
 
 class _CameraCapturePageState extends State<CameraCapturePage> {
+  static const Duration _maxRecordingDuration = Duration(seconds: 60);
+
   CameraController? _controller;
   Future<void>? _initializeCamera;
   VideoPlayerController? _previewController;
@@ -29,6 +33,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   bool _isRecording = false;
   bool _isFinishingCapture = false;
   Timer? _holdTimer;
+  Timer? _recordingLimitTimer;
   double _minZoom = 1;
   double _maxZoom = 1;
   double _currentZoom = 1;
@@ -44,6 +49,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   @override
   void dispose() {
     _holdTimer?.cancel();
+    _recordingLimitTimer?.cancel();
     _previewController?.dispose();
     _controller?.dispose();
     super.dispose();
@@ -138,10 +144,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       if (!mounted) {
         return;
       }
-      Navigator.pop(
-        context,
-        CapturedMedia(file: File(file.path), type: 'image'),
-      );
+      await _showImagePreview(File(file.path));
     } finally {
       if (mounted) {
         setState(() => _isFinishingCapture = false);
@@ -159,6 +162,12 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
 
     await controller.startVideoRecording();
+    _recordingLimitTimer?.cancel();
+    _recordingLimitTimer = Timer(_maxRecordingDuration, () {
+      if (_isRecording && !_isFinishingCapture) {
+        _stopVideoRecording();
+      }
+    });
     if (mounted) {
       setState(() {
         _isRecording = true;
@@ -173,6 +182,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       return;
     }
 
+    _recordingLimitTimer?.cancel();
     setState(() => _isFinishingCapture = true);
     try {
       final file = await controller.stopVideoRecording();
@@ -187,6 +197,24 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
           _isFinishingCapture = false;
         });
       }
+    }
+  }
+
+  Future<void> _showImagePreview(File file) async {
+    if (!mounted) {
+      return;
+    }
+    final result = await Navigator.push<CapturedMedia>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ImagePreviewPage(file: file),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (result != null) {
+      Navigator.pop(context, result);
     }
   }
 
@@ -232,6 +260,25 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     Navigator.pop(context, CapturedMedia(file: file, type: 'video'));
   }
 
+  Future<void> _openVideoTrimmer() async {
+    final file = _previewVideoFile;
+    if (file == null) {
+      return;
+    }
+    await _previewController?.pause();
+    final trimmedFile = await Navigator.push<File>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _VideoTrimPage(file: file),
+      ),
+    );
+    if (trimmedFile == null || !mounted) {
+      await _previewController?.play();
+      return;
+    }
+    await _showVideoPreview(trimmedFile);
+  }
+
   @override
   Widget build(BuildContext context) {
     final previewVideoFile = _previewVideoFile;
@@ -241,6 +288,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
         controller: previewController,
         onDiscard: _discardVideoPreview,
         onAccept: _acceptVideoPreview,
+        onTrim: _openVideoTrimmer,
+        onCrop: () => _showCropUnavailable(context),
       );
     }
 
@@ -346,16 +395,131 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   }
 }
 
+class _ImagePreviewPage extends StatefulWidget {
+  const _ImagePreviewPage({required this.file});
+
+  final File file;
+
+  @override
+  State<_ImagePreviewPage> createState() => _ImagePreviewPageState();
+}
+
+class _ImagePreviewPageState extends State<_ImagePreviewPage> {
+  late File _file;
+
+  @override
+  void initState() {
+    super.initState();
+    _file = widget.file;
+  }
+
+  Future<void> _cropImage() async {
+    final croppedFile = await ImageCropper().cropImage(
+      sourcePath: _file.path,
+      compressFormat: ImageCompressFormat.jpg,
+      compressQuality: 92,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: 'Crop',
+          toolbarColor: Colors.black,
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: const Color(0xFF25D366),
+          initAspectRatio: CropAspectRatioPreset.original,
+          lockAspectRatio: false,
+          aspectRatioPresets: [
+            CropAspectRatioPreset.original,
+            CropAspectRatioPreset.square,
+            CropAspectRatioPreset.ratio3x2,
+            CropAspectRatioPreset.ratio4x3,
+            CropAspectRatioPreset.ratio16x9,
+          ],
+        ),
+        IOSUiSettings(
+          title: 'Crop',
+          aspectRatioPresets: [
+            CropAspectRatioPreset.original,
+            CropAspectRatioPreset.square,
+            CropAspectRatioPreset.ratio3x2,
+            CropAspectRatioPreset.ratio4x3,
+            CropAspectRatioPreset.ratio16x9,
+          ],
+        ),
+      ],
+    );
+
+    if (croppedFile == null || !mounted) {
+      return;
+    }
+    setState(() => _file = File(croppedFile.path));
+  }
+
+  void _accept() {
+    Navigator.pop(context, CapturedMedia(file: _file, type: 'image'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Center(
+                child: Image.file(
+                  _file,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  IconButton.filled(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                  const Spacer(),
+                  _RoundToolButton(
+                    icon: Icons.crop_rotate,
+                    onTap: _cropImage,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 24,
+            bottom: 44,
+            child: SafeArea(
+              child: _AcceptButton(onTap: _accept),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VideoPreviewScaffold extends StatelessWidget {
   const _VideoPreviewScaffold({
     required this.controller,
     required this.onDiscard,
     required this.onAccept,
+    required this.onTrim,
+    required this.onCrop,
   });
 
   final VideoPlayerController controller;
   final VoidCallback onDiscard;
   final VoidCallback onAccept;
+  final VoidCallback onTrim;
+  final VoidCallback onCrop;
 
   @override
   Widget build(BuildContext context) {
@@ -374,11 +538,51 @@ class _VideoPreviewScaffold extends StatelessWidget {
             ),
           ),
           SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: IconButton.filled(
-                onPressed: onDiscard,
-                icon: const Icon(Icons.close),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  IconButton.filled(
+                    onPressed: onDiscard,
+                    icon: const Icon(Icons.close),
+                  ),
+                  const Spacer(),
+                  _RoundToolButton(
+                    icon: Icons.crop_rotate,
+                    onTap: onCrop,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            right: 12,
+            top: 76,
+            child: SafeArea(
+              child: GestureDetector(
+                onTap: onTrim,
+                child: Container(
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.62),
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.46),
+                    ),
+                  ),
+                  child: Row(
+                    children: const [
+                      SizedBox(width: 8),
+                      Icon(Icons.chevron_left, color: Colors.white, size: 30),
+                      Expanded(
+                        child: Divider(color: Colors.white70, thickness: 3),
+                      ),
+                      Icon(Icons.chevron_right, color: Colors.white, size: 30),
+                      SizedBox(width: 8),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -388,20 +592,7 @@ class _VideoPreviewScaffold extends StatelessWidget {
             bottom: 44,
             child: SafeArea(
               child: Center(
-                child: Material(
-                  color: const Color(0xFF25D366),
-                  shape: const CircleBorder(),
-                  elevation: 5,
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: onAccept,
-                    child: const SizedBox(
-                      width: 64,
-                      height: 64,
-                      child: Icon(Icons.check, color: Colors.white, size: 34),
-                    ),
-                  ),
-                ),
+                child: _AcceptButton(onTap: onAccept),
               ),
             ),
           ),
@@ -409,4 +600,207 @@ class _VideoPreviewScaffold extends StatelessWidget {
       ),
     );
   }
+}
+
+class _VideoTrimPage extends StatefulWidget {
+  const _VideoTrimPage({required this.file});
+
+  final File file;
+
+  @override
+  State<_VideoTrimPage> createState() => _VideoTrimPageState();
+}
+
+class _VideoTrimPageState extends State<_VideoTrimPage> {
+  final Trimmer _trimmer = Trimmer();
+  double _startValue = 0;
+  double _endValue = 0;
+  bool _isSaving = false;
+  bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _trimmer.loadVideo(videoFile: widget.file);
+  }
+
+  Future<void> _saveTrimmedVideo() async {
+    if (_isSaving) {
+      return;
+    }
+    setState(() => _isSaving = true);
+    await _trimmer.saveTrimmedVideo(
+      startValue: _startValue,
+      endValue: _endValue,
+      videoFolderName: 'BizsooqTrimmed',
+      onSave: (outputPath) {
+        if (!mounted) {
+          return;
+        }
+        setState(() => _isSaving = false);
+        if (outputPath == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not trim video')),
+          );
+          return;
+        }
+        Navigator.pop(context, File(outputPath));
+      },
+    );
+  }
+
+  Future<void> _togglePlayback() async {
+    final isPlaying = await _trimmer.videoPlaybackControl(
+      startValue: _startValue,
+      endValue: _endValue,
+    );
+    if (mounted) {
+      setState(() => _isPlaying = isPlaying);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      IconButton.filled(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close),
+                      ),
+                      const Spacer(),
+                      _RoundToolButton(
+                        icon: Icons.crop_rotate,
+                        onTap: () => _showCropUnavailable(context),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: TrimViewer(
+                    trimmer: _trimmer,
+                    viewerHeight: 54,
+                    viewerWidth: MediaQuery.of(context).size.width,
+                    maxVideoLength: _CameraCapturePageState
+                        ._maxRecordingDuration,
+                    durationStyle: DurationStyle.FORMAT_MM_SS,
+                    editorProperties: const TrimEditorProperties(
+                      borderPaintColor: Colors.white,
+                      circlePaintColor: Colors.white,
+                      scrubberPaintColor: Color(0xFF25D366),
+                      borderWidth: 3,
+                      borderRadius: 0,
+                    ),
+                    areaProperties: TrimAreaProperties.edgeBlur(
+                      thumbnailQuality: 60,
+                    ),
+                    onChangeStart: (value) => _startValue = value,
+                    onChangeEnd: (value) => _endValue = value,
+                    onChangePlaybackState: (value) {
+                      if (mounted) {
+                        setState(() => _isPlaying = value);
+                      }
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      VideoViewer(trimmer: _trimmer),
+                      IconButton.filled(
+                        onPressed: _togglePlayback,
+                        iconSize: 56,
+                        icon: Icon(
+                          _isPlaying ? Icons.pause : Icons.play_arrow,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_isSaving)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0x99000000),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ),
+            Positioned(
+              right: 24,
+              bottom: 28,
+              child: _AcceptButton(onTap: _saveTrimmedVideo),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundToolButton extends StatelessWidget {
+  const _RoundToolButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: 0.18),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 54,
+          height: 54,
+          child: Icon(icon, color: Colors.white, size: 28),
+        ),
+      ),
+    );
+  }
+}
+
+class _AcceptButton extends StatelessWidget {
+  const _AcceptButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF25D366),
+      shape: const CircleBorder(),
+      elevation: 5,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: const SizedBox(
+          width: 64,
+          height: 64,
+          child: Icon(Icons.check, color: Colors.white, size: 34),
+        ),
+      ),
+    );
+  }
+}
+
+void _showCropUnavailable(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Video crop needs one more native export step.'),
+    ),
+  );
 }

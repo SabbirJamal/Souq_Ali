@@ -104,16 +104,6 @@ class _StoryViewerPageState extends State<StoryViewerPage> {
     );
   }
 
-  void _goPrevious() {
-    if (_currentStoryIndex <= 0) {
-      return;
-    }
-    _pageController.previousPage(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -129,8 +119,6 @@ class _StoryViewerPageState extends State<StoryViewerPage> {
             key: ValueKey(sellerStory.sellerName),
             videos: sellerStory.videos,
             onFinished: _goNext,
-            onNextStory: _goNext,
-            onPreviousStory: _goPrevious,
             onCall: (phone) => _launchPhone(phone),
             onWhatsApp: (phone) => _launchWhatsApp(phone),
             showCloseButton: widget.showCloseButton,
@@ -146,8 +134,6 @@ class _SellerStoryPage extends StatefulWidget {
     super.key,
     required this.videos,
     required this.onFinished,
-    required this.onNextStory,
-    required this.onPreviousStory,
     required this.onCall,
     required this.onWhatsApp,
     required this.showCloseButton,
@@ -155,8 +141,6 @@ class _SellerStoryPage extends StatefulWidget {
 
   final List<StoryVideo> videos;
   final VoidCallback onFinished;
-  final VoidCallback onNextStory;
-  final VoidCallback onPreviousStory;
   final ValueChanged<String> onCall;
   final ValueChanged<String> onWhatsApp;
   final bool showCloseButton;
@@ -182,29 +166,11 @@ class _SellerStoryPageState extends State<_SellerStoryPage> {
   }
 
   void _goNextVideo() {
-    if (widget.videos.length == 1) {
-      widget.onNextStory();
-      return;
-    }
     if (_currentVideoIndex >= widget.videos.length - 1) {
       widget.onFinished();
       return;
     }
     _videoController.nextPage(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-    );
-  }
-
-  void _goPreviousVideo() {
-    if (widget.videos.length == 1) {
-      widget.onPreviousStory();
-      return;
-    }
-    if (_currentVideoIndex <= 0) {
-      return;
-    }
-    _videoController.previousPage(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
     );
@@ -222,8 +188,6 @@ class _SellerStoryPageState extends State<_SellerStoryPage> {
           key: ValueKey(story.url),
           story: story,
           onFinished: _goNextVideo,
-          onNext: _goNextVideo,
-          onPrevious: _goPreviousVideo,
           onCall: () => widget.onCall(story.sellerPhone),
           onWhatsApp: () => widget.onWhatsApp(story.sellerPhone),
           showCloseButton: widget.showCloseButton,
@@ -238,8 +202,6 @@ class _StoryVideoPage extends StatefulWidget {
     super.key,
     required this.story,
     required this.onFinished,
-    required this.onNext,
-    required this.onPrevious,
     required this.onCall,
     required this.onWhatsApp,
     required this.showCloseButton,
@@ -247,8 +209,6 @@ class _StoryVideoPage extends StatefulWidget {
 
   final StoryVideo story;
   final VoidCallback onFinished;
-  final VoidCallback onNext;
-  final VoidCallback onPrevious;
   final VoidCallback onCall;
   final VoidCallback onWhatsApp;
   final bool showCloseButton;
@@ -262,6 +222,9 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
   bool _isReady = false;
   bool _hasError = false;
   bool _didFinish = false;
+  bool _isPressPaused = false;
+  bool _isTapPaused = false;
+  DateTime? _pressStartedAt;
   double _progress = 0;
 
   @override
@@ -317,108 +280,153 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
     }
   }
 
+  void _handlePointerDown() {
+    if (!_controller.value.isInitialized || _didFinish) {
+      return;
+    }
+    _pressStartedAt = DateTime.now();
+    if (_controller.value.isPlaying) {
+      _isPressPaused = true;
+      _controller.pause();
+    }
+  }
+
+  void _handlePointerUp() {
+    if (!_controller.value.isInitialized || _didFinish) {
+      _clearPressState();
+      return;
+    }
+
+    final startedAt = _pressStartedAt;
+    final pressDuration = startedAt == null
+        ? Duration.zero
+        : DateTime.now().difference(startedAt);
+    final isTap = pressDuration < const Duration(milliseconds: 280);
+
+    if (isTap) {
+      _isTapPaused = !_isTapPaused;
+      _isPressPaused = false;
+      if (_isTapPaused) {
+        _controller.pause();
+      } else {
+        _controller.play();
+      }
+      _pressStartedAt = null;
+      return;
+    }
+
+    if (_isPressPaused && !_isTapPaused) {
+      _controller.play();
+    }
+    _clearPressState();
+  }
+
+  void _handlePointerCancel() {
+    if (_isPressPaused &&
+        !_isTapPaused &&
+        _controller.value.isInitialized &&
+        !_didFinish) {
+      _controller.play();
+    }
+    _clearPressState();
+  }
+
+  void _clearPressState() {
+    _isPressPaused = false;
+    _pressStartedAt = null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (_hasError)
-          _UnavailableStory(onNext: widget.onFinished)
-        else if (_isReady)
-          FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _controller.value.size.width,
-              height: _controller.value.size.height,
-              child: VideoPlayer(_controller),
-            ),
-          )
-        else
-          const Center(child: CircularProgressIndicator()),
-        Positioned(
-          left: 14,
-          right: 14,
-          top: 8,
-          child: SafeArea(
-            child: _StoryProgressBar(progress: _progress),
-          ),
-        ),
-        Positioned.fill(
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: widget.onPrevious,
-                  child: const SizedBox.expand(),
-                ),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _handlePointerDown(),
+      onPointerUp: (_) => _handlePointerUp(),
+      onPointerCancel: (_) => _handlePointerCancel(),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_hasError)
+            _UnavailableStory(onNext: widget.onFinished)
+          else if (_isReady)
+            FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _controller.value.size.width,
+                height: _controller.value.size.height,
+                child: VideoPlayer(_controller),
               ),
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: widget.onNext,
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (widget.showCloseButton)
+            )
+          else
+            const Center(child: CircularProgressIndicator()),
           Positioned(
-            left: 8,
+            left: 14,
+            right: 14,
             top: 8,
             child: SafeArea(
-              child: IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: Colors.white),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black.withValues(alpha: 0.24),
+              child: _StoryProgressBar(progress: _progress),
+            ),
+          ),
+          if (widget.showCloseButton)
+            Positioned(
+              left: 8,
+              top: 8,
+              child: SafeArea(
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black.withValues(alpha: 0.24),
+                  ),
                 ),
               ),
             ),
-          ),
-        Positioned(
-          left: 16,
-          bottom: 84,
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _StoryActionButton(
-                  icon: const Icon(Icons.phone, color: Colors.white, size: 27),
-                  backgroundColor: const Color(0xFF0A84FF),
-                  onTap: widget.onCall,
-                ),
-                const SizedBox(height: 14),
-                _StoryActionButton(
-                  icon: const FaIcon(
-                    FontAwesomeIcons.whatsapp,
-                    color: Colors.white,
-                    size: 27,
+          Positioned(
+            left: 16,
+            bottom: 84,
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _StoryActionButton(
+                    icon:
+                        const Icon(Icons.phone, color: Colors.white, size: 27),
+                    backgroundColor: const Color(0xFF0A84FF),
+                    onTap: widget.onCall,
                   ),
-                  backgroundColor: const Color(0xFF25D366),
-                  onTap: widget.onWhatsApp,
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  _StoryActionButton(
+                    icon: const FaIcon(
+                      FontAwesomeIcons.whatsapp,
+                      color: Colors.white,
+                      size: 27,
+                    ),
+                    backgroundColor: const Color(0xFF25D366),
+                    onTap: widget.onWhatsApp,
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        Positioned(
-          right: 16,
-          bottom: 94,
-          child: SafeArea(
-            child: _StoryItemInfo(
-              story: widget.story,
-              onBeforeOpen: () => _controller.pause(),
-              onAfterReturn: () {
-                if (mounted && _controller.value.isInitialized && !_didFinish) {
-                  _controller.play();
-                }
-              },
+          Positioned(
+            right: 16,
+            bottom: 94,
+            child: SafeArea(
+              child: _StoryItemInfo(
+                story: widget.story,
+                onBeforeOpen: () => _controller.pause(),
+                onAfterReturn: () {
+                  if (mounted &&
+                      _controller.value.isInitialized &&
+                      !_didFinish) {
+                    _controller.play();
+                  }
+                },
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
