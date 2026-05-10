@@ -312,7 +312,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
 
           return Stack(
             children: [
-              Positioned.fill(child: CameraPreview(_controller!)),
+              Positioned.fill(child: _CameraPreviewCover(controller: _controller!)),
               SafeArea(
                 child: Align(
                   alignment: Alignment.topLeft,
@@ -390,6 +390,39 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _CameraPreviewCover extends StatelessWidget {
+  const _CameraPreviewCover({required this.controller});
+
+  final CameraController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final previewSize = controller.value.previewSize;
+
+    if (previewSize == null) {
+      return CameraPreview(controller);
+    }
+
+    final previewAspectRatio = previewSize.height / previewSize.width;
+    final screenAspectRatio = size.width / size.height;
+    final scale = previewAspectRatio / screenAspectRatio;
+
+    return ClipRect(
+      child: Transform.scale(
+        scale: scale < 1 ? 1 / scale : scale,
+        alignment: Alignment.center,
+        child: Center(
+          child: AspectRatio(
+            aspectRatio: previewAspectRatio,
+            child: CameraPreview(controller),
+          ),
+        ),
       ),
     );
   }
@@ -528,14 +561,7 @@ class _VideoPreviewScaffold extends StatelessWidget {
       body: Stack(
         children: [
           Positioned.fill(
-            child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width: controller.value.size.width,
-                height: controller.value.size.height,
-                child: VideoPlayer(controller),
-              ),
-            ),
+            child: _VideoPreviewCover(controller: controller),
           ),
           SafeArea(
             child: Padding(
@@ -558,7 +584,7 @@ class _VideoPreviewScaffold extends StatelessWidget {
           Positioned(
             left: 12,
             right: 12,
-            top: 76,
+            top: 78,
             child: SafeArea(
               child: GestureDetector(
                 onTap: onTrim,
@@ -587,16 +613,44 @@ class _VideoPreviewScaffold extends StatelessWidget {
             ),
           ),
           Positioned(
-            left: 0,
-            right: 0,
+            right: 24,
             bottom: 44,
             child: SafeArea(
-              child: Center(
-                child: _AcceptButton(onTap: onAccept),
-              ),
+              child: _AcceptButton(onTap: onAccept),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _VideoPreviewCover extends StatelessWidget {
+  const _VideoPreviewCover({required this.controller});
+
+  final VideoPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final videoSize = controller.value.size;
+    if (videoSize.width == 0 || videoSize.height == 0) {
+      return const ColoredBox(color: Colors.black);
+    }
+
+    final videoAspectRatio = videoSize.width / videoSize.height;
+    final screenAspectRatio = size.width / size.height;
+    final scale = videoAspectRatio > screenAspectRatio
+        ? size.height / videoSize.height
+        : size.width / videoSize.width;
+
+    return ClipRect(
+      child: Center(
+        child: SizedBox(
+          width: videoSize.width * scale,
+          height: videoSize.height * scale,
+          child: VideoPlayer(controller),
+        ),
       ),
     );
   }

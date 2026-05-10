@@ -224,6 +224,7 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
   bool _didFinish = false;
   bool _isPressPaused = false;
   bool _isTapPaused = false;
+  bool _showPauseIcon = false;
   DateTime? _pressStartedAt;
   double _progress = 0;
 
@@ -288,6 +289,9 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
     if (_controller.value.isPlaying) {
       _isPressPaused = true;
       _controller.pause();
+      if (mounted) {
+        setState(() => _showPauseIcon = true);
+      }
     }
   }
 
@@ -308,8 +312,10 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
       _isPressPaused = false;
       if (_isTapPaused) {
         _controller.pause();
+        setState(() => _showPauseIcon = true);
       } else {
         _controller.play();
+        setState(() => _showPauseIcon = false);
       }
       _pressStartedAt = null;
       return;
@@ -317,6 +323,9 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
 
     if (_isPressPaused && !_isTapPaused) {
       _controller.play();
+      if (mounted) {
+        setState(() => _showPauseIcon = false);
+      }
     }
     _clearPressState();
   }
@@ -327,6 +336,9 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
         _controller.value.isInitialized &&
         !_didFinish) {
       _controller.play();
+      if (mounted) {
+        setState(() => _showPauseIcon = false);
+      }
     }
     _clearPressState();
   }
@@ -367,6 +379,22 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
               child: _StoryProgressBar(progress: _progress),
             ),
           ),
+          if (_showPauseIcon && _isReady && !_hasError)
+            Center(
+              child: Container(
+                width: 82,
+                height: 82,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.36),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.pause,
+                  color: Colors.white,
+                  size: 48,
+                ),
+              ),
+            ),
           if (widget.showCloseButton)
             Positioned(
               left: 8,

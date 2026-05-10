@@ -115,7 +115,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
     try {
       final weightUnit = widget.itemData['weight_unit'] ?? 'kg';
-      final priceUnit = widget.itemData['price_unit'] ?? 'per kg';
+      final priceUnit = widget.itemData['price_unit'] ?? '/ kg';
       final sellerUid = widget.itemData['seller_uid'];
       if (sellerUid == null || sellerUid.toString().isEmpty) {
         _showMessage('Please login again');

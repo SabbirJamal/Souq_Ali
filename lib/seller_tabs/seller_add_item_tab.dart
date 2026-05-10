@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
@@ -33,7 +34,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   final List<_SelectedMedia> _selectedMedia = [];
   final _weightUnits = ['kg', 'tons'];
-  final _priceUnits = ['per kg', 'per ton'];
+  final _priceUnits = ['/ kg', '/ box', '/ bag'];
   final _countries = const [
     'Afghanistan',
     'Albania',
@@ -70,9 +71,24 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   ];
 
   String _weightUnit = 'kg';
-  String _priceUnit = 'per kg';
+  String _priceUnit = '/ kg';
+  int _timePeriodDays = 0;
   int _timePeriodHours = 18;
   bool _isUploading = false;
+
+  int get _totalTimePeriodHours =>
+      (_timePeriodDays * 24) + (_timePeriodDays == 3 ? 0 : _timePeriodHours);
+
+  String get _timePeriodLabel {
+    final dayText = _timePeriodDays == 1 ? '1 day' : '$_timePeriodDays days';
+    if (_timePeriodDays == 3) {
+      return dayText;
+    }
+    final hourText = _timePeriodHours == 1
+        ? '1 hour'
+        : '$_timePeriodHours hours';
+    return '$dayText $hourText';
+  }
 
   @override
   void dispose() {
@@ -289,7 +305,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final price = 'OMR $priceNumber $_priceUnit';
       final itemRef = FirebaseFirestore.instance.collection('items').doc();
       final expiresAt = Timestamp.fromDate(
-        DateTime.now().add(Duration(hours: _timePeriodHours)),
+        DateTime.now().add(Duration(hours: _totalTimePeriodHours)),
       );
 
       await itemRef.set({
@@ -307,7 +323,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'location': location,
         'image_urls': imageUrls,
         'media_files': uploadedMedia.map((media) => media.toMap()).toList(),
-        'time_period_hours': _timePeriodHours,
+        'time_period_days': _timePeriodDays,
+        'time_period_extra_hours': _timePeriodDays == 3 ? 0 : _timePeriodHours,
+        'time_period_hours': _totalTimePeriodHours,
         'expires_at': expiresAt,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
@@ -351,7 +369,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     setState(() {
       _selectedMedia.clear();
       _weightUnit = 'kg';
-      _priceUnit = 'per kg';
+      _priceUnit = '/ kg';
+      _timePeriodDays = 0;
       _timePeriodHours = 18;
     });
   }
@@ -446,12 +465,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                 child: _buildDropdown(
                   value: _weightUnit,
                   items: _weightUnits,
-                  onChanged: (value) {
-                    setState(() {
-                      _weightUnit = value;
-                      _priceUnit = value == 'tons' ? 'per ton' : 'per kg';
-                    });
-                  },
+                  onChanged: (value) => setState(() => _weightUnit = value),
                 ),
               ),
             ],
@@ -643,42 +657,188 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _TimePeriodOption(
-                label: '3hrs',
-                isSelected: _timePeriodHours == 3,
-                onTap: () => setState(() => _timePeriodHours = 3),
-              ),
+        InkWell(
+          onTap: _openTimePeriodPicker,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade400),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TimePeriodOption(
-                label: '6hrs',
-                isSelected: _timePeriodHours == 6,
-                onTap: () => setState(() => _timePeriodHours = 6),
-              ),
+            child: Row(
+              children: [
+                const Icon(Icons.schedule, color: Colors.teal),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _timePeriodLabel,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const Text(
+                  'Select Time Period',
+                  style: TextStyle(
+                    color: Colors.teal,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TimePeriodOption(
-                label: '12hrs',
-                isSelected: _timePeriodHours == 12,
-                onTap: () => setState(() => _timePeriodHours = 12),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _TimePeriodOption(
-                label: '18hrs',
-                isSelected: _timePeriodHours == 18,
-                onTap: () => setState(() => _timePeriodHours = 18),
-              ),
-            ),
-          ],
+          ),
         ),
       ],
+    );
+  }
+
+  Future<void> _openTimePeriodPicker() async {
+    var selectedDays = _timePeriodDays;
+    var selectedHours = selectedDays == 3 ? 0 : _timePeriodHours;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF161616),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final hourValues = selectedDays == 3
+                ? const [0]
+                : List<int>.generate(22, (index) => index + 3);
+            final selectedHourIndex = hourValues.indexOf(selectedHours);
+
+            return SafeArea(
+              top: false,
+              child: SizedBox(
+                height: 340,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                      child: Row(
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Cancel'),
+                          ),
+                          const Spacer(),
+                          const Text(
+                            'Select Time Period',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                _timePeriodDays = selectedDays;
+                                _timePeriodHours =
+                                    selectedDays == 3 ? 0 : selectedHours;
+                              });
+                              Navigator.pop(context);
+                            },
+                            child: const Text('Done'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: CupertinoPicker(
+                              scrollController: FixedExtentScrollController(
+                                initialItem: selectedDays,
+                              ),
+                              itemExtent: 52,
+                              magnification: 1.1,
+                              useMagnifier: true,
+                              selectionOverlay:
+                                  const CupertinoPickerDefaultSelectionOverlay(
+                                    background: Color(0x33FFFFFF),
+                                  ),
+                              onSelectedItemChanged: (index) {
+                                setSheetState(() {
+                                  selectedDays = index;
+                                  if (selectedDays == 3) {
+                                    selectedHours = 0;
+                                  } else if (selectedHours < 3) {
+                                    selectedHours = 18;
+                                  }
+                                });
+                              },
+                              children: List.generate(4, (day) {
+                                final label = day == 1 ? '1 Day' : '$day Days';
+                                return Center(
+                                  child: Text(
+                                    label,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                          Expanded(
+                            child: CupertinoPicker(
+                              key: ValueKey('hours-$selectedDays'),
+                              scrollController: FixedExtentScrollController(
+                                initialItem: selectedHourIndex < 0
+                                    ? 0
+                                    : selectedHourIndex,
+                              ),
+                              itemExtent: 52,
+                              magnification: 1.1,
+                              useMagnifier: true,
+                              selectionOverlay:
+                                  const CupertinoPickerDefaultSelectionOverlay(
+                                    background: Color(0x33FFFFFF),
+                                  ),
+                              onSelectedItemChanged: (index) {
+                                setSheetState(() {
+                                  selectedHours = hourValues[index];
+                                });
+                              },
+                              children: hourValues.map((hour) {
+                                final label = hour == 1
+                                    ? '1 Hour'
+                                    : '$hour Hours';
+                                return Center(
+                                  child: Text(
+                                    label,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -725,42 +885,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           onChanged(value);
         }
       },
-    );
-  }
-}
-
-class _TimePeriodOption extends StatelessWidget {
-  const _TimePeriodOption({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.teal : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.teal),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.teal,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
     );
   }
 }

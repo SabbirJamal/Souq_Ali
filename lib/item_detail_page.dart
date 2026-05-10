@@ -82,81 +82,6 @@ class ItemDetailPage extends StatelessWidget {
                         color: Color(0xFFD00000),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: sellerPhone.isEmpty
-                                ? null
-                                : () => _launchPhone(sellerPhone),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0A84FF),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: const Icon(Icons.phone, size: 27),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: sellerPhone.isEmpty
-                                ? null
-                                : () => _launchWhatsApp(sellerPhone),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF25D366),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 15),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            child: const FaIcon(
-                              FontAwesomeIcons.whatsapp,
-                              size: 26,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ShareListingPage(
-                                itemId: itemId,
-                                itemData: itemData,
-                                mediaItems: mediaItems,
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.ios_share),
-                        label: const Text(
-                          'Share Post',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(vertical: 17),
-                          side: const BorderSide(color: Colors.black, width: 2),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 22),
                     _DetailsCard(
                       rows: [
@@ -168,14 +93,6 @@ class ItemDetailPage extends StatelessWidget {
                         _DetailData(
                           label: 'Quantity',
                           value: itemData['item_quantity'],
-                        ),
-                        _DetailData(
-                          label: 'Price unit',
-                          value: itemData['price_unit'],
-                        ),
-                        _DetailData(
-                          label: 'Weight unit',
-                          value: itemData['weight_unit'],
                         ),
                         _DetailData(
                           label: 'Seller',
@@ -209,7 +126,123 @@ class ItemDetailPage extends StatelessWidget {
               ),
             ),
           ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _FixedActionBar(
+              sellerPhone: sellerPhone,
+              onCall: () => _launchPhone(sellerPhone),
+              onWhatsApp: () => _launchWhatsApp(sellerPhone),
+              onShare: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ShareListingPage(
+                      itemId: itemId,
+                      itemData: itemData,
+                      mediaItems: mediaItems,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _FixedActionBar extends StatelessWidget {
+  const _FixedActionBar({
+    required this.sellerPhone,
+    required this.onCall,
+    required this.onWhatsApp,
+    required this.onShare,
+  });
+
+  final String sellerPhone;
+  final VoidCallback onCall;
+  final VoidCallback onWhatsApp;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: sellerPhone.isEmpty ? null : onCall,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0A84FF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Icon(Icons.phone, size: 27),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: sellerPhone.isEmpty ? null : onWhatsApp,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF25D366),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const FaIcon(FontAwesomeIcons.whatsapp, size: 26),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onShare,
+                  icon: const Icon(Icons.ios_share),
+                  label: const Text(
+                    'Share Post',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    side: const BorderSide(color: Colors.black, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
