@@ -4,11 +4,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
 
+import 'camera_capture_page.dart';
 import 'story_repository.dart';
 import 'widgets/media_carousel.dart';
 
@@ -24,18 +26,19 @@ class ItemEditPage extends StatefulWidget {
 
 class _ItemEditPageState extends State<ItemEditPage> {
   static const _maxMediaCount = 9;
+  static const _maxPriceValue = 1000000.0;
 
   late final TextEditingController _nameController;
-  late final TextEditingController _originController;
-  late final TextEditingController _quantityController;
   late final TextEditingController _priceController;
   late final TextEditingController _locationController;
+  final _priceFocusNode = FocusNode();
 
   final _picker = ImagePicker();
   late final List<MediaItem> _existingMedia;
   final List<MediaItem> _removedMedia = [];
   final List<_SelectedMedia> _newMedia = [];
 
+  String _lastValidPriceText = '';
   bool _isSaving = false;
 
   @override
@@ -44,15 +47,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
     _nameController = TextEditingController(
       text: widget.itemData['item_name'] ?? '',
     );
-    _originController = TextEditingController(
-      text: widget.itemData['origin'] ?? '',
-    );
-    _quantityController = TextEditingController(
-      text: widget.itemData['quantity_number'] ?? '',
-    );
     _priceController = TextEditingController(
-      text: widget.itemData['price_number'] ?? '',
+      text: _formatEditingPrice(widget.itemData['price_number']?.toString() ?? ''),
     );
+    _lastValidPriceText = _priceController.text;
     _locationController = TextEditingController(
       text: widget.itemData['location'] ?? '',
     );
@@ -62,15 +60,76 @@ class _ItemEditPageState extends State<ItemEditPage> {
   @override
   void dispose() {
     _nameController.dispose();
-    _originController.dispose();
-    _quantityController.dispose();
     _priceController.dispose();
+    _priceFocusNode.dispose();
     _locationController.dispose();
     VideoCompress.cancelCompression();
     super.dispose();
   }
 
-  Future<void> _pickMedia() async {
+  Future<void> _openCamera() async {
+    final remaining =
+        _maxMediaCount - (_existingMedia.length + _newMedia.length);
+    if (remaining <= 0) {
+      _showMessage('Maximum $_maxMediaCount media files allowed');
+      return;
+    }
+
+    final captured = await Navigator.push<CapturedMedia>(
+      context,
+      MaterialPageRoute(builder: (_) => const CameraCapturePage()),
+    );
+    if (captured == null) {
+      return;
+    }
+
+    setState(() {
+      _newMedia.add(_SelectedMedia(file: captured.file, type: captured.type));
+      _sortNewMedia();
+    });
+  }
+
+  Future<void> _openMediaSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF111614),
+      shape: const RoundedRectangleBorder(),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _MediaSheetButton(
+                    icon: Icons.photo_camera,
+                    label: 'Camera',
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _openCamera();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _MediaSheetButton(
+                    icon: Icons.photo_library,
+                    label: 'Gallery',
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _pickGalleryMedia();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickGalleryMedia() async {
     final remaining =
         _maxMediaCount - (_existingMedia.length + _newMedia.length);
     if (remaining <= 0) {
@@ -92,30 +151,49 @@ class _ItemEditPageState extends State<ItemEditPage> {
       _newMedia.addAll(
         files.take(remaining).map((file) => _SelectedMedia.fromXFile(file)),
       );
+      _sortNewMedia();
     });
+  }
+
+  void _sortNewMedia() {
+    _newMedia.sort((first, second) {
+      if (first.isVideo == second.isVideo) {
+        return 0;
+      }
+      return first.isVideo ? 1 : -1;
+    });
+  }
+
+  bool _canRemoveMedia() {
+    if (_existingMedia.length + _newMedia.length <= 1) {
+      _showMessage('Atleast 1 media is required');
+      return false;
+    }
+    return true;
   }
 
   Future<void> _save() async {
     final name = _nameController.text.trim();
-    final origin = _originController.text.trim();
-    final quantity = _quantityController.text.trim();
-    final price = _priceController.text.trim();
+    final price = _priceController.text.trim().isEmpty
+        ? '0'
+        : _priceController.text.trim();
     final location = _locationController.text.trim();
 
-    if (name.isEmpty ||
-        origin.isEmpty ||
-        quantity.isEmpty ||
-        price.isEmpty ||
-        location.isEmpty) {
+    if (location.isEmpty) {
       _showMessage('Please fill all fields');
+      return;
+    }
+    final normalizedPrice = _normalizePrice(price);
+    if (normalizedPrice == null) {
+      _showMessage('Maximum price is 1,000,000.000');
       return;
     }
 
     setState(() => _isSaving = true);
 
     try {
-      final weightUnit = widget.itemData['weight_unit'] ?? 'kg';
       final priceUnit = widget.itemData['price_unit'] ?? '/ kg';
+      final formattedPrice = _formatPriceWithCommas(normalizedPrice);
       final sellerUid = widget.itemData['seller_uid'];
       if (sellerUid == null || sellerUid.toString().isEmpty) {
         _showMessage('Please login again');
@@ -138,11 +216,12 @@ class _ItemEditPageState extends State<ItemEditPage> {
           .doc(widget.docId)
           .update({
             'item_name': name,
-            'origin': origin,
-            'quantity_number': quantity,
-            'item_quantity': '$quantity $weightUnit',
-            'price_number': price,
-            'item_price': 'OMR $price $priceUnit',
+            'origin': FieldValue.delete(),
+            'quantity_number': FieldValue.delete(),
+            'item_quantity': FieldValue.delete(),
+            'weight_unit': FieldValue.delete(),
+            'price_number': normalizedPrice,
+            'item_price': 'OMR $formattedPrice $priceUnit',
             'location': location,
             'media_files': allMedia
                 .map((media) => {'url': media.url, 'type': media.type})
@@ -157,7 +236,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         sellerPhone: widget.itemData['seller_phone']?.toString() ?? '',
         itemId: widget.docId,
         itemName: name,
-        itemPrice: 'OMR $price $priceUnit',
+        itemPrice: 'OMR $formattedPrice $priceUnit',
         videoUrls: videoUrls,
       );
 
@@ -251,6 +330,114 @@ class _ItemEditPageState extends State<ItemEditPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _handlePriceChanged(String value) {
+    final rawValue = value.trim().replaceAll(',', '');
+    final dotCount = '.'.allMatches(rawValue).length;
+    if (dotCount > 1) {
+      _showMessage('Invalid price');
+      _setPriceText(_lastValidPriceText);
+      return;
+    }
+
+    var nextValue = rawValue;
+    if (nextValue.startsWith('.')) {
+      nextValue = '0$nextValue';
+    }
+    if (nextValue.length > 1 &&
+        nextValue.startsWith('0') &&
+        !nextValue.startsWith('0.')) {
+      nextValue = nextValue.replaceFirst(RegExp(r'^0+'), '');
+      if (nextValue.isEmpty || nextValue.startsWith('.')) {
+        nextValue = '0$nextValue';
+      }
+    }
+
+    if (nextValue.isEmpty || _isValidPriceInput(nextValue)) {
+      final parsed = double.tryParse(nextValue);
+      if (parsed != null && parsed > _maxPriceValue) {
+        _showMessage('Maximum price is 1,000,000.000');
+        _setPriceText(_lastValidPriceText);
+        return;
+      }
+      final formatted = _formatEditingPrice(nextValue);
+      _lastValidPriceText = formatted;
+      if (formatted != value) {
+        _setPriceText(formatted);
+      }
+    } else {
+      _showMessage('Invalid price');
+      _setPriceText(_lastValidPriceText);
+    }
+  }
+
+  void _setPriceText(String value) {
+    _priceController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  void _restoreDefaultPriceIfEmpty() {
+    if (_priceController.text.trim().isEmpty) {
+      _lastValidPriceText = '0';
+      _setPriceText('0');
+    }
+  }
+
+  bool _isValidPriceInput(String value) {
+    return RegExp(r'^\d+\.?\d*$').hasMatch(value.replaceAll(',', ''));
+  }
+
+  String? _normalizePrice(String value) {
+    final cleanValue = value.replaceAll(',', '');
+    if (!_isValidPriceInput(cleanValue)) {
+      return null;
+    }
+    final parsed = double.tryParse(cleanValue);
+    if (parsed == null || parsed > _maxPriceValue) {
+      return null;
+    }
+    return parsed.toStringAsFixed(3);
+  }
+
+  String _formatEditingPrice(String value) {
+    final cleanValue = value.replaceAll(',', '');
+    if (cleanValue.isEmpty) {
+      return '';
+    }
+    final parts = cleanValue.split('.');
+    final whole = _formatWholeNumber(parts.first);
+    if (cleanValue.endsWith('.')) {
+      return '$whole.';
+    }
+    if (parts.length == 2) {
+      return '$whole.${parts.last}';
+    }
+    return whole;
+  }
+
+  String _formatPriceWithCommas(String value) {
+    final parts = value.split('.');
+    final whole = _formatWholeNumber(parts.first);
+    return '$whole.${parts.length > 1 ? parts.last : '000'}';
+  }
+
+  String _formatWholeNumber(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      return '0';
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      final reverseIndex = digits.length - i;
+      buffer.write(digits[i]);
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+    return buffer.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -258,15 +445,38 @@ class _ItemEditPageState extends State<ItemEditPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _field(_nameController, 'Item Name', Icons.shopping_bag),
+          _field(
+            _nameController,
+            'Item Name',
+            Icons.shopping_bag,
+            maxLength: 80,
+          ),
           const SizedBox(height: 14),
-          _field(_originController, 'Origin', Icons.place),
+          _field(
+            _priceController,
+            'Price',
+            Icons.monetization_on,
+            focusNode: _priceFocusNode,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+            ],
+            onTap: () {
+              if (_priceController.text == '0') {
+                _setPriceText('');
+              }
+            },
+            onEditingComplete: _restoreDefaultPriceIfEmpty,
+            onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
+            onChanged: _handlePriceChanged,
+          ),
           const SizedBox(height: 14),
-          _field(_quantityController, 'Quantity', Icons.scale),
-          const SizedBox(height: 14),
-          _field(_priceController, 'Price', Icons.monetization_on),
-          const SizedBox(height: 14),
-          _field(_locationController, 'Location', Icons.location_on),
+          _field(
+            _locationController,
+            'Location',
+            Icons.location_on,
+            maxLength: 30,
+          ),
           const SizedBox(height: 20),
           _buildMediaEditor(),
           const SizedBox(height: 24),
@@ -309,8 +519,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 media: _existingMedia[index],
                 onRemove: () {
                   setState(() {
-                    _removedMedia.add(_existingMedia[index]);
-                    _existingMedia.removeAt(index);
+                    if (_canRemoveMedia()) {
+                      _removedMedia.add(_existingMedia[index]);
+                      _existingMedia.removeAt(index);
+                    }
                   });
                 },
               );
@@ -320,7 +532,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
             return _NewMediaTile(
               media: _newMedia[newMediaIndex],
               onRemove: () {
-                setState(() => _newMedia.removeAt(newMediaIndex));
+                if (_canRemoveMedia()) {
+                  setState(() => _newMedia.removeAt(newMediaIndex));
+                }
               },
             );
           },
@@ -331,33 +545,56 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   Widget _buildAddMediaCircle() {
     return InkWell(
-      onTap: _pickMedia,
-      borderRadius: BorderRadius.circular(34),
+      onTap: _isSaving ? null : _openMediaSheet,
+      borderRadius: BorderRadius.circular(24),
       child: Container(
-        width: 68,
-        height: 68,
+        width: 76,
+        height: 76,
         decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.teal,
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.14),
+              color: Colors.black.withValues(alpha: 0.12),
               blurRadius: 12,
               offset: const Offset(0, 5),
             ),
           ],
         ),
-        child: const Icon(Icons.add, color: Colors.white, size: 34),
+        child: const Icon(Icons.add_a_photo, color: Color(0xFF111820), size: 38),
       ),
     );
   }
 
-  Widget _field(TextEditingController controller, String label, IconData icon) {
+  Widget _field(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    int? maxLength,
+    FocusNode? focusNode,
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    VoidCallback? onTap,
+    VoidCallback? onEditingComplete,
+    TapRegionCallback? onTapOutside,
+    ValueChanged<String>? onChanged,
+  }) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
+      maxLength: maxLength,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      onTap: onTap,
+      onEditingComplete: onEditingComplete,
+      onTapOutside: onTapOutside,
+      onChanged: onChanged,
       decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
         labelText: label,
         prefixIcon: Icon(icon),
+        counterText: '',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
@@ -446,6 +683,41 @@ class _VideoPlaceholder extends StatelessWidget {
     return Container(
       color: Colors.black87,
       child: const Icon(Icons.play_circle_fill, color: Colors.white, size: 42),
+    );
+  }
+}
+
+class _MediaSheetButton extends StatelessWidget {
+  const _MediaSheetButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFF202523),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: const Color(0xFF25D366), size: 28),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(color: Colors.white)),
+          ],
+        ),
+      ),
     );
   }
 }

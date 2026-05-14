@@ -1,12 +1,16 @@
-import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../widgets/item_card.dart';
 
 class SellerFeedTab extends StatefulWidget {
-  const SellerFeedTab({super.key});
+  const SellerFeedTab({
+    super.key,
+    required this.chromeVisibleListenable,
+  });
+
+  final ValueListenable<bool> chromeVisibleListenable;
 
   @override
   State<SellerFeedTab> createState() => _SellerFeedTabState();
@@ -14,25 +18,13 @@ class SellerFeedTab extends StatefulWidget {
 
 class _SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
-  Timer? _clockTimer;
   bool _isSearchOpen = false;
-  bool _isGridView = false;
+  bool _isGridView = true;
   String _query = '';
-  DateTime _now = DateTime.now();
-
-  @override
-  void initState() {
-    super.initState();
-    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) {
-        setState(() => _now = DateTime.now());
-      }
-    });
-  }
+  final DateTime _openedAt = DateTime.now();
 
   @override
   void dispose() {
-    _clockTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -66,7 +58,6 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
       final searchableText = [
         item['item_name'],
         item['item_price'],
-        item['origin'],
         item['location'],
       ].whereType<Object>().map((value) => value.toString().toLowerCase()).join(
         ' ',
@@ -77,24 +68,21 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('items')
-          .orderBy('created_at', descending: true)
-          .snapshots(),
-      builder: (context, snapshot) {
-        final isLoading = snapshot.connectionState == ConnectionState.waiting;
-        final hasError = snapshot.hasError;
-        final docs = _filterDocs(
-          (snapshot.data?.docs ?? [])
-              .where((doc) => _isItemActive(doc.data(), _now))
-              .toList(),
-        );
-
-        return CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: _FeedHeader(
+    return Column(
+      children: [
+        ClipRect(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: widget.chromeVisibleListenable,
+            builder: (context, visible, child) {
+              return AnimatedAlign(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                heightFactor: visible ? 1 : 0,
+                child: child,
+              );
+            },
+            child: _FeedHeader(
                 isSearchOpen: _isSearchOpen,
                 searchController: _searchController,
                 onOpenSearch: _openSearch,
@@ -103,45 +91,78 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                 isGridView: _isGridView,
                 onToggleGrid: _toggleLayoutMode,
               ),
-            ),
-            if (isLoading)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (hasError)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: Text('Error: ${snapshot.error}')),
-              )
-            else if (docs.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(
-                  child: Text(
-                    'No items available',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                ),
-              )
-            else
-              SliverPadding(
-                padding: _isGridView
-                    ? const EdgeInsets.symmetric(horizontal: 2, vertical: 8)
-                    : const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
-                sliver: _isGridView
-                    ? SliverToBoxAdapter(child: _MasonryItemGrid(docs: docs))
-                    : SliverList.builder(
-                        itemCount: docs.length,
-                        itemBuilder: (context, index) {
-                          final doc = docs[index];
-                          return ItemCard(docId: doc.id, item: doc.data());
-                        },
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: FirebaseFirestore.instance
+                .collection('items')
+                .orderBy('created_at', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              final isLoading =
+                  snapshot.connectionState == ConnectionState.waiting;
+              final hasError = snapshot.hasError;
+              final docs = _filterDocs(
+                (snapshot.data?.docs ?? [])
+                    .where((doc) => _isItemActive(doc.data(), _openedAt))
+                    .toList(),
+              );
+
+              return CustomScrollView(
+                slivers: [
+                  if (isLoading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (hasError)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: Text('Error: ${snapshot.error}')),
+                    )
+                  else if (docs.isEmpty)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Text(
+                          'No items available',
+                          style: TextStyle(fontSize: 16, color: Colors.grey),
+                        ),
                       ),
-              ),
-          ],
-        );
-      },
+                    )
+                  else
+                    SliverPadding(
+                      padding: _isGridView
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 2,
+                              vertical: 8,
+                            )
+                          : const EdgeInsets.symmetric(
+                              horizontal: 2,
+                              vertical: 12,
+                            ),
+                      sliver: _isGridView
+                          ? SliverToBoxAdapter(
+                              child: _MasonryItemGrid(docs: docs),
+                            )
+                          : SliverList.builder(
+                              itemCount: docs.length,
+                              itemBuilder: (context, index) {
+                                final doc = docs[index];
+                                return ItemCard(
+                                  docId: doc.id,
+                                  item: doc.data(),
+                                );
+                              },
+                            ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -191,6 +212,14 @@ class _MasonryColumn extends StatelessWidget {
 }
 
 bool _isItemActive(Map<String, dynamic> item, DateTime now) {
+  final createdAt = item['created_at'];
+  final timePeriodHours = item['time_period_hours'];
+  if (createdAt is Timestamp && timePeriodHours is num) {
+    return createdAt
+        .toDate()
+        .add(Duration(hours: timePeriodHours.toInt()))
+        .isAfter(now);
+  }
   final expiresAt = item['expires_at'];
   if (expiresAt is Timestamp) {
     return expiresAt.toDate().isAfter(now);
@@ -260,12 +289,10 @@ class _FeedHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 56,
       color: const Color(0xFFFF7801),
-      child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: SizedBox(
-            height: 48,
-            child: LayoutBuilder(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: LayoutBuilder(
               builder: (context, constraints) {
                 return Stack(
                   alignment: Alignment.center,
@@ -276,18 +303,26 @@ class _FeedHeader extends StatelessWidget {
                         'BIZ SOOQ',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
+                      child: _GridToggleButton(
+                        isGridView: isGridView,
+                        onTap: onToggleGrid,
+                        bottomPadding: 0,
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 260),
                         curve: Curves.easeOutCubic,
-                        width: isSearchOpen ? constraints.maxWidth - 56 : 48,
-                        height: 48,
+                        width: isSearchOpen ? constraints.maxWidth - 56 : 44,
+                        height: 44,
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(24),
@@ -339,21 +374,10 @@ class _FeedHeader extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (!isSearchOpen)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: _GridToggleButton(
-                          isGridView: isGridView,
-                          onTap: onToggleGrid,
-                          bottomPadding: 0,
-                        ),
-                      ),
                   ],
                 );
               },
             ),
-          ),
-        ),
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../seller_login_page.dart';
+import '../seller_home_page.dart';
 import '../seller_session.dart';
 
 class SellerSettingsTab extends StatelessWidget {
@@ -12,7 +12,7 @@ class SellerSettingsTab extends StatelessWidget {
       return;
     }
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SellerLoginPage()),
+      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
       (route) => false,
     );
   }

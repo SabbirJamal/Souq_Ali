@@ -144,9 +144,13 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                      )
                         : const Icon(Icons.app_registration),
                     label: Text(_isRegistering ? 'Registering...' : 'Register'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF7801),
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ],
               ),

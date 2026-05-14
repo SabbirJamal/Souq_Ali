@@ -42,6 +42,7 @@ class MediaCarousel extends StatefulWidget {
     this.borderRadius = 8,
     this.fit = BoxFit.cover,
     this.showCountBadge = true,
+    this.showPageDots = false,
     this.peekSideItems = false,
     this.onMediaTap,
   });
@@ -51,6 +52,7 @@ class MediaCarousel extends StatefulWidget {
   final double borderRadius;
   final BoxFit fit;
   final bool showCountBadge;
+  final bool showPageDots;
   final bool peekSideItems;
   final void Function(MediaItem media, int index)? onMediaTap;
 
@@ -60,6 +62,7 @@ class MediaCarousel extends StatefulWidget {
 
 class _MediaCarouselState extends State<MediaCarousel> {
   late final PageController _pageController;
+  int _currentIndex = 0;
 
   @override
   void initState() {
@@ -104,6 +107,9 @@ class _MediaCarouselState extends State<MediaCarousel> {
                   controller: _pageController,
                   clipBehavior: widget.peekSideItems ? Clip.none : Clip.hardEdge,
                   padEnds: false,
+                  onPageChanged: (index) {
+                    setState(() => _currentIndex = index);
+                  },
                   itemCount: widget.mediaItems.length,
                   itemBuilder: (context, index) {
                     final media = widget.mediaItems[index];
@@ -165,10 +171,59 @@ class _MediaCarouselState extends State<MediaCarousel> {
                     ],
                   ),
                 ),
+              if (widget.showPageDots && widget.mediaItems.length > 1)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 22,
+                  child: _MediaPageDots(
+                    count: widget.mediaItems.length,
+                    currentIndex: _currentIndex,
+                  ),
+                ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MediaPageDots extends StatelessWidget {
+  const _MediaPageDots({required this.count, required this.currentIndex});
+
+  final int count;
+  final int currentIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.44),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(count, (index) {
+            final isActive = index == currentIndex;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              width: isActive ? 26 : 12,
+              height: isActive ? 26 : 12,
+              margin: EdgeInsets.symmetric(horizontal: isActive ? 5 : 7),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.42),
+                shape: BoxShape.circle,
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -25,59 +26,36 @@ class SellerAddItemTab extends StatefulWidget {
 
 class SellerAddItemTabState extends State<SellerAddItemTab> {
   static const _maxMediaCount = 9;
+  static const _maxPriceValue = 1000000.0;
 
   final _nameController = TextEditingController();
-  final _originController = TextEditingController();
-  final _quantityController = TextEditingController();
-  final _priceController = TextEditingController();
+  final _priceController = TextEditingController(text: '0');
   final _locationController = TextEditingController();
+  final _priceFocusNode = FocusNode();
 
   final List<_SelectedMedia> _selectedMedia = [];
-  final _weightUnits = ['kg', 'tons'];
   final _priceUnits = ['/ kg', '/ box', '/ bag'];
-  final _countries = const [
-    'Afghanistan',
-    'Albania',
-    'Algeria',
-    'Argentina',
-    'Australia',
-    'Bahrain',
-    'Bangladesh',
-    'Brazil',
-    'Canada',
-    'China',
-    'Egypt',
-    'France',
-    'Germany',
-    'India',
-    'Iran',
-    'Iraq',
-    'Italy',
-    'Jordan',
-    'Kuwait',
-    'Lebanon',
-    'Malaysia',
-    'Morocco',
-    'Oman',
-    'Pakistan',
-    'Qatar',
-    'Saudi Arabia',
-    'Sri Lanka',
-    'Turkey',
-    'UAE',
-    'UK',
-    'USA',
-    'Yemen',
-  ];
 
-  String _weightUnit = 'kg';
+  String _lastValidPriceText = '0';
   String _priceUnit = '/ kg';
   int _timePeriodDays = 0;
   int _timePeriodHours = 18;
   bool _isUploading = false;
+  bool _showLocationError = false;
 
-  int get _totalTimePeriodHours =>
-      (_timePeriodDays * 24) + (_timePeriodDays == 3 ? 0 : _timePeriodHours);
+  int get _totalTimePeriodHours => _selectedTimePeriodHours(
+    days: _timePeriodDays,
+    hours: _timePeriodHours,
+  );
+
+  int _selectedTimePeriodHours({required int days, required int hours}) {
+    if (days >= 3) {
+      return 72;
+    }
+    final safeDays = days.clamp(0, 3);
+    final safeHours = hours.clamp(3, 24);
+    return (safeDays * 24) + safeHours;
+  }
 
   String get _timePeriodLabel {
     final dayText = _timePeriodDays == 1 ? '1 day' : '$_timePeriodDays days';
@@ -93,9 +71,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   @override
   void dispose() {
     _nameController.dispose();
-    _originController.dispose();
-    _quantityController.dispose();
     _priceController.dispose();
+    _priceFocusNode.dispose();
     _locationController.dispose();
     VideoCompress.cancelCompression();
     super.dispose();
@@ -274,17 +251,22 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Future<void> _addItem() async {
     final name = _nameController.text.trim();
-    final origin = _originController.text.trim();
-    final quantityNumber = _quantityController.text.trim();
-    final priceNumber = _priceController.text.trim();
+    final priceNumber = _priceController.text.trim().isEmpty
+        ? '0'
+        : _priceController.text.trim();
     final location = _locationController.text.trim();
 
-    if (name.isEmpty ||
-        origin.isEmpty ||
-        quantityNumber.isEmpty ||
-        priceNumber.isEmpty ||
-        location.isEmpty) {
-      _showMessage('Please fill all fields');
+    if (_selectedMedia.isEmpty) {
+      _showMessage('Please add atleast 1 image or video');
+      return;
+    }
+    if (location.isEmpty) {
+      setState(() => _showLocationError = true);
+      return;
+    }
+    final normalizedPrice = _normalizePrice(priceNumber);
+    if (normalizedPrice == null) {
+      _showMessage('Invalid price');
       return;
     }
     setState(() => _isUploading = true);
@@ -301,11 +283,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           .where((media) => media.type == 'image')
           .map((media) => media.url)
           .toList();
-      final quantity = '$quantityNumber $_weightUnit';
-      final price = 'OMR $priceNumber $_priceUnit';
+      final formattedPrice = _formatPriceWithCommas(normalizedPrice);
+      final price = 'OMR $formattedPrice $_priceUnit';
       final itemRef = FirebaseFirestore.instance.collection('items').doc();
+      final timePeriodHours = _totalTimePeriodHours;
       final expiresAt = Timestamp.fromDate(
-        DateTime.now().add(Duration(hours: _totalTimePeriodHours)),
+        DateTime.now().add(Duration(hours: timePeriodHours)),
       );
 
       await itemRef.set({
@@ -313,19 +296,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'seller_name': session.name,
         'seller_phone': session.phoneNumber,
         'item_name': name,
-        'origin': origin,
-        'item_quantity': quantity,
-        'quantity_number': quantityNumber,
-        'weight_unit': _weightUnit,
         'item_price': price,
-        'price_number': priceNumber,
+        'price_number': normalizedPrice,
         'price_unit': _priceUnit,
         'location': location,
         'image_urls': imageUrls,
         'media_files': uploadedMedia.map((media) => media.toMap()).toList(),
         'time_period_days': _timePeriodDays,
         'time_period_extra_hours': _timePeriodDays == 3 ? 0 : _timePeriodHours,
-        'time_period_hours': _totalTimePeriodHours,
+        'time_period_hours': timePeriodHours,
         'expires_at': expiresAt,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
@@ -362,16 +341,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   void _clearForm() {
     _nameController.clear();
-    _originController.clear();
-    _quantityController.clear();
-    _priceController.clear();
+    _priceController.text = '0';
+    _lastValidPriceText = '0';
     _locationController.clear();
     setState(() {
       _selectedMedia.clear();
-      _weightUnit = 'kg';
       _priceUnit = '/ kg';
       _timePeriodDays = 0;
       _timePeriodHours = 18;
+      _showLocationError = false;
     });
   }
 
@@ -428,6 +406,118 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _handlePriceChanged(String value) {
+    final rawValue = value.trim().replaceAll(',', '');
+    final dotCount = '.'.allMatches(rawValue).length;
+    if (dotCount > 1) {
+      _showMessage('Invalid price');
+      _setPriceText(_lastValidPriceText);
+      return;
+    }
+
+    var nextValue = rawValue;
+    if (nextValue.startsWith('.')) {
+      nextValue = '0$nextValue';
+    }
+    if (nextValue.length > 1 && nextValue.startsWith('0') && !nextValue.startsWith('0.')) {
+      nextValue = nextValue.replaceFirst(RegExp(r'^0+'), '');
+      if (nextValue.isEmpty || nextValue.startsWith('.')) {
+        nextValue = '0$nextValue';
+      }
+      final formatted = _formatEditingPrice(nextValue);
+      _lastValidPriceText = formatted;
+      _setPriceText(formatted);
+      return;
+    }
+
+    if (nextValue.isEmpty || _isValidPriceInput(nextValue)) {
+      final parsed = double.tryParse(nextValue);
+      if (parsed != null && parsed > _maxPriceValue) {
+        _showMessage('Maximum price is 1,000,000.000');
+        _setPriceText(_lastValidPriceText);
+        return;
+      }
+      final formatted = _formatEditingPrice(nextValue);
+      _lastValidPriceText = formatted;
+      if (formatted != value) {
+        _setPriceText(formatted);
+      }
+    } else {
+      _showMessage('Invalid price');
+      _setPriceText(_lastValidPriceText);
+    }
+  }
+
+  void _setPriceText(String value) {
+    _priceController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  void _restoreDefaultPriceIfEmpty() {
+    if (_priceController.text.trim().isEmpty) {
+      _lastValidPriceText = '0';
+      _setPriceText('0');
+    }
+  }
+
+  bool _isValidPriceInput(String value) {
+    return RegExp(r'^\d+\.?\d*$').hasMatch(value.replaceAll(',', ''));
+  }
+
+  String? _normalizePrice(String value) {
+    final cleanValue = value.replaceAll(',', '');
+    if (!_isValidPriceInput(cleanValue)) {
+      return null;
+    }
+    final parsed = double.tryParse(cleanValue);
+    if (parsed == null) {
+      return null;
+    }
+    if (parsed > _maxPriceValue) {
+      return null;
+    }
+    return parsed.toStringAsFixed(3);
+  }
+
+  String _formatEditingPrice(String value) {
+    if (value.isEmpty) {
+      return '';
+    }
+    final parts = value.split('.');
+    final whole = _formatWholeNumber(parts.first);
+    if (value.endsWith('.')) {
+      return '$whole.';
+    }
+    if (parts.length == 2) {
+      return '$whole.${parts.last}';
+    }
+    return whole;
+  }
+
+  String _formatPriceWithCommas(String value) {
+    final parts = value.split('.');
+    final whole = _formatWholeNumber(parts.first);
+    return '$whole.${parts.length > 1 ? parts.last : '000'}';
+  }
+
+  String _formatWholeNumber(String value) {
+    final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) {
+      return '0';
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      final reverseIndex = digits.length - i;
+      buffer.write(digits[i]);
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+    return buffer.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
@@ -435,7 +525,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
+          const SizedBox(height: 3),
           _buildMediaPicker(),
           const SizedBox(height: 20),
           _buildTextField(
@@ -443,32 +533,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             label: 'Item Name',
             hint: 'Fresh Tomatoes',
             icon: Icons.shopping_bag,
-          ),
-          const SizedBox(height: 14),
-          _buildOriginField(),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: _buildTextField(
-                  controller: _quantityController,
-                  label: 'Quantity',
-                  hint: '50',
-                  icon: Icons.scale,
-                  keyboardType: TextInputType.number,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: _buildDropdown(
-                  value: _weightUnit,
-                  items: _weightUnits,
-                  onChanged: (value) => setState(() => _weightUnit = value),
-                ),
-              ),
-            ],
+            maxLength: 80,
           ),
           const SizedBox(height: 14),
           Row(
@@ -481,7 +546,21 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                   hint: '2.500',
                   icon: Icons.monetization_on,
                   prefixText: 'OMR ',
-                  keyboardType: TextInputType.number,
+                  focusNode: _priceFocusNode,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  onTap: () {
+                    if (_priceController.text == '0') {
+                      _setPriceText('');
+                    }
+                  },
+                  onEditingComplete: _restoreDefaultPriceIfEmpty,
+                  onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
+                  onChanged: _handlePriceChanged,
                 ),
               ),
               const SizedBox(width: 10),
@@ -499,8 +578,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           _buildTextField(
             controller: _locationController,
             label: 'Location',
-            hint: 'Muscat, Al Seeb',
+            hint: _showLocationError ? 'Please enter the location' : 'Muscat, Al Seeb',
             icon: Icons.location_on,
+            maxLength: 30,
+            errorText: _showLocationError ? 'Please enter the location' : null,
+            onChanged: (_) {
+              if (_showLocationError) {
+                setState(() => _showLocationError = false);
+              }
+            },
           ),
           const SizedBox(height: 16),
           _buildTimePeriodSelector(),
@@ -581,7 +667,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                   top: 4,
                   right: 4,
                   child: GestureDetector(
-                    onTap: () => setState(() => _selectedMedia.removeAt(index)),
+                    onTap: _isUploading
+                        ? null
+                        : () => setState(() => _selectedMedia.removeAt(index)),
                     child: const CircleAvatar(
                       radius: 12,
                       backgroundColor: Colors.red,
@@ -599,7 +687,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Widget _buildAddMediaCircle() {
     return InkWell(
-      onTap: _openMediaSheet,
+      onTap: _isUploading ? null : _openMediaSheet,
       borderRadius: BorderRadius.circular(24),
       child: Container(
         width: 76,
@@ -620,79 +708,48 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     );
   }
 
-  Widget _buildOriginField() {
-    return Autocomplete<String>(
-      optionsBuilder: (value) {
-        if (value.text.isEmpty) {
-          return _countries;
-        }
-        return _countries.where(
-          (country) => country.toLowerCase().contains(value.text.toLowerCase()),
-        );
-      },
-      onSelected: (selection) => _originController.text = selection,
-      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-        controller.text = _originController.text;
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          onChanged: (value) => _originController.text = value,
-          decoration: InputDecoration(
-            labelText: 'Origin',
-            hintText: 'Oman',
-            prefixIcon: const Icon(Icons.place),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildTimePeriodSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Time period',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: _openTimePeriodPicker,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade400),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.schedule, color: Colors.teal),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _timePeriodLabel,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+    return Opacity(
+      opacity: _isUploading ? 0.45 : 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Time period',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: _isUploading ? null : _openTimePeriodPicker,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+              decoration: BoxDecoration(
+                color: _isUploading ? Colors.grey.shade100 : Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade400),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule, color: Colors.teal),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _timePeriodLabel,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-                const Text(
-                  'Select Time Period',
-                  style: TextStyle(
-                    color: Colors.teal,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+                  const Icon(Icons.expand_more, color: Colors.teal),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -730,7 +787,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                           ),
                           const Spacer(),
                           const Text(
-                            'Select Time Period',
+                            'Time period',
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -849,15 +906,36 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     required IconData icon,
     TextInputType? keyboardType,
     String? prefixText,
+    List<TextInputFormatter>? inputFormatters,
+    VoidCallback? onTap,
+    VoidCallback? onEditingComplete,
+    TapRegionCallback? onTapOutside,
+    ValueChanged<String>? onChanged,
+    String? errorText,
+    int? maxLength,
+    FocusNode? focusNode,
   }) {
     return TextField(
       controller: controller,
+      focusNode: focusNode,
+      readOnly: _isUploading,
+      enabled: !_isUploading,
       keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      maxLength: maxLength,
+      onTap: onTap,
+      onEditingComplete: onEditingComplete,
+      onTapOutside: onTapOutside,
+      onChanged: onChanged,
       decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
         labelText: label,
         hintText: hint,
         prefixText: prefixText,
         prefixIcon: Icon(icon),
+        errorText: errorText,
+        counterText: '',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
@@ -871,6 +949,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     return DropdownButtonFormField<String>(
       initialValue: value,
       decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
@@ -880,11 +960,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       items: items
           .map((item) => DropdownMenuItem(value: item, child: Text(item)))
           .toList(),
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
+      onChanged: _isUploading
+          ? null
+          : (value) {
+              if (value != null) {
+                onChanged(value);
+              }
+            },
     );
   }
 }

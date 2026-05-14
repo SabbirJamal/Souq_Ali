@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'item_detail_page.dart';
+import 'widgets/price_with_currency.dart';
 
 class StoryVideo {
   const StoryVideo({
@@ -513,15 +514,15 @@ class _StoryItemInfo extends StatelessWidget {
             ),
             if (story.itemPrice.trim().isNotEmpty) ...[
               const SizedBox(height: 5),
-              Text(
-                story.itemPrice,
-                textAlign: TextAlign.right,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+              Align(
+                alignment: Alignment.centerRight,
+                child: PriceWithCurrency(
+                  price: story.itemPrice,
+                  style: const TextStyle(
                   color: Color(0xFFFFD8D8),
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
+                ),
                 ),
               ),
             ],

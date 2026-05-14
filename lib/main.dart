@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'seller_home_page.dart';
-import 'seller_login_page.dart';
 import 'seller_session.dart';
 
 Future<void> main() async {
@@ -54,7 +53,7 @@ class SouqaliApp extends StatelessWidget {
             return const SellerHomePage();
           }
 
-          return const SellerLoginPage();
+          return const SellerHomePage(isSellerMode: false);
         },
       ),
     );

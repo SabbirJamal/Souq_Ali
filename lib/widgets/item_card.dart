@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../item_detail_page.dart';
 import 'media_carousel.dart';
+import 'price_with_currency.dart';
 
 class ItemCard extends StatelessWidget {
   const ItemCard({
@@ -132,60 +133,51 @@ class _ImageFilledDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final maxWidth = MediaQuery.sizeOf(context).width * (isCompact ? 0.38 : 0.72);
+    final itemName = item['item_name']?.toString().trim() ?? '';
 
     return IntrinsicWidth(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: maxWidth),
-        child: Container(
-          padding: EdgeInsets.fromLTRB(
-            isCompact ? 8 : 13,
-            isCompact ? 7 : 11,
-            isCompact ? 8 : 13,
-            isCompact ? 8 : 12,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.38),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item['item_name'] ?? 'No name',
-                maxLines: isCompact ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: isCompact ? 14 : 23,
-                  fontWeight: FontWeight.bold,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _TextChip(
+              child: _OverlayInfoRow(
+                text: item['location']?.toString() ?? '',
+                isCompact: isCompact,
               ),
-              SizedBox(height: isCompact ? 5 : 8),
-              Text(
-                _formatPrice(item['item_price']),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              isCompact: isCompact,
+            ),
+            SizedBox(height: isCompact ? 5 : 8),
+            _TextChip(
+              child: PriceWithCurrency(
+                price: _formatPrice(item['item_price']),
                 style: TextStyle(
-                  color: const Color(0xFFFFD2D2),
+                  color: const Color(0xFFD00000),
                   fontSize: isCompact ? 13 : 19,
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              isCompact: isCompact,
+            ),
+            if (itemName.isNotEmpty) ...[
               SizedBox(height: isCompact ? 7 : 12),
-              _OverlayInfoRow(
-                icon: Icons.place,
-                text: 'Origin: ${item['origin'] ?? ''}',
-                isCompact: isCompact,
-              ),
-              SizedBox(height: isCompact ? 4 : 7),
-              _OverlayInfoRow(
-                icon: Icons.location_on,
-                text: item['location']?.toString() ?? '',
+              _TextChip(
+                child: Text(
+                  itemName,
+                  maxLines: isCompact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: isCompact ? 14 : 23,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 isCompact: isCompact,
               ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -193,20 +185,52 @@ class _ImageFilledDetails extends StatelessWidget {
 }
 
 String _formatPrice(Object? value) {
-  return (value?.toString() ?? '')
+  final text = value?.toString() ?? '';
+  if (_isZeroPrice(text)) {
+    return 'Contact for Price';
+  }
+  return text
       .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 }
 
+bool _isZeroPrice(String value) {
+  final match = RegExp(r'\d+(?:\.\d+)?').firstMatch(value);
+  if (match == null) {
+    return false;
+  }
+  return (double.tryParse(match.group(0) ?? '') ?? -1) == 0;
+}
+
+class _TextChip extends StatelessWidget {
+  const _TextChip({required this.child, required this.isCompact});
+
+  final Widget child;
+  final bool isCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 6 : 9,
+        vertical: isCompact ? 4 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: child,
+    );
+  }
+}
+
 class _OverlayInfoRow extends StatelessWidget {
   const _OverlayInfoRow({
-    required this.icon,
     required this.text,
     required this.isCompact,
   });
 
-  final IconData icon;
   final String text;
   final bool isCompact;
 
@@ -215,7 +239,7 @@ class _OverlayInfoRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: isCompact ? 15 : 22, color: Colors.white70),
+        Text('📍', style: TextStyle(fontSize: isCompact ? 13 : 20)),
         SizedBox(width: isCompact ? 4 : 8),
         Flexible(
           child: Text(
@@ -223,7 +247,7 @@ class _OverlayInfoRow extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.82),
+              color: Colors.grey[700],
               fontSize: isCompact ? 11 : 18,
               fontWeight: FontWeight.w500,
             ),

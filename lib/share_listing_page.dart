@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'widgets/media_carousel.dart';
+import 'widgets/price_with_currency.dart';
 
 class ShareListingPage extends StatefulWidget {
   const ShareListingPage({
@@ -382,10 +383,8 @@ class _PreviewCaption extends StatelessWidget {
           ),
           if (itemPrice.trim().isNotEmpty) ...[
             const SizedBox(height: 3),
-            Text(
-              itemPrice,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            PriceWithCurrency(
+              price: itemPrice,
               style: const TextStyle(
                 color: Color(0xFFD00000),
                 fontSize: 11,

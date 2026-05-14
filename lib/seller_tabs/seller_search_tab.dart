@@ -48,7 +48,6 @@ class _SellerSearchTabState extends State<SellerSearchTab> {
       final searchableText = [
         item['item_name'],
         item['item_price'],
-        item['origin'],
         item['location'],
         item['seller_name'],
       ].whereType<Object>().map((value) => value.toString().toLowerCase()).join(
@@ -141,6 +140,14 @@ class _SellerSearchTabState extends State<SellerSearchTab> {
 }
 
 bool _isItemActive(Map<String, dynamic> item, DateTime now) {
+  final createdAt = item['created_at'];
+  final timePeriodHours = item['time_period_hours'];
+  if (createdAt is Timestamp && timePeriodHours is num) {
+    return createdAt
+        .toDate()
+        .add(Duration(hours: timePeriodHours.toInt()))
+        .isAfter(now);
+  }
   final expiresAt = item['expires_at'];
   if (expiresAt is Timestamp) {
     return expiresAt.toDate().isAfter(now);

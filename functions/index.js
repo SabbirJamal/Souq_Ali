@@ -33,10 +33,45 @@ exports.cleanupExpiredItems = onSchedule(
     logger.info(`Cleaning ${expiredItems.size} expired item(s).`);
 
     for (const itemDoc of expiredItems.docs) {
-      await cleanupItem(itemDoc);
+      if (isItemExpired(itemDoc.data(), now)) {
+        await cleanupItem(itemDoc);
+      } else {
+        logger.info(`Skipping item ${itemDoc.id}; selected time period is still active.`);
+      }
     }
   },
 );
+
+function isItemExpired(item, now) {
+  const effectiveExpiresAt = effectiveExpiryTimestamp(item);
+  if (!effectiveExpiresAt) {
+    return false;
+  }
+  return effectiveExpiresAt.toMillis() <= now.toMillis();
+}
+
+function effectiveExpiryTimestamp(item) {
+  const createdAt = item.created_at;
+  const timePeriodHours = Number(item.time_period_hours);
+
+  if (
+    createdAt &&
+    typeof createdAt.toMillis === "function" &&
+    Number.isFinite(timePeriodHours) &&
+    timePeriodHours > 0
+  ) {
+    return Timestamp.fromMillis(
+      createdAt.toMillis() + (timePeriodHours * 60 * 60 * 1000),
+    );
+  }
+
+  const expiresAt = item.expires_at;
+  if (expiresAt && typeof expiresAt.toMillis === "function") {
+    return expiresAt;
+  }
+
+  return null;
+}
 
 async function cleanupItem(itemDoc) {
   const itemId = itemDoc.id;

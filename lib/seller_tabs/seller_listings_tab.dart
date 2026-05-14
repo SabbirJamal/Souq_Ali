@@ -7,6 +7,7 @@ import '../item_edit_page.dart';
 import '../seller_session.dart';
 import '../story_repository.dart';
 import '../widgets/media_carousel.dart';
+import '../widgets/price_with_currency.dart';
 
 class SellerListingsTab extends StatelessWidget {
   const SellerListingsTab({super.key});
@@ -158,8 +159,8 @@ class SellerListingsTab extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 4),
-                              Text(
-                                item['item_price'] ?? '',
+                              PriceWithCurrency(
+                                price: item['item_price']?.toString() ?? '',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],

@@ -3,9 +3,8 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
-import 'package:video_trimmer/video_trimmer.dart';
-import 'package:video_player/video_player.dart';
 
 class CapturedMedia {
   const CapturedMedia({required this.file, required this.type});
@@ -28,8 +27,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
 
   CameraController? _controller;
   Future<void>? _initializeCamera;
-  VideoPlayerController? _previewController;
-  File? _previewVideoFile;
   bool _isRecording = false;
   bool _isFinishingCapture = false;
   Timer? _holdTimer;
@@ -50,7 +47,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   void dispose() {
     _holdTimer?.cancel();
     _recordingLimitTimer?.cancel();
-    _previewController?.dispose();
     _controller?.dispose();
     super.dispose();
   }
@@ -69,6 +65,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     );
     _controller = controller;
     await controller.initialize();
+    await controller.lockCaptureOrientation(DeviceOrientation.portraitUp);
     _minZoom = await controller.getMinZoomLevel();
     _maxZoom = await controller.getMaxZoomLevel();
     _currentZoom = _minZoom;
@@ -189,7 +186,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       if (!mounted) {
         return;
       }
-      await _showVideoPreview(File(file.path));
+      Navigator.pop(
+        context,
+        CapturedMedia(file: File(file.path), type: 'video'),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -218,81 +218,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
   }
 
-  Future<void> _showVideoPreview(File file) async {
-    await _previewController?.dispose();
-    final previewController = VideoPlayerController.file(file);
-    await previewController.initialize();
-    await previewController.setLooping(true);
-    await previewController.play();
-    if (!mounted) {
-      await previewController.dispose();
-      return;
-    }
-    setState(() {
-      _previewVideoFile = file;
-      _previewController = previewController;
-    });
-  }
-
-  Future<void> _discardVideoPreview() async {
-    final file = _previewVideoFile;
-    await _previewController?.dispose();
-    if (file != null && file.existsSync()) {
-      try {
-        file.deleteSync();
-      } catch (_) {
-        // Temporary camera file cleanup is best-effort.
-      }
-    }
-    if (mounted) {
-      setState(() {
-        _previewVideoFile = null;
-        _previewController = null;
-      });
-    }
-  }
-
-  void _acceptVideoPreview() {
-    final file = _previewVideoFile;
-    if (file == null) {
-      return;
-    }
-    Navigator.pop(context, CapturedMedia(file: file, type: 'video'));
-  }
-
-  Future<void> _openVideoTrimmer() async {
-    final file = _previewVideoFile;
-    if (file == null) {
-      return;
-    }
-    await _previewController?.pause();
-    final trimmedFile = await Navigator.push<File>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _VideoTrimPage(file: file),
-      ),
-    );
-    if (trimmedFile == null || !mounted) {
-      await _previewController?.play();
-      return;
-    }
-    await _showVideoPreview(trimmedFile);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final previewVideoFile = _previewVideoFile;
-    final previewController = _previewController;
-    if (previewVideoFile != null && previewController != null) {
-      return _VideoPreviewScaffold(
-        controller: previewController,
-        onDiscard: _discardVideoPreview,
-        onAccept: _acceptVideoPreview,
-        onTrim: _openVideoTrimmer,
-        onCrop: () => _showCropUnavailable(context),
-      );
-    }
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: FutureBuilder<void>(
@@ -539,270 +466,6 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
   }
 }
 
-class _VideoPreviewScaffold extends StatelessWidget {
-  const _VideoPreviewScaffold({
-    required this.controller,
-    required this.onDiscard,
-    required this.onAccept,
-    required this.onTrim,
-    required this.onCrop,
-  });
-
-  final VideoPlayerController controller;
-  final VoidCallback onDiscard;
-  final VoidCallback onAccept;
-  final VoidCallback onTrim;
-  final VoidCallback onCrop;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: _VideoPreviewCover(controller: controller),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Row(
-                children: [
-                  IconButton.filled(
-                    onPressed: onDiscard,
-                    icon: const Icon(Icons.close),
-                  ),
-                  const Spacer(),
-                  _RoundToolButton(
-                    icon: Icons.crop_rotate,
-                    onTap: onCrop,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            top: 78,
-            child: SafeArea(
-              child: GestureDetector(
-                onTap: onTrim,
-                child: Container(
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.62),
-                    borderRadius: BorderRadius.circular(2),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.46),
-                    ),
-                  ),
-                  child: Row(
-                    children: const [
-                      SizedBox(width: 8),
-                      Icon(Icons.chevron_left, color: Colors.white, size: 30),
-                      Expanded(
-                        child: Divider(color: Colors.white70, thickness: 3),
-                      ),
-                      Icon(Icons.chevron_right, color: Colors.white, size: 30),
-                      SizedBox(width: 8),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 24,
-            bottom: 44,
-            child: SafeArea(
-              child: _AcceptButton(onTap: onAccept),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VideoPreviewCover extends StatelessWidget {
-  const _VideoPreviewCover({required this.controller});
-
-  final VideoPlayerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final videoSize = controller.value.size;
-    if (videoSize.width == 0 || videoSize.height == 0) {
-      return const ColoredBox(color: Colors.black);
-    }
-
-    final videoAspectRatio = videoSize.width / videoSize.height;
-    final screenAspectRatio = size.width / size.height;
-    final scale = videoAspectRatio > screenAspectRatio
-        ? size.height / videoSize.height
-        : size.width / videoSize.width;
-
-    return ClipRect(
-      child: Center(
-        child: SizedBox(
-          width: videoSize.width * scale,
-          height: videoSize.height * scale,
-          child: VideoPlayer(controller),
-        ),
-      ),
-    );
-  }
-}
-
-class _VideoTrimPage extends StatefulWidget {
-  const _VideoTrimPage({required this.file});
-
-  final File file;
-
-  @override
-  State<_VideoTrimPage> createState() => _VideoTrimPageState();
-}
-
-class _VideoTrimPageState extends State<_VideoTrimPage> {
-  final Trimmer _trimmer = Trimmer();
-  double _startValue = 0;
-  double _endValue = 0;
-  bool _isSaving = false;
-  bool _isPlaying = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _trimmer.loadVideo(videoFile: widget.file);
-  }
-
-  Future<void> _saveTrimmedVideo() async {
-    if (_isSaving) {
-      return;
-    }
-    setState(() => _isSaving = true);
-    await _trimmer.saveTrimmedVideo(
-      startValue: _startValue,
-      endValue: _endValue,
-      videoFolderName: 'BizsooqTrimmed',
-      onSave: (outputPath) {
-        if (!mounted) {
-          return;
-        }
-        setState(() => _isSaving = false);
-        if (outputPath == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not trim video')),
-          );
-          return;
-        }
-        Navigator.pop(context, File(outputPath));
-      },
-    );
-  }
-
-  Future<void> _togglePlayback() async {
-    final isPlaying = await _trimmer.videoPlaybackControl(
-      startValue: _startValue,
-      endValue: _endValue,
-    );
-    if (mounted) {
-      setState(() => _isPlaying = isPlaying);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  child: Row(
-                    children: [
-                      IconButton.filled(
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.close),
-                      ),
-                      const Spacer(),
-                      _RoundToolButton(
-                        icon: Icons.crop_rotate,
-                        onTap: () => _showCropUnavailable(context),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: TrimViewer(
-                    trimmer: _trimmer,
-                    viewerHeight: 54,
-                    viewerWidth: MediaQuery.of(context).size.width,
-                    maxVideoLength: _CameraCapturePageState
-                        ._maxRecordingDuration,
-                    durationStyle: DurationStyle.FORMAT_MM_SS,
-                    editorProperties: const TrimEditorProperties(
-                      borderPaintColor: Colors.white,
-                      circlePaintColor: Colors.white,
-                      scrubberPaintColor: Color(0xFF25D366),
-                      borderWidth: 3,
-                      borderRadius: 0,
-                    ),
-                    areaProperties: TrimAreaProperties.edgeBlur(
-                      thumbnailQuality: 60,
-                    ),
-                    onChangeStart: (value) => _startValue = value,
-                    onChangeEnd: (value) => _endValue = value,
-                    onChangePlaybackState: (value) {
-                      if (mounted) {
-                        setState(() => _isPlaying = value);
-                      }
-                    },
-                  ),
-                ),
-                Expanded(
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      VideoViewer(trimmer: _trimmer),
-                      IconButton.filled(
-                        onPressed: _togglePlayback,
-                        iconSize: 56,
-                        icon: Icon(
-                          _isPlaying ? Icons.pause : Icons.play_arrow,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            if (_isSaving)
-              const Positioned.fill(
-                child: ColoredBox(
-                  color: Color(0x99000000),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              ),
-            Positioned(
-              right: 24,
-              bottom: 28,
-              child: _AcceptButton(onTap: _saveTrimmedVideo),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _RoundToolButton extends StatelessWidget {
   const _RoundToolButton({required this.icon, required this.onTap});
 
@@ -849,12 +512,4 @@ class _AcceptButton extends StatelessWidget {
       ),
     );
   }
-}
-
-void _showCropUnavailable(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(
-      content: Text('Video crop needs one more native export step.'),
-    ),
-  );
 }
