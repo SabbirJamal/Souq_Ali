@@ -199,10 +199,10 @@ class _MediaPageDots extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.44),
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -211,9 +211,9 @@ class _MediaPageDots extends StatelessWidget {
             return AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               curve: Curves.easeOut,
-              width: isActive ? 26 : 12,
-              height: isActive ? 26 : 12,
-              margin: EdgeInsets.symmetric(horizontal: isActive ? 5 : 7),
+              width: isActive ? 14 : 7,
+              height: isActive ? 14 : 7,
+              margin: EdgeInsets.symmetric(horizontal: isActive ? 3 : 5),
               decoration: BoxDecoration(
                 color: isActive
                     ? Colors.white

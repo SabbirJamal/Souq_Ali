@@ -120,7 +120,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           ? const SellerListingsTab()
           : const _SellerAccessPrompt(),
       _ => widget.isSellerMode
-          ? const SellerSettingsTab()
+          ? SellerSettingsTab(onBack: _showFeedTab)
           : const _SellerAccessPrompt(),
     };
   }
@@ -153,7 +153,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    final showTabHeader = _currentIndex != 0;
+    final showTabHeader =
+        widget.isSellerMode &&
+        _currentIndex != 0 &&
+        _currentIndex != 1 &&
+        _currentIndex != 3 &&
+        _currentIndex != 4;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -317,6 +322,23 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(22),
+                  child: Image.asset(
+                    'assets/branding/logo.png',
+                    width: 92,
+                    height: 92,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.storefront,
+                      size: 82,
+                      color: Color(0xFFFF7801),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 26),
               Form(
                 key: _formKey,
                 child: TextFormField(
@@ -359,48 +381,38 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.grey[700],
-                  fontSize: 13,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 22),
-              const Icon(
-                Icons.storefront,
-                size: 74,
-                color: Color(0xFFFF7801),
-              ),
-              const SizedBox(height: 18),
-              const Text(
-                'Become a seller to access this',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Login to add items, manage listings, and use seller settings.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 15, color: Colors.grey[700]),
-              ),
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () {
+              const SizedBox(height: 28),
+              InkWell(
+                borderRadius: BorderRadius.circular(28),
+                onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const SellerRegisterPage(),
                     ),
                   );
                 },
-                icon: const Icon(Icons.app_registration),
-                label: const Text(
-                  'Register',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFFF7801),
-                  side: const BorderSide(color: Color(0xFFFF7801), width: 1.4),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
+                child: Container(
+                  height: 160,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: const Color(0xFFFF7801),
+                      width: 1.7,
+                    ),
+                  ),
+                  child: const Text(
+                    'Create Account',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),

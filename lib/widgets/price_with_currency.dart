@@ -1,5 +1,30 @@
 import 'package:flutter/material.dart';
 
+class RiyalCurrencyIcon extends StatelessWidget {
+  const RiyalCurrencyIcon({super.key, this.size = 22, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor =
+        color ?? IconTheme.of(context).color ?? Colors.black;
+
+    return Image.asset(
+      'assets/images/omr_logo.png',
+      width: size * 1.35,
+      height: size,
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) => Icon(
+        Icons.payments_outlined,
+        color: effectiveColor,
+        size: size,
+      ),
+    );
+  }
+}
+
 class PriceWithCurrency extends StatelessWidget {
   const PriceWithCurrency({
     super.key,
@@ -34,12 +59,9 @@ class PriceWithCurrency extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Image.asset(
-          'assets/images/omr_logo.png',
-          width: (style.fontSize ?? 16) * 1.25,
-          height: (style.fontSize ?? 16) * 0.9,
-          fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => Text('OMR', style: style),
+        RiyalCurrencyIcon(
+          size: (style.fontSize ?? 16) * 1.25,
+          color: style.color,
         ),
         const SizedBox(width: 4),
         Flexible(

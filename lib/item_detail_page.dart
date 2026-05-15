@@ -1,14 +1,18 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'seller_home_page.dart';
+import 'seller_profile_page.dart';
 import 'seller_session.dart';
 import 'share_listing_page.dart';
+import 'widgets/item_card.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
+import 'widgets/profile_image.dart';
 
 class ItemDetailPage extends StatelessWidget {
   const ItemDetailPage({super.key, required this.itemData, required this.itemId});
@@ -77,78 +81,98 @@ class ItemDetailPage extends StatelessWidget {
         }
       },
       child: Scaffold(
-        body: Column(
+        body: Stack(
           children: [
-            _DetailHeader(onBack: () => _goToFeed(context)),
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.zero,
-                children: [
-                  MediaCarousel(
-                    mediaItems: mediaItems,
-                    height: 390,
-                    borderRadius: 0,
-                    fit: BoxFit.cover,
-                    showCountBadge: true,
-                    showPageDots: true,
-                    onMediaTap: (media, index) =>
-                        _openFullscreen(context, mediaItems, index, sellerPhone),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (itemName.isNotEmpty) ...[
-                          Text(
-                            itemName,
-                            style: const TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        PriceWithCurrency(
-                          price: _formatPrice(itemData['item_price']),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFFD00000),
-                          ),
+            Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      MediaCarousel(
+                        mediaItems: mediaItems,
+                        height: 455,
+                        borderRadius: 0,
+                        fit: BoxFit.cover,
+                        showCountBadge: true,
+                        showPageDots: true,
+                        onMediaTap: (media, index) => _openFullscreen(
+                          context,
+                          mediaItems,
+                          index,
+                          sellerPhone,
                         ),
-                        const SizedBox(height: 8),
-                        _LocationLine(location: itemData['location']),
-                        const SizedBox(height: 16),
-                        _SharePostButton(
-                          onShare: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ShareListingPage(
-                                  itemId: itemId,
-                                  itemData: itemData,
-                                  mediaItems: mediaItems,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (itemName.isNotEmpty) ...[
+                              Text(
+                                itemName,
+                                style: const TextStyle(
+                                  fontSize: 25,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
                                 ),
                               ),
-                            );
-                          },
+                              const SizedBox(height: 8),
+                            ],
+                            PriceWithCurrency(
+                              price: _formatPrice(itemData['item_price']),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFD00000),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            _LocationLine(location: itemData['location']),
+                            const SizedBox(height: 16),
+                            _SharePostButton(
+                              onShare: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ShareListingPage(
+                                      itemId: itemId,
+                                      itemData: itemData,
+                                      mediaItems: mediaItems,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                            const SizedBox(height: 18),
+                        _SellerAvatarIcon(
+                          name: itemData['seller_name'],
+                          sellerId: itemData['seller_uid'],
+                              sellerPhone: itemData['seller_phone'],
+                              initialImageUrl:
+                                  itemData['profile_image_url'] ??
+                              itemData['seller_profile_image_url'],
                         ),
-                        const SizedBox(height: 18),
-                        _SellerAvatarIcon(name: itemData['seller_name']),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 6),
+                        _SellerActiveItemsSection(
+                          sellerId: itemData['seller_uid'],
+                          sellerPhone: itemData['seller_phone'],
+                        ),
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),
-                ],
-              ),
+                    ],
+                  ),
+                ),
+                _FixedActionBar(
+                  sellerPhone: sellerPhone,
+                  onCall: () => _launchPhone(sellerPhone),
+                  onWhatsApp: () => _launchWhatsApp(sellerPhone),
+                ),
+              ],
             ),
-            _FixedActionBar(
-              sellerPhone: sellerPhone,
-              onCall: () => _launchPhone(sellerPhone),
-              onWhatsApp: () => _launchWhatsApp(sellerPhone),
-            ),
+            _DetailHeader(onBack: () => _goToFeed(context)),
           ],
         ),
       ),
@@ -164,46 +188,24 @@ class _DetailHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(height: topInset, color: Colors.black),
-        Container(
-          height: 56,
-          color: const Color(0xFFFF7801),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Text(
-                'BIZ SOOQ',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Material(
-                  color: Colors.white,
-                  shape: const CircleBorder(),
-                  elevation: 3,
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: onBack,
-                    child: const SizedBox(
-                      width: 42,
-                      height: 42,
-                      child: Icon(Icons.arrow_back, color: Colors.black),
-                            ),
-                  ),
-                ),
-              ),
-            ],
+    return Container(
+      height: topInset + 56,
+      padding: EdgeInsets.only(top: topInset, left: 14, right: 14),
+      alignment: Alignment.centerLeft,
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 3,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onBack,
+          child: const SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(Icons.arrow_back, color: Colors.black),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -254,7 +256,7 @@ class _FixedActionBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          padding: const EdgeInsets.fromLTRB(28, 7, 28, 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -266,7 +268,7 @@ class _FixedActionBar extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0A84FF),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -281,7 +283,7 @@ class _FixedActionBar extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF25D366),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -355,34 +357,247 @@ class _LocationLine extends StatelessWidget {
 }
 
 class _SellerAvatarIcon extends StatelessWidget {
-  const _SellerAvatarIcon({required this.name});
+  const _SellerAvatarIcon({
+    required this.name,
+    required this.sellerId,
+    required this.sellerPhone,
+    required this.initialImageUrl,
+  });
 
   final Object? name;
+  final Object? sellerId;
+  final Object? sellerPhone;
+  final Object? initialImageUrl;
 
   @override
   Widget build(BuildContext context) {
     final sellerName = name?.toString().trim() ?? '';
+    final initialUrl = initialImageUrl?.toString().trim() ?? '';
+    final sellerDocId =
+        sellerId?.toString().trim().isNotEmpty == true
+            ? sellerId!.toString().trim()
+            : sellerPhone?.toString().trim() ?? '';
+
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.account_circle, size: 82, color: Colors.teal),
-          if (sellerName.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              sellerName,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.black,
+      child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: sellerDocId.isEmpty
+            ? null
+            : FirebaseFirestore.instance
+                  .collection('sellers')
+                  .doc(sellerDocId)
+                  .snapshots(),
+        builder: (context, snapshot) {
+          final seller = snapshot.data?.data() ?? {};
+          final profileImageUrl =
+              seller['profile_image_url']?.toString().trim() ?? initialUrl;
+          final visibleName =
+              seller['name']?.toString().trim().isNotEmpty == true
+              ? seller['name'].toString().trim()
+              : sellerName;
+          final crNumber =
+              seller['cr_number']?.toString().trim().isNotEmpty == true
+              ? seller['cr_number'].toString().trim()
+              : seller['crNumber']?.toString().trim() ?? '';
+
+          return InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: sellerDocId.isEmpty
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SellerProfilePage(
+                          sellerId: sellerDocId,
+                          sellerPhone: sellerPhone?.toString().trim() ?? '',
+                          fallbackName: visibleName,
+                          fallbackImageUrl: profileImageUrl,
+                        ),
+                      ),
+                    );
+                  },
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _SellerProfileImage(imageUrl: profileImageUrl),
+                  if (visibleName.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      visibleName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ],
+                  if (crNumber.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      'CR No. $crNumber',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ],
-        ],
+          );
+        },
       ),
     );
   }
+}
+
+class _SellerProfileImage extends StatelessWidget {
+  const _SellerProfileImage({required this.imageUrl});
+
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 86,
+      height: 86,
+      child: ProfileImage(
+        imageValue: imageUrl,
+        size: 86,
+        fallbackColor: Colors.teal,
+      ),
+    );
+  }
+}
+
+class _SellerActiveItemsSection extends StatelessWidget {
+  const _SellerActiveItemsSection({
+    required this.sellerId,
+    required this.sellerPhone,
+  });
+
+  final Object? sellerId;
+  final Object? sellerPhone;
+
+  @override
+  Widget build(BuildContext context) {
+    final docId = sellerId?.toString().trim().isNotEmpty == true
+        ? sellerId!.toString().trim()
+        : sellerPhone?.toString().trim() ?? '';
+    if (docId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final now = DateTime.now();
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('items')
+          .where('seller_uid', isEqualTo: docId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          return const SizedBox.shrink();
+        }
+
+        final docs = (snapshot.data?.docs ?? [])
+            .where((doc) => _isItemActive(doc.data(), now))
+            .toList()
+          ..sort((a, b) {
+            final aTime = a.data()['created_at'];
+            final bTime = b.data()['created_at'];
+            final aDate = aTime is Timestamp
+                ? aTime.toDate()
+                : DateTime.fromMillisecondsSinceEpoch(0);
+            final bDate = bTime is Timestamp
+                ? bTime.toDate()
+                : DateTime.fromMillisecondsSinceEpoch(0);
+            return bDate.compareTo(aDate);
+          });
+
+        if (docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: _SellerItemGrid(docs: docs),
+        );
+      },
+    );
+  }
+}
+
+class _SellerItemGrid extends StatelessWidget {
+  const _SellerItemGrid({required this.docs});
+
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+  @override
+  Widget build(BuildContext context) {
+    final leftDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    final rightDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (var i = 0; i < docs.length; i++) {
+      if (i.isEven) {
+        leftDocs.add(docs[i]);
+      } else {
+        rightDocs.add(docs[i]);
+      }
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _SellerItemColumn(docs: leftDocs)),
+        const SizedBox(width: 2),
+        Expanded(child: _SellerItemColumn(docs: rightDocs)),
+      ],
+    );
+  }
+}
+
+class _SellerItemColumn extends StatelessWidget {
+  const _SellerItemColumn({required this.docs});
+
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: docs
+          .map((doc) => ItemCard(docId: doc.id, item: doc.data(), isCompact: true))
+          .toList(),
+    );
+  }
+}
+
+bool _isItemActive(Map<String, dynamic> item, DateTime now) {
+  final createdAt = item['created_at'];
+  final timePeriodHours = item['time_period_hours'];
+  if (createdAt is Timestamp && timePeriodHours is num) {
+    return createdAt
+        .toDate()
+        .add(Duration(hours: timePeriodHours.toInt()))
+        .isAfter(now);
+  }
+  final expiresAt = item['expires_at'];
+  if (expiresAt is Timestamp) {
+    return expiresAt.toDate().isAfter(now);
+  }
+  if (expiresAt is DateTime) {
+    return expiresAt.isAfter(now);
+  }
+  return true;
 }
 
 class _DetailsCard extends StatelessWidget {
@@ -511,7 +726,8 @@ class _StackedMediaPageState extends State<_StackedMediaPage> {
       context,
       MaterialPageRoute(
         builder: (_) => _SingleMediaPage(
-          media: widget.mediaItems[index],
+          mediaItems: widget.mediaItems,
+          initialIndex: index,
           sellerPhone: widget.sellerPhone,
         ),
       ),
@@ -522,38 +738,42 @@ class _StackedMediaPageState extends State<_StackedMediaPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Column(
+      body: Stack(
         children: [
-          _FullscreenHeader(onBack: () => Navigator.pop(context)),
-          Expanded(
-            child: ClipRect(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return ListView.separated(
-                    controller: _scrollController,
-                    padding: EdgeInsets.zero,
-                    itemCount: widget.mediaItems.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      return GestureDetector(
-                        onTap: () => _openSingleMedia(index),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: constraints.maxHeight,
-                          child: _FullscreenMediaView(
-                            media: widget.mediaItems[index],
-                            allowZoom: false,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
+          Column(
+            children: [
+              Expanded(
+                child: ClipRect(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      return ListView.separated(
+                        controller: _scrollController,
+                        padding: EdgeInsets.zero,
+                        itemCount: widget.mediaItems.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          return GestureDetector(
+                            onTap: () => _openSingleMedia(index),
+                            child: SizedBox(
+                              width: double.infinity,
+                              height: constraints.maxHeight,
+                              child: _FullscreenMediaView(
+                                media: widget.mediaItems[index],
+                                allowZoom: false,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
-                  );
-                },
+                  ),
+                ),
               ),
-                    ),
+              _FullscreenContactBar(sellerPhone: widget.sellerPhone),
+            ],
           ),
-          _FullscreenContactBar(sellerPhone: widget.sellerPhone),
+          _FullscreenHeader(onBack: () => Navigator.pop(context)),
         ],
       ),
     );
@@ -561,9 +781,14 @@ class _StackedMediaPageState extends State<_StackedMediaPage> {
 }
 
 class _SingleMediaPage extends StatefulWidget {
-  const _SingleMediaPage({required this.media, required this.sellerPhone});
+  const _SingleMediaPage({
+    required this.mediaItems,
+    required this.initialIndex,
+    required this.sellerPhone,
+  });
 
-  final MediaItem media;
+  final List<MediaItem> mediaItems;
+  final int initialIndex;
   final String sellerPhone;
 
   @override
@@ -571,9 +796,14 @@ class _SingleMediaPage extends StatefulWidget {
 }
 
 class _SingleMediaPageState extends State<_SingleMediaPage> {
+  late final PageController _pageController;
+  late int _currentIndex;
+
   @override
   void initState() {
     super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.portraitDown,
@@ -582,28 +812,87 @@ class _SingleMediaPageState extends State<_SingleMediaPage> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final mediaTopPadding = MediaQuery.paddingOf(context).top + 74;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Column(
+      body: Stack(
         children: [
-          _FullscreenHeader(onBack: () => Navigator.pop(context)),
-          Expanded(
-            child: ClipRect(
-              child: _FullscreenMediaView(
-                media: widget.media,
-                allowZoom: true,
-                fit: BoxFit.contain,
+          Column(
+            children: [
+              Expanded(
+                child: ClipRect(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: mediaTopPadding),
+                    child: PageView.builder(
+                      controller: _pageController,
+                      onPageChanged: (index) {
+                        setState(() => _currentIndex = index);
+                      },
+                      itemCount: widget.mediaItems.length,
+                      itemBuilder: (context, index) {
+                        return _FullscreenMediaView(
+                          media: widget.mediaItems[index],
+                          allowZoom: true,
+                          fit: BoxFit.cover,
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
-            ),
+              _FullscreenContactBar(sellerPhone: widget.sellerPhone),
+            ],
           ),
-          _FullscreenContactBar(sellerPhone: widget.sellerPhone),
+          _FullscreenHeader(onBack: () => Navigator.pop(context)),
+          _MediaPositionCounter(
+            currentIndex: _currentIndex,
+            totalCount: widget.mediaItems.length,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _MediaPositionCounter extends StatelessWidget {
+  const _MediaPositionCounter({
+    required this.currentIndex,
+    required this.totalCount,
+  });
+
+  final int currentIndex;
+  final int totalCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: topInset + 36,
+      child: Center(
+        child: Text(
+          '${currentIndex + 1} / $totalCount',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            shadows: [
+              Shadow(
+                color: Colors.black,
+                blurRadius: 5,
+                offset: Offset(0, 1),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -617,46 +906,24 @@ class _FullscreenHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(height: topInset, color: Colors.black),
-        Container(
-          height: 56,
-          color: const Color(0xFFFF7801),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              const Text(
-                'BIZ SOOQ',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Material(
-                  color: Colors.white,
-                  shape: const CircleBorder(),
-                  elevation: 3,
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: onBack,
-                    child: const SizedBox(
-                      width: 42,
-                      height: 42,
-                      child: Icon(Icons.arrow_back, color: Colors.black),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+    return Container(
+      height: topInset + 56,
+      padding: EdgeInsets.only(top: topInset, left: 14, right: 14),
+      alignment: Alignment.centerLeft,
+      child: Material(
+        color: Colors.white,
+        shape: const CircleBorder(),
+        elevation: 3,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onBack,
+          child: const SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(Icons.arrow_back, color: Colors.black),
           ),
         ),
-      ],
+      ),
     );
   }
 }
@@ -675,36 +942,39 @@ class _FullscreenMediaView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (media.isVideo) {
-      return Center(
-        child: AspectRatio(
-          aspectRatio: 9 / 16,
-          child: VideoPreview(url: media.url, fit: fit),
-        ),
-      );
+      return SizedBox.expand(child: VideoPreview(url: media.url, fit: fit));
     }
 
-    final image = CachedNetworkImage(
-      imageUrl: media.url,
-      width: double.infinity,
-      height: double.infinity,
-      fit: fit,
-      placeholder: (context, url) =>
-          const Center(child: CircularProgressIndicator()),
-      errorWidget: (context, url, error) => const Icon(
-        Icons.broken_image,
-        color: Colors.white,
-        size: 54,
-      ),
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final image = CachedNetworkImage(
+          imageUrl: media.url,
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          fit: fit,
+          placeholder: (context, url) =>
+              const Center(child: CircularProgressIndicator()),
+          errorWidget: (context, url, error) => const Icon(
+            Icons.broken_image,
+            color: Colors.white,
+            size: 54,
+          ),
+        );
 
-    return Center(
-      child: allowZoom
-          ? InteractiveViewer(
-              minScale: 1,
-              maxScale: 4,
-              child: image,
-            )
-          : image,
+        if (!allowZoom) {
+          return image;
+        }
+
+        return InteractiveViewer(
+          minScale: 1,
+          maxScale: 4,
+          child: SizedBox(
+            width: constraints.maxWidth,
+            height: constraints.maxHeight,
+            child: image,
+          ),
+        );
+      },
     );
   }
 }

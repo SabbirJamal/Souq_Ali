@@ -13,6 +13,7 @@ import 'package:video_compress/video_compress.dart';
 import 'camera_capture_page.dart';
 import 'story_repository.dart';
 import 'widgets/media_carousel.dart';
+import 'widgets/price_with_currency.dart';
 
 class ItemEditPage extends StatefulWidget {
   const ItemEditPage({super.key, required this.docId, required this.itemData});
@@ -455,7 +456,11 @@ class _ItemEditPageState extends State<ItemEditPage> {
           _field(
             _priceController,
             'Price',
-            Icons.monetization_on,
+            null,
+            prefixIconWidget: const Padding(
+              padding: EdgeInsets.all(12),
+              child: RiyalCurrencyIcon(size: 22),
+            ),
             focusNode: _priceFocusNode,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
@@ -474,7 +479,11 @@ class _ItemEditPageState extends State<ItemEditPage> {
           _field(
             _locationController,
             'Location',
-            Icons.location_on,
+            null,
+            prefixIconWidget: const Center(
+              widthFactor: 1,
+              child: Text('📍', style: TextStyle(fontSize: 20)),
+            ),
             maxLength: 30,
           ),
           const SizedBox(height: 20),
@@ -569,7 +578,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
   Widget _field(
     TextEditingController controller,
     String label,
-    IconData icon, {
+    IconData? icon, {
+    Widget? prefixIconWidget,
     int? maxLength,
     FocusNode? focusNode,
     TextInputType? keyboardType,
@@ -593,7 +603,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         filled: true,
         fillColor: Colors.white,
         labelText: label,
-        prefixIcon: Icon(icon),
+        prefixIcon: prefixIconWidget ?? (icon == null ? null : Icon(icon)),
         counterText: '',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),

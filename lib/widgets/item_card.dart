@@ -80,8 +80,12 @@ class ItemCard extends StatelessWidget {
                   ),
                   Positioned(
                     left: isCompact ? 8 : 14,
+                    right: isCompact ? 8 : 14,
                     bottom: isCompact ? 10 : 18,
-                    child: _ImageFilledDetails(item: item, isCompact: isCompact),
+                    child: _ImageFilledDetails(
+                      item: item,
+                      isCompact: isCompact,
+                    ),
                   ),
                 ],
               ),
@@ -132,12 +136,12 @@ class _ImageFilledDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxWidth = MediaQuery.sizeOf(context).width * (isCompact ? 0.38 : 0.72);
     final itemName = item['item_name']?.toString().trim() ?? '';
 
     return IntrinsicWidth(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
+      stepWidth: 1,
+      child: SizedBox(
+        width: double.infinity,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,7 +221,7 @@ class _TextChip extends StatelessWidget {
         vertical: isCompact ? 4 : 6,
       ),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(6),
       ),
       child: child,
@@ -226,10 +230,7 @@ class _TextChip extends StatelessWidget {
 }
 
 class _OverlayInfoRow extends StatelessWidget {
-  const _OverlayInfoRow({
-    required this.text,
-    required this.isCompact,
-  });
+  const _OverlayInfoRow({required this.text, required this.isCompact});
 
   final String text;
   final bool isCompact;
@@ -247,9 +248,9 @@ class _OverlayInfoRow extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: Colors.grey[700],
-              fontSize: isCompact ? 11 : 18,
-              fontWeight: FontWeight.w500,
+              color: Colors.black,
+              fontSize: isCompact ? 13 : 20,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),

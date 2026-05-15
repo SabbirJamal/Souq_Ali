@@ -36,10 +36,16 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
     setState(() => _isRegistering = true);
 
     try {
-      await FirebaseFirestore.instance
+      final sellerRef = FirebaseFirestore.instance
           .collection('sellers')
-          .doc(phoneNumber)
-          .set({
+          .doc(phoneNumber);
+      final existingSeller = await sellerRef.get();
+      if (existingSeller.exists) {
+        _showMessage('This phone number is already registered.');
+        return;
+      }
+
+      await sellerRef.set({
             'uid': phoneNumber,
             'name': name,
             'phoneNumber': phoneNumber,
@@ -83,7 +89,42 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Seller Registration')),
+      appBar: AppBar(
+        title: const Text('Create Account'),
+        centerTitle: true,
+        backgroundColor: const Color(0xFFFF7801),
+        foregroundColor: Colors.white,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 2,
+        onTap: (_) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => const SellerHomePage(isSellerMode: false),
+            ),
+            (route) => false,
+          );
+        },
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFFFF7801),
+        unselectedItemColor: Colors.grey,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
+        iconSize: 24,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.play_circle_fill),
+            label: 'Stories',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add_circle_outline),
+            label: 'Add',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -94,29 +135,25 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Create seller account',
+                    'Create Account',
+                    textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Enter your details to create a seller account.',
-                    style: Theme.of(context).textTheme.bodyLarge,
                   ),
                   const SizedBox(height: 32),
                   TextFormField(
                     controller: _nameController,
                     textInputAction: TextInputAction.next,
                     decoration: const InputDecoration(
-                      labelText: 'Seller name',
-                      prefixIcon: Icon(Icons.person),
+                      labelText: 'Company name',
+                      prefixIcon: Icon(Icons.business),
                     ),
                     validator: (value) {
                       final name = value?.trim() ?? '';
                       if (name.isEmpty) {
-                        return 'Enter seller name';
+                        return 'Enter company name';
                       }
                       if (name.length < 2) {
-                        return 'Name is too short';
+                        return 'Company name is too short';
                       }
                       return null;
                     },
@@ -146,7 +183,9 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                       )
                         : const Icon(Icons.app_registration),
-                    label: Text(_isRegistering ? 'Registering...' : 'Register'),
+                    label: Text(
+                      _isRegistering ? 'Creating...' : 'Create Account',
+                    ),
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFFFF7801),
                       foregroundColor: Colors.white,

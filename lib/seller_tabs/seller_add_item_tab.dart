@@ -14,6 +14,7 @@ import 'package:video_compress/video_compress.dart';
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
 import '../story_repository.dart';
+import '../widgets/price_with_currency.dart';
 
 class SellerAddItemTab extends StatefulWidget {
   const SellerAddItemTab({super.key, this.onItemAddedDone});
@@ -66,6 +67,28 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         ? '1 hour'
         : '$_timePeriodHours hours';
     return '$dayText $hourText';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDefaultSellerLocation();
+  }
+
+  Future<void> _loadDefaultSellerLocation() async {
+    final session = await SellerSession.current();
+    if (session == null) {
+      return;
+    }
+    final sellerDoc = await FirebaseFirestore.instance
+        .collection('sellers')
+        .doc(session.sellerId)
+        .get();
+    final defaultLocation = sellerDoc.data()?['location']?.toString().trim() ?? '';
+    if (!mounted || defaultLocation.isEmpty || _locationController.text.isNotEmpty) {
+      return;
+    }
+    _locationController.text = defaultLocation;
   }
 
   @override
@@ -343,7 +366,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     _nameController.clear();
     _priceController.text = '0';
     _lastValidPriceText = '0';
-    _locationController.clear();
     setState(() {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
@@ -351,6 +373,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _timePeriodHours = 18;
       _showLocationError = false;
     });
+    _loadDefaultSellerLocation();
   }
 
   Future<void> _showItemAddedDialog() async {
@@ -521,11 +544,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 3),
           _buildMediaPicker(),
           const SizedBox(height: 20),
           _buildTextField(
@@ -544,8 +566,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                   controller: _priceController,
                   label: 'Price',
                   hint: '2.500',
-                  icon: Icons.monetization_on,
-                  prefixText: 'OMR ',
+                  icon: null,
+                  prefixIconWidget: const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: RiyalCurrencyIcon(size: 22),
+                  ),
                   focusNode: _priceFocusNode,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -579,7 +604,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             controller: _locationController,
             label: 'Location',
             hint: _showLocationError ? 'Please enter the location' : 'Muscat, Al Seeb',
-            icon: Icons.location_on,
+            icon: null,
+            prefixIconWidget: const Center(
+              widthFactor: 1,
+              child: Text('📍', style: TextStyle(fontSize: 20)),
+            ),
             maxLength: 30,
             errorText: _showLocationError ? 'Please enter the location' : null,
             onChanged: (_) {
@@ -903,7 +932,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     required TextEditingController controller,
     required String label,
     required String hint,
-    required IconData icon,
+    IconData? icon,
+    Widget? prefixIconWidget,
     TextInputType? keyboardType,
     String? prefixText,
     List<TextInputFormatter>? inputFormatters,
@@ -933,7 +963,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         labelText: label,
         hintText: hint,
         prefixText: prefixText,
-        prefixIcon: Icon(icon),
+        prefixIcon: prefixIconWidget ?? (icon == null ? null : Icon(icon)),
         errorText: errorText,
         counterText: '',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

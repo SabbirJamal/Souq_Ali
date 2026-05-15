@@ -4,7 +4,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'item_detail_page.dart';
+import 'seller_profile_page.dart';
 import 'widgets/price_with_currency.dart';
+import 'widgets/profile_image.dart';
 
 class StoryVideo {
   const StoryVideo({
@@ -12,6 +14,8 @@ class StoryVideo {
     required this.itemId,
     required this.itemName,
     required this.itemPrice,
+    required this.location,
+    required this.profileImageUrl,
     required this.sellerName,
     required this.sellerPhone,
     this.itemData,
@@ -21,16 +25,25 @@ class StoryVideo {
   final String itemId;
   final String itemName;
   final String itemPrice;
+  final String location;
+  final String profileImageUrl;
   final String sellerName;
   final String sellerPhone;
   final Map<String, dynamic>? itemData;
 
-  StoryVideo copyWith({String? itemName, String? itemPrice}) {
+  StoryVideo copyWith({
+    String? itemName,
+    String? itemPrice,
+    String? location,
+    String? profileImageUrl,
+  }) {
     return StoryVideo(
       url: url,
       itemId: itemId,
       itemName: itemName ?? this.itemName,
       itemPrice: itemPrice ?? this.itemPrice,
+      location: location ?? this.location,
+      profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       sellerName: sellerName,
       sellerPhone: sellerPhone,
       itemData: itemData,
@@ -417,6 +430,33 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _StorySellerAvatar(
+                    imageUrl: widget.story.profileImageUrl,
+                    onTap: () async {
+                      _controller.pause();
+                      final sellerId =
+                          widget.story.itemData?['seller_uid']?.toString() ??
+                          widget.story.sellerPhone;
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SellerProfilePage(
+                            sellerId: sellerId,
+                            sellerPhone: widget.story.sellerPhone,
+                            fallbackName: widget.story.sellerName,
+                            fallbackImageUrl: widget.story.profileImageUrl,
+                          ),
+                        ),
+                      );
+                      if (mounted &&
+                          _controller.value.isInitialized &&
+                          !_didFinish &&
+                          !_isTapPaused) {
+                        _controller.play();
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 14),
                   _StoryActionButton(
                     icon:
                         const Icon(Icons.phone, color: Colors.white, size: 27),
@@ -471,66 +511,134 @@ class _StoryItemInfo extends StatelessWidget {
   final VoidCallback onBeforeOpen;
   final VoidCallback onAfterReturn;
 
+  Future<void> _openItem(BuildContext context) async {
+    if (story.itemData == null || story.itemId.isEmpty) {
+      return;
+    }
+    onBeforeOpen();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ItemDetailPage(
+          itemData: story.itemData!,
+          itemId: story.itemId,
+        ),
+      ),
+    );
+    onAfterReturn();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: story.itemData == null || story.itemId.isEmpty
-          ? null
-          : () async {
-              onBeforeOpen();
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ItemDetailPage(
-                    itemData: story.itemData!,
-                    itemId: story.itemId,
+    final location = story.location.trim();
+    final itemName = story.itemName.trim();
+    final itemPrice = _formatStoryPrice(story.itemPrice);
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 190),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (location.isNotEmpty) ...[
+            _StoryInfoChip(
+              onTap: () => _openItem(context),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('📍', style: TextStyle(fontSize: 16)),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
-              );
-              onAfterReturn();
-            },
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 170),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.36),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              story.itemName,
-              textAlign: TextAlign.right,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
+                ],
               ),
             ),
-            if (story.itemPrice.trim().isNotEmpty) ...[
-              const SizedBox(height: 5),
-              Align(
-                alignment: Alignment.centerRight,
-                child: PriceWithCurrency(
-                  price: story.itemPrice,
-                  style: const TextStyle(
-                  color: Color(0xFFFFD8D8),
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+            const SizedBox(height: 7),
+          ],
+          if (itemPrice.isNotEmpty) ...[
+            _StoryInfoChip(
+              onTap: () => _openItem(context),
+              child: PriceWithCurrency(
+                price: itemPrice,
+                style: const TextStyle(
+                  color: Color(0xFFD00000),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            ],
+            ),
+            const SizedBox(height: 7),
           ],
+          if (itemName.isNotEmpty)
+            _StoryInfoChip(
+              onTap: () => _openItem(context),
+              child: Text(
+                itemName,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StoryInfoChip extends StatelessWidget {
+  const _StoryInfoChip({required this.child, required this.onTap});
+
+  final Widget child;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          child: child,
         ),
       ),
     );
   }
+}
+
+String _formatStoryPrice(String value) {
+  final text = value.trim();
+  if (_isZeroStoryPrice(text)) {
+    return 'Contact for Price';
+  }
+  return text
+      .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
+bool _isZeroStoryPrice(String value) {
+  final match = RegExp(r'\d+(?:\.\d+)?').firstMatch(value);
+  if (match == null) {
+    return false;
+  }
+  return (double.tryParse(match.group(0) ?? '') ?? -1) == 0;
 }
 
 class _StoryProgressBar extends StatelessWidget {
@@ -617,6 +725,38 @@ class _StoryActionButton extends StatelessWidget {
           height: 48,
           child: Center(child: icon),
         ),
+      ),
+    );
+  }
+}
+
+class _StorySellerAvatar extends StatelessWidget {
+  const _StorySellerAvatar({required this.imageUrl, required this.onTap});
+
+  final String imageUrl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.28),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: ProfileImage(imageValue: imageUrl, size: 48),
       ),
     );
   }
