@@ -30,6 +30,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
   DateTime? _lastFeedBackPress;
+  bool _isFeedSearchActive = false;
 
   @override
   void dispose() {
@@ -115,6 +116,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
       0 => SellerFeedTab(
         key: ValueKey('feed-$_feedRefreshTick'),
         chromeVisibleListenable: _chromeVisible,
+        onSearchActiveChanged: (isActive) {
+          _isFeedSearchActive = isActive;
+          if (isActive) {
+            _setChromeVisible(true);
+          }
+        },
       ),
       1 => const SellerStoriesTab(),
       2 => widget.isSellerMode
@@ -137,6 +144,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
   bool _onScrollNotification(ScrollNotification notification) {
     if (_currentIndex != 0) {
+      return false;
+    }
+    if (_isFeedSearchActive) {
+      _setChromeVisible(true);
       return false;
     }
     if (notification.metrics.axis != Axis.vertical) {
@@ -192,20 +203,32 @@ class _SellerHomePageState extends State<SellerHomePage> {
               ),
             ],
           ),
-          bottomNavigationBar: ClipRect(
-            child: ValueListenableBuilder<bool>(
-              valueListenable: _chromeVisible,
-              builder: (context, visible, child) {
-                final shouldShow = _currentIndex != 0 || visible;
-                return AnimatedAlign(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.bottomCenter,
-                  heightFactor: shouldShow ? 1 : 0,
-                  child: child,
-                );
-              },
-              child: BottomNavigationBar(
+          bottomNavigationBar: ValueListenableBuilder<bool>(
+            valueListenable: _chromeVisible,
+            builder: (context, visible, child) {
+              final shouldShow = _currentIndex != 0 || visible;
+              final systemBottomInset = MediaQuery.paddingOf(context).bottom;
+              final hiddenFeedSpacer = _currentIndex == 0 && !shouldShow
+                  ? systemBottomInset.clamp(24.0, 48.0)
+                  : 0.0;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ClipRect(
+                    child: AnimatedAlign(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      alignment: Alignment.bottomCenter,
+                      heightFactor: shouldShow ? 1 : 0,
+                      child: child,
+                    ),
+                  ),
+                  if (hiddenFeedSpacer > 0)
+                    SizedBox(height: hiddenFeedSpacer),
+                ],
+              );
+            },
+            child: BottomNavigationBar(
                 currentIndex: _currentIndex,
                 onTap: _onTabTapped,
                 type: BottomNavigationBarType.fixed,
@@ -236,7 +259,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
                     label: 'Settings',
                   ),
                 ],
-              ),
             ),
           ),
         ),
@@ -340,8 +362,8 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
                     'assets/branding/logo.png',
-                    width: 102,
-                    height: 102,
+                    width: 180,
+                    height: 180,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => const Icon(
                       Icons.storefront,

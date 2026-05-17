@@ -388,7 +388,7 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
           Positioned(
             left: 14,
             right: 14,
-            top: 8,
+            top: 0,
             child: SafeArea(
               child: _StoryProgressBar(progress: _progress),
             ),

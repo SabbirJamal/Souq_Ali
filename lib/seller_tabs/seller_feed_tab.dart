@@ -8,9 +8,11 @@ class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
     super.key,
     required this.chromeVisibleListenable,
+    required this.onSearchActiveChanged,
   });
 
   final ValueListenable<bool> chromeVisibleListenable;
+  final ValueChanged<bool> onSearchActiveChanged;
 
   @override
   State<SellerFeedTab> createState() => _SellerFeedTabState();
@@ -18,6 +20,7 @@ class SellerFeedTab extends StatefulWidget {
 
 class _SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
   bool _isSearchOpen = false;
   bool _isGridView = true;
   String _query = '';
@@ -25,16 +28,21 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
 
   @override
   void dispose() {
+    widget.onSearchActiveChanged(false);
+    _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   void _openSearch() {
     setState(() => _isSearchOpen = true);
+    widget.onSearchActiveChanged(true);
   }
 
   void _closeSearch() {
+    _searchFocusNode.unfocus();
     _searchController.clear();
+    widget.onSearchActiveChanged(false);
     setState(() {
       _isSearchOpen = false;
       _query = '';
@@ -85,6 +93,7 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
             child: _FeedHeader(
                 isSearchOpen: _isSearchOpen,
                 searchController: _searchController,
+                searchFocusNode: _searchFocusNode,
                 onOpenSearch: _openSearch,
                 onCloseSearch: _closeSearch,
                 onQueryChanged: (value) => setState(() => _query = value),
@@ -271,6 +280,7 @@ class _FeedHeader extends StatelessWidget {
   const _FeedHeader({
     required this.isSearchOpen,
     required this.searchController,
+    required this.searchFocusNode,
     required this.onOpenSearch,
     required this.onCloseSearch,
     required this.onQueryChanged,
@@ -280,6 +290,7 @@ class _FeedHeader extends StatelessWidget {
 
   final bool isSearchOpen;
   final TextEditingController searchController;
+  final FocusNode searchFocusNode;
   final VoidCallback onOpenSearch;
   final VoidCallback onCloseSearch;
   final ValueChanged<String> onQueryChanged;
@@ -349,6 +360,7 @@ class _FeedHeader extends StatelessWidget {
                                     Expanded(
                                       child: TextField(
                                         controller: searchController,
+                                        focusNode: searchFocusNode,
                                         autofocus: true,
                                         onChanged: onQueryChanged,
                                         decoration: const InputDecoration(

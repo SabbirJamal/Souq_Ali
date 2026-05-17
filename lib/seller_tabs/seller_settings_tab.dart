@@ -262,24 +262,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Material(
-                      color: Colors.white,
-                      shape: const CircleBorder(),
-                      elevation: 3,
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: widget.onBack,
-                        child: const SizedBox(
-                          width: 42,
-                          height: 42,
-                          child: Icon(Icons.arrow_back, color: Colors.black),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   Center(
                     child: _ProfileAvatar(
                       imageUrl: profileImageUrl,

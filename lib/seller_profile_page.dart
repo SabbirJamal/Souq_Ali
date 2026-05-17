@@ -163,7 +163,7 @@ class _SellerProfileTop extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: const Color(0xFFF4FBF7),
-      padding: const EdgeInsets.fromLTRB(18, 26, 18, 10),
+      padding: const EdgeInsets.fromLTRB(18, 36, 18, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
