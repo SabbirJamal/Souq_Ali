@@ -425,7 +425,7 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
             ),
           Positioned(
             left: 16,
-            bottom: 84,
+            bottom: 138,
             child: SafeArea(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -472,6 +472,16 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
                     ),
                     backgroundColor: const Color(0xFF25D366),
                     onTap: widget.onWhatsApp,
+                  ),
+                  const SizedBox(height: 14),
+                  _StoryActionButton(
+                    icon: const Icon(
+                      Icons.share,
+                      color: Colors.white,
+                      size: 26,
+                    ),
+                    backgroundColor: const Color(0xFF222222),
+                    onTap: () {},
                   ),
                 ],
               ),

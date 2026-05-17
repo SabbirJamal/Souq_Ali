@@ -29,6 +29,15 @@ class SellerListingsTab extends StatelessWidget {
     return 'Posted ${postedAt.day}/${postedAt.month}/${postedAt.year} $hour12:$minute $period';
   }
 
+  String _listingPrice(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    final match = RegExp(r'\d+(?:\.\d+)?').firstMatch(text);
+    if (match != null && (double.tryParse(match.group(0) ?? '') ?? -1) == 0) {
+      return 'Contact for price';
+    }
+    return text;
+  }
+
   Future<void> _deleteItem(
     BuildContext context,
     String docId,
@@ -187,9 +196,9 @@ class SellerListingsTab extends StatelessWidget {
                                           ),
                                           const SizedBox(height: 4),
                                           PriceWithCurrency(
-                                            price:
-                                                item['item_price']?.toString() ??
-                                                '',
+                                            price: _listingPrice(
+                                              item['item_price'],
+                                            ),
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: Colors.grey[600],
@@ -230,37 +239,95 @@ class SellerListingsTab extends StatelessWidget {
                                                       context: context,
                                                       builder: (context) =>
                                                           AlertDialog(
-                                                            title: const Text(
-                                                              'Delete Item',
-                                                            ),
-                                                            content: const Text(
-                                                              'Are you sure you want to delete this item?',
-                                                            ),
-                                                            actions: [
-                                                              TextButton(
-                                                                onPressed: () =>
-                                                                    Navigator.pop(
-                                                                      context,
-                                                                      false,
-                                                                    ),
-                                                                child:
-                                                                    const Text(
-                                                                      'Cancel',
-                                                                    ),
-                                                              ),
-                                                              TextButton(
-                                                                onPressed: () =>
-                                                                    Navigator.pop(
-                                                                      context,
-                                                                      true,
-                                                                    ),
-                                                                child: const Text(
-                                                                  'Delete',
-                                                                  style: TextStyle(
-                                                                    color: Colors
-                                                                        .red,
-                                                                  ),
+                                                            title: const Center(
+                                                              child: Text(
+                                                                'Delete !',
+                                                                style: TextStyle(
+                                                                  fontSize: 30,
                                                                 ),
+                                                              ),
+                                                            ),
+                                                            contentPadding:
+                                                                const EdgeInsets
+                                                                    .fromLTRB(
+                                                                      6,
+                                                                      8,
+                                                                      6,
+                                                                      0,
+                                                                    ),
+                                                            actionsPadding:
+                                                                const EdgeInsets
+                                                                    .fromLTRB(
+                                                                      6,
+                                                                      0,
+                                                                      6,
+                                                                      6,
+                                                                    ),
+                                                            actions: [
+                                                              Row(
+                                                                children: [
+                                                                  Expanded(
+                                                                    child: OutlinedButton(
+                                                                      onPressed: () => Navigator.pop(
+                                                                        context,
+                                                                        false,
+                                                                      ),
+                                                                      style: OutlinedButton.styleFrom(
+                                                                        foregroundColor:
+                                                                            Colors.black,
+                                                                        side: const BorderSide(
+                                                                          color: Colors.black,
+                                                                          width: 2,
+                                                                        ),
+                                                                        shape: RoundedRectangleBorder(
+                                                                          borderRadius: BorderRadius.circular(
+                                                                            10,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                      child: const Text(
+                                                                        'No',
+                                                                        style: TextStyle(
+                                                                          fontSize:
+                                                                              28,
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                  const SizedBox(
+                                                                    width: 2,
+                                                                  ),
+                                                                  Expanded(
+                                                                    child: OutlinedButton(
+                                                                      onPressed: () => Navigator.pop(
+                                                                        context,
+                                                                        true,
+                                                                      ),
+                                                                      style: OutlinedButton.styleFrom(
+                                                                        foregroundColor:
+                                                                            Colors.red,
+                                                                        side: const BorderSide(
+                                                                          color: Colors.black,
+                                                                          width: 2,
+                                                                        ),
+                                                                        shape: RoundedRectangleBorder(
+                                                                          borderRadius: BorderRadius.circular(
+                                                                            10,
+                                                                          ),
+                                                                        ),
+                                                                      ),
+                                                                      child: const Text(
+                                                                        'Yes',
+                                                                        style: TextStyle(
+                                                                          fontSize:
+                                                                              28,
+                                                                          color:
+                                                                              Colors.red,
+                                                                        ),
+                                                                      ),
+                                                                    ),
+                                                                  ),
+                                                                ],
                                                               ),
                                                             ],
                                                           ),

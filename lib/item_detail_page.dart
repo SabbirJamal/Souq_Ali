@@ -89,13 +89,11 @@ class ItemDetailPage extends StatelessWidget {
                   child: ListView(
                     padding: EdgeInsets.zero,
                     children: [
-                      MediaCarousel(
+                      _DetailMediaHeader(
                         mediaItems: mediaItems,
-                        height: 455,
-                        borderRadius: 0,
-                        fit: BoxFit.cover,
-                        showCountBadge: true,
-                        showPageDots: true,
+                        itemName: itemName,
+                        price: _formatPrice(itemData['item_price']),
+                        location: itemData['location']?.toString() ?? '',
                         onMediaTap: (media, index) => _openFullscreen(
                           context,
                           mediaItems,
@@ -108,43 +106,7 @@ class ItemDetailPage extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (itemName.isNotEmpty) ...[
-                              Text(
-                                itemName,
-                                style: const TextStyle(
-                                  fontSize: 25,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                            PriceWithCurrency(
-                              price: _formatPrice(itemData['item_price']),
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFFD00000),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            _LocationLine(location: itemData['location']),
-                            const SizedBox(height: 16),
-                            _SharePostButton(
-                              onShare: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ShareListingPage(
-                                      itemId: itemId,
-                                      itemData: itemData,
-                                      mediaItems: mediaItems,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 18),
+                            const SizedBox(height: 2),
                         _SellerAvatarIcon(
                           name: itemData['seller_name'],
                           sellerId: itemData['seller_uid'],
@@ -169,6 +131,18 @@ class ItemDetailPage extends StatelessWidget {
                   sellerPhone: sellerPhone,
                   onCall: () => _launchPhone(sellerPhone),
                   onWhatsApp: () => _launchWhatsApp(sellerPhone),
+                  onShare: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ShareListingPage(
+                          itemId: itemId,
+                          itemData: itemData,
+                          mediaItems: mediaItems,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -229,22 +203,144 @@ bool _isZeroPrice(String value) {
   return (double.tryParse(match.group(0) ?? '') ?? -1) == 0;
 }
 
+class _DetailMediaHeader extends StatelessWidget {
+  const _DetailMediaHeader({
+    required this.mediaItems,
+    required this.itemName,
+    required this.price,
+    required this.location,
+    required this.onMediaTap,
+  });
+
+  final List<MediaItem> mediaItems;
+  final String itemName;
+  final String price;
+  final String location;
+  final void Function(MediaItem media, int index) onMediaTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmedLocation = location.trim();
+    return SizedBox(
+      height: 620,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          MediaCarousel(
+            mediaItems: mediaItems,
+            height: 620,
+            borderRadius: 0,
+            fit: BoxFit.cover,
+            showCountBadge: true,
+            showPageDots: true,
+            onMediaTap: onMediaTap,
+          ),
+          Positioned(
+            left: 14,
+            right: 14,
+            bottom: 48,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (trimmedLocation.isNotEmpty)
+                  _DetailOverlayChip(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('📍', style: TextStyle(fontSize: 15)),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            trimmedLocation,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (price.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _DetailOverlayChip(
+                    child: PriceWithCurrency(
+                      price: price,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFD00000),
+                      ),
+                    ),
+                  ),
+                ],
+                if (itemName.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _DetailOverlayChip(
+                    child: Text(
+                      itemName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailOverlayChip extends StatelessWidget {
+  const _DetailOverlayChip({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width - 28,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: child,
+    );
+  }
+}
+
 class _FixedActionBar extends StatelessWidget {
   const _FixedActionBar({
     required this.sellerPhone,
     required this.onCall,
     required this.onWhatsApp,
+    required this.onShare,
   });
 
   final String sellerPhone;
   final VoidCallback onCall;
   final VoidCallback onWhatsApp;
+  final VoidCallback onShare;
 
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.black,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.12),
@@ -289,6 +385,25 @@ class _FixedActionBar extends StatelessWidget {
                         ),
                       ),
                       child: const FaIcon(FontAwesomeIcons.whatsapp, size: 26),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onShare,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.ios_share,
+                        size: 26,
+                        color: Colors.black,
+                      ),
                     ),
                   ),
                 ],
@@ -559,7 +674,7 @@ class _SellerItemGrid extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(child: _SellerItemColumn(docs: leftDocs)),
-        const SizedBox(width: 2),
+        const SizedBox(width: 10),
         Expanded(child: _SellerItemColumn(docs: rightDocs)),
       ],
     );
@@ -1046,6 +1161,25 @@ class _FullscreenContactBar extends StatelessWidget {
                     ),
                   ),
                   child: const FaIcon(FontAwesomeIcons.whatsapp, size: 24),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.ios_share,
+                    size: 24,
+                    color: Colors.black,
+                  ),
                 ),
               ),
             ],

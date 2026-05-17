@@ -45,48 +45,46 @@ class SellerProfilePage extends StatelessWidget {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        body: Column(
+        body: Stack(
           children: [
-            _ProfileHeader(onBack: () => Navigator.pop(context)),
-            Expanded(
-              child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: sellerDocId.isEmpty
-                    ? null
-                    : FirebaseFirestore.instance
-                          .collection('sellers')
-                          .doc(sellerDocId)
-                          .snapshots(),
-                builder: (context, sellerSnapshot) {
-                  final seller = sellerSnapshot.data?.data() ?? {};
-                  final sellerName =
-                      seller['name']?.toString().trim().isNotEmpty == true
-                      ? seller['name'].toString().trim()
-                      : fallbackName;
-                  final profileImageUrl =
-                      seller['profile_image_url']?.toString().trim().isNotEmpty ==
-                          true
-                      ? seller['profile_image_url'].toString().trim()
-                      : fallbackImageUrl;
-                  final crNumber =
-                      seller['cr_number']?.toString().trim().isNotEmpty == true
-                      ? seller['cr_number'].toString().trim()
-                      : seller['crNumber']?.toString().trim() ?? '';
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: sellerDocId.isEmpty
+                  ? null
+                  : FirebaseFirestore.instance
+                        .collection('sellers')
+                        .doc(sellerDocId)
+                        .snapshots(),
+              builder: (context, sellerSnapshot) {
+                final seller = sellerSnapshot.data?.data() ?? {};
+                final sellerName =
+                    seller['name']?.toString().trim().isNotEmpty == true
+                    ? seller['name'].toString().trim()
+                    : fallbackName;
+                final profileImageUrl =
+                    seller['profile_image_url']?.toString().trim().isNotEmpty ==
+                        true
+                    ? seller['profile_image_url'].toString().trim()
+                    : fallbackImageUrl;
+                final crNumber =
+                    seller['cr_number']?.toString().trim().isNotEmpty == true
+                    ? seller['cr_number'].toString().trim()
+                    : seller['crNumber']?.toString().trim() ?? '';
 
-                  return CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: _SellerProfileTop(
-                          sellerName: sellerName,
-                          crNumber: crNumber,
-                          profileImageUrl: profileImageUrl,
-                        ),
+                return CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _SellerProfileTop(
+                        sellerName: sellerName,
+                        crNumber: crNumber,
+                        profileImageUrl: profileImageUrl,
                       ),
-                      _SellerActivePosts(sellerId: sellerDocId),
-                    ],
-                  );
-                },
-              ),
+                    ),
+                    _SellerActivePosts(sellerId: sellerDocId),
+                  ],
+                );
+              },
             ),
+            _FloatingProfileBackButton(onBack: () => Navigator.pop(context)),
           ],
         ),
         bottomNavigationBar: BottomNavigationBar(
@@ -117,19 +115,20 @@ class SellerProfilePage extends StatelessWidget {
   }
 }
 
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.onBack});
+class _FloatingProfileBackButton extends StatelessWidget {
+  const _FloatingProfileBackButton({required this.onBack});
 
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    return Container(
-      height: topInset + 56,
-      padding: EdgeInsets.only(top: topInset, left: 14, right: 14),
-      alignment: Alignment.centerLeft,
-      child: Material(
+    return Positioned(
+      top: topInset + 8,
+      left: 14,
+      child: SafeArea(
+        top: false,
+        child: Material(
         color: Colors.white,
         shape: const CircleBorder(),
         elevation: 3,
@@ -142,6 +141,7 @@ class _ProfileHeader extends StatelessWidget {
             child: Icon(Icons.arrow_back, color: Colors.black),
           ),
         ),
+      ),
       ),
     );
   }
@@ -163,7 +163,7 @@ class _SellerProfileTop extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: const Color(0xFFF4FBF7),
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
+      padding: const EdgeInsets.fromLTRB(18, 26, 18, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

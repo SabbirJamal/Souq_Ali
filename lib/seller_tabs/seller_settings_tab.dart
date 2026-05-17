@@ -35,6 +35,62 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
     );
   }
 
+  Future<void> _confirmLogout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Center(
+          child: Text(
+            'Logout !',
+            style: TextStyle(fontSize: 30),
+          ),
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    side: const BorderSide(color: Colors.black, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text('No', style: TextStyle(fontSize: 28)),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.black, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Yes',
+                    style: TextStyle(fontSize: 28, color: Colors.red),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && context.mounted) {
+      await _logout(context);
+    }
+  }
+
   Future<void> _openProfileImageSheet(SellerSession session) async {
     if (_isUploadingProfile) {
       return;
@@ -233,7 +289,7 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    sellerName,
+                    sellerName.trim().isEmpty ? 'Seller' : sellerName,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 20,
@@ -247,6 +303,17 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                     style: TextStyle(color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 22),
+                  _SellerInfoField(
+                    sellerId: session.sellerId,
+                    fieldKey: 'name',
+                    label: 'Name',
+                    hint: 'Name',
+                    initialValue: sellerName,
+                    keyboardType: TextInputType.text,
+                    inputFormatters: const [],
+                    savedMessage: 'Name saved',
+                  ),
+                  const SizedBox(height: 12),
                   _CrNumberField(
                     sellerId: session.sellerId,
                     initialValue: crNumber,
@@ -258,14 +325,13 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                     label: 'Location',
                     hint: 'Location',
                     initialValue: sellerLocation,
-                    prefix: const Text('📍', style: TextStyle(fontSize: 18)),
                     keyboardType: TextInputType.text,
                     inputFormatters: const [],
                     savedMessage: 'Location saved',
                   ),
                   const SizedBox(height: 32),
                   ElevatedButton.icon(
-                    onPressed: () => _logout(context),
+                    onPressed: () => _confirmLogout(context),
                     icon: const Icon(Icons.logout),
                     label: const Text('Logout', style: TextStyle(fontSize: 16)),
                     style: ElevatedButton.styleFrom(
@@ -362,6 +428,7 @@ class _CrNumberFieldState extends State<_CrNumberField> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
   bool _isSaving = false;
+  bool _isEditing = false;
 
   @override
   void initState() {
@@ -401,6 +468,7 @@ class _CrNumberFieldState extends State<_CrNumberField> {
         return;
       }
       FocusScope.of(context).unfocus();
+      setState(() => _isEditing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('CR number saved')),
       );
@@ -420,31 +488,49 @@ class _CrNumberFieldState extends State<_CrNumberField> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    if (!_isEditing) {
+      final value = _controller.text.trim();
+      return _SettingsDisplayField(
+        label: 'CR number',
+        value: value.isEmpty ? 'Optional' : value,
+        onEdit: () => setState(() => _isEditing = true),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: TextField(
-            controller: _controller,
-            focusNode: _focusNode,
-            enabled: !_isSaving,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: InputDecoration(
-              labelText: 'CR number',
-              hintText: 'Optional',
-              prefixIcon: const Icon(Icons.badge_outlined),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+        _SettingsEditHeader(
+          label: 'CR number',
+          onCancel: () {
+            _controller.text = widget.initialValue;
+            FocusScope.of(context).unfocus();
+            setState(() => _isEditing = false);
+          },
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          enabled: !_isSaving,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.done,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: InputDecoration(
+            hintText: 'Optional',
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
             ),
           ),
         ),
-        const SizedBox(width: 10),
-        SizedBox(
-          height: 56,
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            height: 44,
+            width: 104,
           child: ElevatedButton(
             onPressed: _isSaving ? null : _saveCrNumber,
             style: ElevatedButton.styleFrom(
@@ -462,9 +548,10 @@ class _CrNumberFieldState extends State<_CrNumberField> {
                       strokeWidth: 2,
                       color: Colors.white,
                     ),
-                  )
+                )
                 : const Text('Save'),
           ),
+        ),
         ),
       ],
     );
@@ -478,7 +565,6 @@ class _SellerInfoField extends StatefulWidget {
     required this.label,
     required this.hint,
     required this.initialValue,
-    required this.prefix,
     required this.keyboardType,
     required this.inputFormatters,
     required this.savedMessage,
@@ -489,7 +575,6 @@ class _SellerInfoField extends StatefulWidget {
   final String label;
   final String hint;
   final String initialValue;
-  final Widget prefix;
   final TextInputType keyboardType;
   final List<TextInputFormatter> inputFormatters;
   final String savedMessage;
@@ -502,6 +587,7 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
   bool _isSaving = false;
+  bool _isEditing = false;
 
   @override
   void initState() {
@@ -539,7 +625,18 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
       if (!mounted) {
         return;
       }
+      if (widget.fieldKey == 'name') {
+        final session = await SellerSession.current();
+        if (session != null) {
+          await SellerSession.save(
+            sellerId: session.sellerId,
+            name: _controller.text.trim(),
+            phoneNumber: session.phoneNumber,
+          );
+        }
+      }
       FocusScope.of(context).unfocus();
+      setState(() => _isEditing = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(widget.savedMessage)),
       );
@@ -559,31 +656,49 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    if (!_isEditing) {
+      final value = _controller.text.trim();
+      return _SettingsDisplayField(
+        label: widget.label,
+        value: value.isEmpty ? widget.hint : value,
+        onEdit: () => setState(() => _isEditing = true),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: TextField(
-            controller: _controller,
-            focusNode: _focusNode,
-            enabled: !_isSaving,
-            keyboardType: widget.keyboardType,
-            inputFormatters: widget.inputFormatters,
-            decoration: InputDecoration(
-              labelText: widget.label,
-              hintText: widget.hint,
-              prefixIcon: Center(widthFactor: 1, child: widget.prefix),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+        _SettingsEditHeader(
+          label: widget.label,
+          onCancel: () {
+            _controller.text = widget.initialValue;
+            FocusScope.of(context).unfocus();
+            setState(() => _isEditing = false);
+          },
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          enabled: !_isSaving,
+          keyboardType: widget.keyboardType,
+          textInputAction: TextInputAction.done,
+          inputFormatters: widget.inputFormatters,
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
             ),
           ),
         ),
-        const SizedBox(width: 10),
-        SizedBox(
-          height: 56,
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
+            height: 44,
+            width: 104,
           child: ElevatedButton(
             onPressed: _isSaving ? null : _save,
             style: ElevatedButton.styleFrom(
@@ -601,8 +716,123 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
                       strokeWidth: 2,
                       color: Colors.white,
                     ),
-                  )
+                )
                 : const Text('Save'),
+          ),
+        ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SettingsDisplayField extends StatelessWidget {
+  const _SettingsDisplayField({
+    required this.label,
+    required this.value,
+    required this.onEdit,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(bottom: 18),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade300),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: onEdit,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.black,
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(42, 28),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Edit',
+              style: TextStyle(decoration: TextDecoration.underline),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsEditHeader extends StatelessWidget {
+  const _SettingsEditHeader({required this.label, required this.onCancel});
+
+  final String label;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                'Update this information.',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        TextButton(
+          onPressed: onCancel,
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.black,
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(54, 28),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(decoration: TextDecoration.underline),
           ),
         ),
       ],

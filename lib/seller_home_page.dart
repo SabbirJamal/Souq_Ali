@@ -8,13 +8,17 @@ import 'seller_tabs/seller_feed_tab.dart';
 import 'seller_tabs/seller_listings_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_tabs/seller_stories_tab.dart';
-import 'seller_register_page.dart';
 import 'seller_session.dart';
 
 class SellerHomePage extends StatefulWidget {
-  const SellerHomePage({super.key, this.isSellerMode = true});
+  const SellerHomePage({
+    super.key,
+    this.isSellerMode = true,
+    this.initialTabIndex = 0,
+  });
 
   final bool isSellerMode;
+  final int initialTabIndex;
 
   @override
   State<SellerHomePage> createState() => _SellerHomePageState();
@@ -23,7 +27,7 @@ class SellerHomePage extends StatefulWidget {
 class _SellerHomePageState extends State<SellerHomePage> {
   final _addItemKey = GlobalKey<SellerAddItemTabState>();
   final _chromeVisible = ValueNotifier<bool>(true);
-  int _currentIndex = 0;
+  late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
   DateTime? _lastFeedBackPress;
 
@@ -157,6 +161,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
         widget.isSellerMode &&
         _currentIndex != 0 &&
         _currentIndex != 1 &&
+        _currentIndex != 2 &&
         _currentIndex != 3 &&
         _currentIndex != 4;
 
@@ -267,20 +272,26 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     setState(() => _isLoggingIn = true);
 
     try {
-      final sellerDoc = await FirebaseFirestore.instance
-          .collection('sellers')
-          .doc(phoneNumber)
-          .get();
+      final sellersRef = FirebaseFirestore.instance.collection('sellers');
+      final sellerDoc = await sellersRef.doc(phoneNumber).get();
 
-      final seller = sellerDoc.data();
+      var isNewSeller = false;
+      var seller = sellerDoc.data();
       if (!sellerDoc.exists || seller == null) {
-        _showMessage('Seller account not found. Please register first.');
-        return;
+        isNewSeller = true;
+        await sellersRef.doc(phoneNumber).set({
+          'uid': phoneNumber,
+          'name': '',
+          'phoneNumber': phoneNumber,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        seller = {'name': ''};
       }
 
       await SellerSession.save(
         sellerId: phoneNumber,
-        name: seller['name']?.toString() ?? 'Seller',
+        name: seller['name']?.toString() ?? '',
         phoneNumber: phoneNumber,
       );
 
@@ -288,7 +299,9 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
         return;
       }
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const SellerHomePage()),
+        MaterialPageRoute(
+          builder: (_) => SellerHomePage(initialTabIndex: isNewSeller ? 4 : 0),
+        ),
         (route) => false,
       );
     } on FirebaseException catch (error) {
@@ -327,8 +340,8 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
                     'assets/branding/logo.png',
-                    width: 92,
-                    height: 92,
+                    width: 102,
+                    height: 102,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => const Icon(
                       Icons.storefront,
@@ -366,54 +379,11 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.login),
-                label: Text(_isLoggingIn ? 'Logging in...' : 'Login'),
+                label: Text(_isLoggingIn ? 'Please wait...' : 'Continue'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF7801),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-              const SizedBox(height: 22),
-              Divider(color: Colors.grey[350], thickness: 1),
-              const SizedBox(height: 8),
-              Text(
-                'OR',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey[700],
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 28),
-              InkWell(
-                borderRadius: BorderRadius.circular(28),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const SellerRegisterPage(),
-                    ),
-                  );
-                },
-                child: Container(
-                  height: 160,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(
-                      color: const Color(0xFFFF7801),
-                      width: 1.7,
-                    ),
-                  ),
-                  child: const Text(
-                    'Create Account',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 30,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
                 ),
               ),
             ],
