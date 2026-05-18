@@ -362,8 +362,8 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   borderRadius: BorderRadius.circular(22),
                   child: Image.asset(
                     'assets/branding/logo.png',
-                    width: 180,
-                    height: 180,
+                    width: 240,
+                    height: 100,
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) => const Icon(
                       Icons.storefront,
@@ -373,7 +373,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   ),
                 ),
               ),
-              const SizedBox(height: 26),
+              const SizedBox(height: 2),
               Form(
                 key: _formKey,
                 child: TextFormField(

@@ -21,6 +21,11 @@ class SellerFeedTab extends StatefulWidget {
 class _SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
+      FirebaseFirestore.instance
+          .collection('items')
+          .orderBy('created_at', descending: true)
+          .snapshots();
   bool _isSearchOpen = false;
   bool _isGridView = true;
   String _query = '';
@@ -104,10 +109,7 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('items')
-                .orderBy('created_at', descending: true)
-                .snapshots(),
+            stream: _itemsStream,
             builder: (context, snapshot) {
               final isLoading =
                   snapshot.connectionState == ConnectionState.waiting;

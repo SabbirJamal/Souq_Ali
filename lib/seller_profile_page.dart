@@ -160,10 +160,11 @@ class _SellerProfileTop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final topPadding = 36 + (MediaQuery.sizeOf(context).height * 0.05);
     return Container(
       width: double.infinity,
       color: const Color(0xFFF4FBF7),
-      padding: const EdgeInsets.fromLTRB(18, 36, 18, 10),
+      padding: EdgeInsets.fromLTRB(18, topPadding, 18, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

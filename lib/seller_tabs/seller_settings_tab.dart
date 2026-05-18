@@ -22,7 +22,14 @@ class SellerSettingsTab extends StatefulWidget {
 
 class _SellerSettingsTabState extends State<SellerSettingsTab> {
   final _picker = ImagePicker();
+  late final Future<SellerSession?> _sessionFuture;
   bool _isUploadingProfile = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionFuture = SellerSession.current();
+  }
 
   Future<void> _logout(BuildContext context) async {
     await SellerSession.clear();
@@ -231,7 +238,7 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<SellerSession?>(
-      future: SellerSession.current(),
+      future: _sessionFuture,
       builder: (context, sessionSnapshot) {
         final session = sessionSnapshot.data;
         if (sessionSnapshot.connectionState == ConnectionState.waiting) {

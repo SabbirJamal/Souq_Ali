@@ -390,7 +390,10 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
             right: 14,
             top: 0,
             child: SafeArea(
-              child: _StoryProgressBar(progress: _progress),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: _StoryProgressBar(progress: _progress),
+              ),
             ),
           ),
           if (_showPauseIcon && _isReady && !_hasError)
