@@ -1,15 +1,9 @@
-import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../seller_home_page.dart';
 import '../seller_session.dart';
-import '../widgets/profile_image.dart';
 
 class SellerSettingsTab extends StatefulWidget {
   const SellerSettingsTab({super.key, required this.onBack});
@@ -21,9 +15,7 @@ class SellerSettingsTab extends StatefulWidget {
 }
 
 class _SellerSettingsTabState extends State<SellerSettingsTab> {
-  final _picker = ImagePicker();
   late final Future<SellerSession?> _sessionFuture;
-  bool _isUploadingProfile = false;
 
   @override
   void initState() {
@@ -98,143 +90,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
     }
   }
 
-  Future<void> _openProfileImageSheet(SellerSession session) async {
-    if (_isUploadingProfile) {
-      return;
-    }
-
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: const Color(0xFF111614),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _ProfileMediaButton(
-                    icon: Icons.photo_camera,
-                    label: 'Camera',
-                    onTap: () => Navigator.pop(context, ImageSource.camera),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _ProfileMediaButton(
-                    icon: Icons.photo_library,
-                    label: 'Gallery',
-                    onTap: () => Navigator.pop(context, ImageSource.gallery),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    if (source == null) {
-      return;
-    }
-    await _pickCropAndUploadProfileImage(session, source);
-  }
-
-  Future<void> _pickCropAndUploadProfileImage(
-    SellerSession session,
-    ImageSource source,
-  ) async {
-    try {
-      final pickedImage = await _picker.pickImage(
-        source: source,
-        imageQuality: 92,
-      );
-      if (pickedImage == null) {
-        return;
-      }
-
-      final croppedFile = await ImageCropper().cropImage(
-        sourcePath: pickedImage.path,
-        compressFormat: ImageCompressFormat.jpg,
-        compressQuality: 88,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Profile Picture',
-            toolbarColor: Colors.black,
-            toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: const Color(0xFFFF7801),
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: false,
-            aspectRatioPresets: [
-              CropAspectRatioPreset.square,
-              CropAspectRatioPreset.original,
-              CropAspectRatioPreset.ratio4x3,
-            ],
-          ),
-          IOSUiSettings(
-            title: 'Crop Profile Picture',
-            aspectRatioPresets: [
-              CropAspectRatioPreset.square,
-              CropAspectRatioPreset.original,
-              CropAspectRatioPreset.ratio4x3,
-            ],
-          ),
-        ],
-      );
-
-      if (croppedFile == null || !mounted) {
-        return;
-      }
-
-      setState(() => _isUploadingProfile = true);
-      final imageBytes = await FlutterImageCompress.compressWithFile(
-        croppedFile.path,
-        minWidth: 360,
-        minHeight: 360,
-        quality: 72,
-        format: CompressFormat.jpeg,
-      );
-      if (imageBytes == null) {
-        _showMessage('Error: Could not prepare profile picture');
-        return;
-      }
-      final imageData = 'data:image/jpeg;base64,${base64Encode(imageBytes)}';
-
-      await FirebaseFirestore.instance
-          .collection('sellers')
-          .doc(session.sellerId)
-          .set({
-            'profile_image_url': imageData,
-            'profile_image_data': imageData,
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
-
-      if (!mounted) {
-        return;
-      }
-      _showMessage('Profile picture updated');
-      setState(() {});
-    } on FirebaseException catch (error) {
-      _showMessage('Error: ${error.message ?? error.code}');
-    } catch (error) {
-      _showMessage('Error: $error');
-    } finally {
-      if (mounted) {
-        setState(() => _isUploadingProfile = false);
-      }
-    }
-  }
-
-  void _showMessage(String message) {
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-  }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<SellerSession?>(
@@ -255,8 +110,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
               .snapshots(),
           builder: (context, sellerSnapshot) {
             final seller = sellerSnapshot.data?.data() ?? {};
-            final profileImageUrl =
-                seller['profile_image_url']?.toString() ?? '';
             final sellerName = seller['name']?.toString() ?? session.name;
             final crNumber =
                 seller['cr_number']?.toString().trim().isNotEmpty == true
@@ -269,23 +122,7 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Center(
-                    child: _ProfileAvatar(
-                      imageUrl: profileImageUrl,
-                      isUploading: _isUploadingProfile,
-                      onCameraTap: () => _openProfileImageSheet(session),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    sellerName.trim().isEmpty ? 'Seller' : sellerName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 26),
                   Text(
                     session.phoneNumber,
                     textAlign: TextAlign.center,
@@ -338,67 +175,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
           },
         );
       },
-    );
-  }
-}
-
-class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar({
-    required this.imageUrl,
-    required this.isUploading,
-    required this.onCameraTap,
-  });
-
-  final String imageUrl;
-  final bool isUploading;
-  final VoidCallback onCameraTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 104,
-      height: 104,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: CircleAvatar(
-              backgroundColor: const Color(0xFFFFE5D1),
-              child: ProfileImage(imageValue: imageUrl, size: 104),
-            ),
-          ),
-          if (isUploading)
-            const Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Color(0x66000000),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: CircularProgressIndicator(color: Colors.white),
-                ),
-              ),
-            ),
-          Positioned(
-            left: -2,
-            bottom: 2,
-            child: Material(
-              color: const Color(0xFFFF7801),
-              shape: const CircleBorder(),
-              elevation: 4,
-              child: InkWell(
-                onTap: isUploading ? null : onCameraTap,
-                customBorder: const CircleBorder(),
-                child: const SizedBox(
-                  width: 34,
-                  height: 34,
-                  child: Icon(Icons.photo_camera, color: Colors.white, size: 19),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -825,41 +601,6 @@ class _SettingsEditHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ProfileMediaButton extends StatelessWidget {
-  const _ProfileMediaButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF202523),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: const Color(0xFFFF7801), size: 28),
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
     );
   }
 }

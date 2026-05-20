@@ -6,7 +6,6 @@ import 'package:video_player/video_player.dart';
 import 'item_detail_page.dart';
 import 'seller_profile_page.dart';
 import 'widgets/price_with_currency.dart';
-import 'widgets/profile_image.dart';
 
 class StoryVideo {
   const StoryVideo({
@@ -15,7 +14,6 @@ class StoryVideo {
     required this.itemName,
     required this.itemPrice,
     required this.location,
-    required this.profileImageUrl,
     required this.sellerName,
     required this.sellerPhone,
     this.itemData,
@@ -26,7 +24,6 @@ class StoryVideo {
   final String itemName;
   final String itemPrice;
   final String location;
-  final String profileImageUrl;
   final String sellerName;
   final String sellerPhone;
   final Map<String, dynamic>? itemData;
@@ -35,7 +32,6 @@ class StoryVideo {
     String? itemName,
     String? itemPrice,
     String? location,
-    String? profileImageUrl,
   }) {
     return StoryVideo(
       url: url,
@@ -43,7 +39,6 @@ class StoryVideo {
       itemName: itemName ?? this.itemName,
       itemPrice: itemPrice ?? this.itemPrice,
       location: location ?? this.location,
-      profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       sellerName: sellerName,
       sellerPhone: sellerPhone,
       itemData: itemData,
@@ -434,7 +429,6 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _StorySellerAvatar(
-                    imageUrl: widget.story.profileImageUrl,
                     onTap: () async {
                       _controller.pause();
                       final sellerId =
@@ -447,7 +441,6 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
                             sellerId: sellerId,
                             sellerPhone: widget.story.sellerPhone,
                             fallbackName: widget.story.sellerName,
-                            fallbackImageUrl: widget.story.profileImageUrl,
                           ),
                         ),
                       );
@@ -744,9 +737,8 @@ class _StoryActionButton extends StatelessWidget {
 }
 
 class _StorySellerAvatar extends StatelessWidget {
-  const _StorySellerAvatar({required this.imageUrl, required this.onTap});
+  const _StorySellerAvatar({required this.onTap});
 
-  final String imageUrl;
   final VoidCallback onTap;
 
   @override
@@ -769,7 +761,11 @@ class _StorySellerAvatar extends StatelessWidget {
             ),
           ],
         ),
-        child: ProfileImage(imageValue: imageUrl, size: 48),
+        child: const Icon(
+          Icons.person,
+          color: Color(0xFFFF7801),
+          size: 30,
+        ),
       ),
     );
   }

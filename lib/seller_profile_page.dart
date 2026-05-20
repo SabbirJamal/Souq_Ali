@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'widgets/item_card.dart';
-import 'widgets/profile_image.dart';
 
 class SellerProfilePage extends StatelessWidget {
   const SellerProfilePage({
@@ -13,13 +12,11 @@ class SellerProfilePage extends StatelessWidget {
     required this.sellerId,
     required this.sellerPhone,
     required this.fallbackName,
-    required this.fallbackImageUrl,
   });
 
   final String sellerId;
   final String sellerPhone;
   final String fallbackName;
-  final String fallbackImageUrl;
 
   Future<void> _goHome(BuildContext context) async {
     final session = await SellerSession.current();
@@ -60,11 +57,6 @@ class SellerProfilePage extends StatelessWidget {
                     seller['name']?.toString().trim().isNotEmpty == true
                     ? seller['name'].toString().trim()
                     : fallbackName;
-                final profileImageUrl =
-                    seller['profile_image_url']?.toString().trim().isNotEmpty ==
-                        true
-                    ? seller['profile_image_url'].toString().trim()
-                    : fallbackImageUrl;
                 final crNumber =
                     seller['cr_number']?.toString().trim().isNotEmpty == true
                     ? seller['cr_number'].toString().trim()
@@ -76,7 +68,6 @@ class SellerProfilePage extends StatelessWidget {
                       child: _SellerProfileTop(
                         sellerName: sellerName,
                         crNumber: crNumber,
-                        profileImageUrl: profileImageUrl,
                       ),
                     ),
                     _SellerActivePosts(sellerId: sellerDocId),
@@ -87,28 +78,33 @@ class SellerProfilePage extends StatelessWidget {
             _FloatingProfileBackButton(onBack: () => Navigator.pop(context)),
           ],
         ),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: 0,
-          onTap: (_) => _goHome(context),
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: const Color(0xFFFF7801),
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          iconSize: 24,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.play_circle_fill),
-              label: 'Stories',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.add_circle_outline),
-              label: 'Add',
-            ),
-            BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
-            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
-          ],
+        bottomNavigationBar: SizedBox(
+          height: 50,
+          child: BottomNavigationBar(
+            currentIndex: 0,
+            onTap: (_) => _goHome(context),
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: const Color(0xFFFF7801),
+            unselectedItemColor: Colors.grey,
+            selectedFontSize: 0,
+            unselectedFontSize: 0,
+            showSelectedLabels: false,
+            showUnselectedLabels: false,
+            iconSize: 22,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.play_circle_fill),
+                label: 'Stories',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.add_circle_outline),
+                label: 'Add',
+              ),
+              BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
+              BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+            ],
+          ),
         ),
       ),
     );
@@ -151,12 +147,10 @@ class _SellerProfileTop extends StatelessWidget {
   const _SellerProfileTop({
     required this.sellerName,
     required this.crNumber,
-    required this.profileImageUrl,
   });
 
   final String sellerName;
   final String crNumber;
-  final String profileImageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -168,8 +162,6 @@ class _SellerProfileTop extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _SellerProfileImage(imageUrl: profileImageUrl),
-          const SizedBox(height: 10),
           Text(
             sellerName.isEmpty ? 'Seller' : sellerName,
             textAlign: TextAlign.center,
@@ -192,25 +184,6 @@ class _SellerProfileTop extends StatelessWidget {
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class _SellerProfileImage extends StatelessWidget {
-  const _SellerProfileImage({required this.imageUrl});
-
-  final String imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 92,
-      height: 92,
-      child: ProfileImage(
-        imageValue: imageUrl,
-        size: 92,
-        fallbackColor: Colors.teal,
       ),
     );
   }

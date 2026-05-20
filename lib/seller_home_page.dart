@@ -228,15 +228,19 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 ],
               );
             },
-            child: BottomNavigationBar(
+            child: SizedBox(
+              height: 50,
+              child: BottomNavigationBar(
                 currentIndex: _currentIndex,
                 onTap: _onTabTapped,
                 type: BottomNavigationBarType.fixed,
                 selectedItemColor: const Color(0xFFFF7801),
                 unselectedItemColor: Colors.grey,
-                selectedFontSize: 11,
-                unselectedFontSize: 11,
-                iconSize: 24,
+                selectedFontSize: 0,
+                unselectedFontSize: 0,
+                showSelectedLabels: false,
+                showUnselectedLabels: false,
+                iconSize: 22,
                 items: const [
                   BottomNavigationBarItem(
                     icon: Icon(Icons.home),
@@ -259,6 +263,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                     label: 'Settings',
                   ),
                 ],
+              ),
             ),
           ),
         ),

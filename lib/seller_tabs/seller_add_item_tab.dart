@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -39,35 +38,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   String _lastValidPriceText = '0';
   String _priceUnit = '/ kg';
-  int _timePeriodDays = 0;
   int _timePeriodHours = 18;
   bool _isUploading = false;
   bool _showLocationError = false;
 
-  int get _totalTimePeriodHours => _selectedTimePeriodHours(
-    days: _timePeriodDays,
-    hours: _timePeriodHours,
-  );
-
-  int _selectedTimePeriodHours({required int days, required int hours}) {
-    if (days >= 3) {
-      return 72;
-    }
-    final safeDays = days.clamp(0, 3);
-    final safeHours = hours.clamp(3, 24);
-    return (safeDays * 24) + safeHours;
-  }
-
-  String get _timePeriodLabel {
-    final dayText = _timePeriodDays == 1 ? '1 day' : '$_timePeriodDays days';
-    if (_timePeriodDays == 3) {
-      return dayText;
-    }
-    final hourText = _timePeriodHours == 1
-        ? '1 hour'
-        : '$_timePeriodHours hours';
-    return '$dayText $hourText';
-  }
+  int get _totalTimePeriodHours => _timePeriodHours;
 
   @override
   void initState() {
@@ -325,8 +300,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'location': location,
         'image_urls': imageUrls,
         'media_files': uploadedMedia.map((media) => media.toMap()).toList(),
-        'time_period_days': _timePeriodDays,
-        'time_period_extra_hours': _timePeriodDays == 3 ? 0 : _timePeriodHours,
+        'time_period_days': 0,
+        'time_period_extra_hours': _timePeriodHours,
         'time_period_hours': timePeriodHours,
         'expires_at': expiresAt,
         'created_at': FieldValue.serverTimestamp(),
@@ -369,7 +344,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     setState(() {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
-      _timePeriodDays = 0;
       _timePeriodHours = 18;
       _showLocationError = false;
     });
@@ -738,6 +712,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Widget _buildTimePeriodSelector() {
+    const options = [6, 12, 18];
     return Opacity(
       opacity: _isUploading ? 0.45 : 1,
       child: Column(
@@ -748,183 +723,45 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          InkWell(
-            onTap: _isUploading ? null : _openTimePeriodPicker,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-              decoration: BoxDecoration(
-                color: _isUploading ? Colors.grey.shade100 : Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade400),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.schedule, color: Colors.teal),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _timePeriodLabel,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+          Row(
+            children: options.map((hours) {
+              final isSelected = _timePeriodHours == hours;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: hours == options.last ? 0 : 8,
                   ),
-                  const Icon(Icons.expand_more, color: Colors.teal),
-                ],
-              ),
-            ),
+                  child: ChoiceChip(
+                    label: Text('${hours}hrs'),
+                    selected: isSelected,
+                    onSelected: _isUploading
+                        ? null
+                        : (_) => setState(() => _timePeriodHours = hours),
+                    showCheckmark: false,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    selectedColor: const Color(0xFFFF7801),
+                    backgroundColor: Colors.white,
+                    disabledColor: Colors.grey.shade100,
+                    side: BorderSide(
+                      color: isSelected
+                          ? const Color(0xFFFF7801)
+                          : Colors.grey.shade400,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
-    );
-  }
-
-  Future<void> _openTimePeriodPicker() async {
-    var selectedDays = _timePeriodDays;
-    var selectedHours = selectedDays == 3 ? 0 : _timePeriodHours;
-
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF161616),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final hourValues = selectedDays == 3
-                ? const [0]
-                : List<int>.generate(22, (index) => index + 3);
-            final selectedHourIndex = hourValues.indexOf(selectedHours);
-
-            return SafeArea(
-              top: false,
-              child: SizedBox(
-                height: 340,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                      child: Row(
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Cancel'),
-                          ),
-                          const Spacer(),
-                          const Text(
-                            'Time period',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _timePeriodDays = selectedDays;
-                                _timePeriodHours =
-                                    selectedDays == 3 ? 0 : selectedHours;
-                              });
-                              Navigator.pop(context);
-                            },
-                            child: const Text('Done'),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: CupertinoPicker(
-                              scrollController: FixedExtentScrollController(
-                                initialItem: selectedDays,
-                              ),
-                              itemExtent: 52,
-                              magnification: 1.1,
-                              useMagnifier: true,
-                              selectionOverlay:
-                                  const CupertinoPickerDefaultSelectionOverlay(
-                                    background: Color(0x33FFFFFF),
-                                  ),
-                              onSelectedItemChanged: (index) {
-                                setSheetState(() {
-                                  selectedDays = index;
-                                  if (selectedDays == 3) {
-                                    selectedHours = 0;
-                                  } else if (selectedHours < 3) {
-                                    selectedHours = 18;
-                                  }
-                                });
-                              },
-                              children: List.generate(4, (day) {
-                                final label = day == 1 ? '1 Day' : '$day Days';
-                                return Center(
-                                  child: Text(
-                                    label,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                );
-                              }),
-                            ),
-                          ),
-                          Expanded(
-                            child: CupertinoPicker(
-                              key: ValueKey('hours-$selectedDays'),
-                              scrollController: FixedExtentScrollController(
-                                initialItem: selectedHourIndex < 0
-                                    ? 0
-                                    : selectedHourIndex,
-                              ),
-                              itemExtent: 52,
-                              magnification: 1.1,
-                              useMagnifier: true,
-                              selectionOverlay:
-                                  const CupertinoPickerDefaultSelectionOverlay(
-                                    background: Color(0x33FFFFFF),
-                                  ),
-                              onSelectedItemChanged: (index) {
-                                setSheetState(() {
-                                  selectedHours = hourValues[index];
-                                });
-                              },
-                              children: hourValues.map((hour) {
-                                final label = hour == 1
-                                    ? '1 Hour'
-                                    : '$hour Hours';
-                                return Center(
-                                  child: Text(
-                                    label,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
     );
   }
 

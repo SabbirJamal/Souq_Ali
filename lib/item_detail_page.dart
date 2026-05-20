@@ -12,7 +12,6 @@ import 'share_listing_page.dart';
 import 'widgets/item_card.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
-import 'widgets/profile_image.dart';
 
 class ItemDetailPage extends StatelessWidget {
   const ItemDetailPage({super.key, required this.itemData, required this.itemId});
@@ -107,23 +106,20 @@ class ItemDetailPage extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             const SizedBox(height: 2),
-                        _SellerAvatarIcon(
-                          name: itemData['seller_name'],
-                          sellerId: itemData['seller_uid'],
+                            _SellerAvatarIcon(
+                              name: itemData['seller_name'],
+                              sellerId: itemData['seller_uid'],
                               sellerPhone: itemData['seller_phone'],
-                              initialImageUrl:
-                                  itemData['profile_image_url'] ??
-                              itemData['seller_profile_image_url'],
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        _SellerActiveItemsSection(
-                          sellerId: itemData['seller_uid'],
-                          sellerPhone: itemData['seller_phone'],
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
+                      ),
+                      const SizedBox(height: 6),
+                      _SellerActiveItemsSection(
+                        sellerId: itemData['seller_uid'],
+                        sellerPhone: itemData['seller_phone'],
+                      ),
+                      const SizedBox(height: 8),
                     ],
                   ),
                 ),
@@ -476,18 +472,15 @@ class _SellerAvatarIcon extends StatelessWidget {
     required this.name,
     required this.sellerId,
     required this.sellerPhone,
-    required this.initialImageUrl,
   });
 
   final Object? name;
   final Object? sellerId;
   final Object? sellerPhone;
-  final Object? initialImageUrl;
 
   @override
   Widget build(BuildContext context) {
     final sellerName = name?.toString().trim() ?? '';
-    final initialUrl = initialImageUrl?.toString().trim() ?? '';
     final sellerDocId =
         sellerId?.toString().trim().isNotEmpty == true
             ? sellerId!.toString().trim()
@@ -503,8 +496,6 @@ class _SellerAvatarIcon extends StatelessWidget {
                   .snapshots(),
         builder: (context, snapshot) {
           final seller = snapshot.data?.data() ?? {};
-          final profileImageUrl =
-              seller['profile_image_url']?.toString().trim() ?? initialUrl;
           final visibleName =
               seller['name']?.toString().trim().isNotEmpty == true
               ? seller['name'].toString().trim()
@@ -513,6 +504,12 @@ class _SellerAvatarIcon extends StatelessWidget {
               seller['cr_number']?.toString().trim().isNotEmpty == true
               ? seller['cr_number'].toString().trim()
               : seller['crNumber']?.toString().trim() ?? '';
+          final phoneNumber = sellerPhone?.toString().trim() ?? '';
+          final sellerDetails = <String>[
+            if (visibleName.isNotEmpty) visibleName,
+            if (crNumber.isNotEmpty) 'CR No. $crNumber',
+            if (phoneNumber.isNotEmpty) phoneNumber,
+          ];
 
           return InkWell(
             borderRadius: BorderRadius.circular(14),
@@ -526,65 +523,54 @@ class _SellerAvatarIcon extends StatelessWidget {
                           sellerId: sellerDocId,
                           sellerPhone: sellerPhone?.toString().trim() ?? '',
                           fallbackName: visibleName,
-                          fallbackImageUrl: profileImageUrl,
                         ),
                       ),
                     );
                   },
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _SellerProfileImage(imageUrl: profileImageUrl),
-                  if (visibleName.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      visibleName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+              child: SizedBox(
+                width: double.infinity,
+                child: sellerDetails.isEmpty
+                    ? const SizedBox.shrink()
+                    : FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (var index = 0;
+                                index < sellerDetails.length;
+                                index++) ...[
+                              if (index > 0)
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 7),
+                                  child: Text(
+                                    '|',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black54,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              Text(
+                                sellerDetails[index],
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                  if (crNumber.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      'CR No. $crNumber',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ],
-                ],
               ),
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _SellerProfileImage extends StatelessWidget {
-  const _SellerProfileImage({required this.imageUrl});
-
-  final String imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 86,
-      height: 86,
-      child: ProfileImage(
-        imageValue: imageUrl,
-        size: 86,
-        fallbackColor: Colors.teal,
       ),
     );
   }
@@ -645,7 +631,7 @@ class _SellerActiveItemsSection extends StatelessWidget {
         }
 
         return Padding(
-          padding: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
           child: _SellerItemGrid(docs: docs),
         );
       },
@@ -674,7 +660,7 @@ class _SellerItemGrid extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(child: _SellerItemColumn(docs: leftDocs)),
-        const SizedBox(width: 10),
+        const SizedBox(width: 4),
         Expanded(child: _SellerItemColumn(docs: rightDocs)),
       ],
     );

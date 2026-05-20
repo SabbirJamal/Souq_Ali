@@ -116,15 +116,10 @@ class _SellerStoriesTabState extends State<SellerStoriesTab> {
     if (!_isItemActive(item, activeNow)) {
       return null;
     }
-    final sellerId =
-        item['seller_uid']?.toString() ?? story['seller_uid']?.toString() ?? '';
     final sellerPhone =
         item['seller_phone']?.toString() ??
         story['seller_phone']?.toString() ??
         '';
-    final profileImageUrl = await _sellerProfileImageUrl(
-      sellerId.isNotEmpty ? sellerId : sellerPhone,
-    );
 
     return StoryVideo(
       url: videoUrl,
@@ -138,22 +133,10 @@ class _SellerStoriesTabState extends State<SellerStoriesTab> {
           story['item_price']?.toString() ??
           '',
       location: item['location']?.toString() ?? story['location']?.toString() ?? '',
-      profileImageUrl: profileImageUrl,
       sellerName: story['seller_name']?.toString() ?? 'Seller',
       sellerPhone: sellerPhone,
       itemData: item,
     );
-  }
-
-  Future<String> _sellerProfileImageUrl(String sellerId) async {
-    if (sellerId.isEmpty) {
-      return '';
-    }
-    final sellerDoc = await FirebaseFirestore.instance
-        .collection('sellers')
-        .doc(sellerId)
-        .get();
-    return sellerDoc.data()?['profile_image_url']?.toString() ?? '';
   }
 
   bool _isItemActive(Map<String, dynamic> item, DateTime now) {
