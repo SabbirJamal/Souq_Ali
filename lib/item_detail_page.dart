@@ -217,14 +217,15 @@ class _DetailMediaHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmedLocation = location.trim();
+    final mediaHeight = MediaQuery.sizeOf(context).height * 0.75;
     return SizedBox(
-      height: 620,
+      height: mediaHeight,
       child: Stack(
         fit: StackFit.expand,
         children: [
           MediaCarousel(
             mediaItems: mediaItems,
-            height: 620,
+            height: mediaHeight,
             borderRadius: 0,
             fit: BoxFit.cover,
             showCountBadge: true,
@@ -360,7 +361,8 @@ class _FixedActionBar extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF0A84FF),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        fixedSize: const Size.fromHeight(48),
+                        padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -375,7 +377,8 @@ class _FixedActionBar extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF25D366),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        fixedSize: const Size.fromHeight(48),
+                        padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -390,15 +393,18 @@ class _FixedActionBar extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        fixedSize: const Size.fromHeight(48),
+                        padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
                       ),
-                      child: const Icon(
-                        Icons.ios_share,
-                        size: 26,
-                        color: Colors.black,
+                      child: const Text(
+                        'Share',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -419,11 +425,10 @@ class _SharePostButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
+    return OutlinedButton(
       onPressed: onShare,
-      icon: const Icon(Icons.ios_share),
-      label: const Text(
-        'Share Post',
+      child: const Text(
+        'Share',
         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
       style: OutlinedButton.styleFrom(
@@ -504,12 +509,11 @@ class _SellerAvatarIcon extends StatelessWidget {
               seller['cr_number']?.toString().trim().isNotEmpty == true
               ? seller['cr_number'].toString().trim()
               : seller['crNumber']?.toString().trim() ?? '';
-          final phoneNumber = sellerPhone?.toString().trim() ?? '';
-          final sellerDetails = <String>[
+          final phoneNumber = _formatSellerPhone(sellerPhone);
+          final topLine = [
             if (visibleName.isNotEmpty) visibleName,
             if (crNumber.isNotEmpty) 'CR No. $crNumber',
-            if (phoneNumber.isNotEmpty) phoneNumber,
-          ];
+          ].join(' | ');
 
           return InkWell(
             borderRadius: BorderRadius.circular(14),
@@ -528,44 +532,43 @@ class _SellerAvatarIcon extends StatelessWidget {
                     );
                   },
             child: Padding(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
               child: SizedBox(
                 width: double.infinity,
-                child: sellerDetails.isEmpty
+                child: topLine.isEmpty && phoneNumber.isEmpty
                     ? const SizedBox.shrink()
-                    : FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            for (var index = 0;
-                                index < sellerDetails.length;
-                                index++) ...[
-                              if (index > 0)
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 7),
-                                  child: Text(
-                                    '|',
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      color: Colors.black54,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              Text(
-                                sellerDetails[index],
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (topLine.isNotEmpty)
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                topLine,
+                                maxLines: 1,
+                                softWrap: false,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
-                                  fontSize: 15,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.black,
                                 ),
                               ),
-                            ],
+                            ),
+                          if (phoneNumber.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              phoneNumber,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
+                              ),
+                            ),
                           ],
-                        ),
+                        ],
                       ),
               ),
             ),
@@ -574,6 +577,17 @@ class _SellerAvatarIcon extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatSellerPhone(Object? value) {
+  final digits = value?.toString().replaceAll(RegExp(r'[^0-9]'), '') ?? '';
+  if (digits.isEmpty) {
+    return '';
+  }
+  if (digits.startsWith('968') && digits.length > 3) {
+    return '+968 ${digits.substring(3)}';
+  }
+  return '+968 $digits';
 }
 
 class _SellerActiveItemsSection extends StatelessWidget {
@@ -1101,10 +1115,10 @@ class _FullscreenContactBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
+        color: Colors.black,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
+            color: Colors.black.withValues(alpha: 0.12),
             blurRadius: 16,
             offset: const Offset(0, -4),
           ),
@@ -1113,7 +1127,7 @@ class _FullscreenContactBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          padding: const EdgeInsets.fromLTRB(28, 7, 28, 8),
           child: Row(
             children: [
               Expanded(
@@ -1124,12 +1138,13 @@ class _FullscreenContactBar extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0A84FF),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    fixedSize: const Size.fromHeight(48),
+                    padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Icon(Icons.phone, size: 25),
+                  child: const Icon(Icons.phone, size: 27),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1141,12 +1156,13 @@ class _FullscreenContactBar extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF25D366),
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    fixedSize: const Size.fromHeight(48),
+                    padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const FaIcon(FontAwesomeIcons.whatsapp, size: 24),
+                  child: const FaIcon(FontAwesomeIcons.whatsapp, size: 26),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1156,15 +1172,19 @@ class _FullscreenContactBar extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    fixedSize: const Size.fromHeight(48),
+                    padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  child: const Icon(
-                    Icons.ios_share,
-                    size: 24,
-                    color: Colors.black,
+                  child: const Text(
+                    'Share',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
                   ),
                 ),
               ),

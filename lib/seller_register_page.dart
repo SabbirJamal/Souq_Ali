@@ -90,10 +90,17 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Account'),
+        title: const SizedBox(
+          height: kToolbarHeight,
+          width: 145,
+          child: Image(
+            image: AssetImage('assets/branding/logo.png'),
+            fit: BoxFit.cover,
+          ),
+        ),
         centerTitle: true,
-        backgroundColor: const Color(0xFFFF7801),
-        foregroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF4FBF7),
+        foregroundColor: Colors.black,
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 2,

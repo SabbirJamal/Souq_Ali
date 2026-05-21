@@ -471,10 +471,13 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
                   ),
                   const SizedBox(height: 14),
                   _StoryActionButton(
-                    icon: const Icon(
-                      Icons.share,
-                      color: Colors.white,
-                      size: 26,
+                    icon: const Text(
+                      'Share',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     backgroundColor: const Color(0xFF222222),
                     onTap: () {},

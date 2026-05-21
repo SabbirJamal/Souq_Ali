@@ -78,33 +78,30 @@ class SellerProfilePage extends StatelessWidget {
             _FloatingProfileBackButton(onBack: () => Navigator.pop(context)),
           ],
         ),
-        bottomNavigationBar: SizedBox(
-          height: 50,
-          child: BottomNavigationBar(
-            currentIndex: 0,
-            onTap: (_) => _goHome(context),
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: const Color(0xFFFF7801),
-            unselectedItemColor: Colors.grey,
-            selectedFontSize: 0,
-            unselectedFontSize: 0,
-            showSelectedLabels: false,
-            showUnselectedLabels: false,
-            iconSize: 22,
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.play_circle_fill),
-                label: 'Stories',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.add_circle_outline),
-                label: 'Add',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
-              BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
-            ],
-          ),
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: 0,
+          onTap: (_) => _goHome(context),
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: const Color(0xFFFF7801),
+          unselectedItemColor: Colors.grey,
+          selectedFontSize: 0,
+          unselectedFontSize: 0,
+          showSelectedLabels: false,
+          showUnselectedLabels: false,
+          iconSize: 24,
+          items: const [
+            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.play_circle_fill),
+              label: 'Stories',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.add_circle_outline),
+              label: 'Add',
+            ),
+            BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
+            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+          ],
         ),
       ),
     );

@@ -303,7 +303,7 @@ class _FeedHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 56,
-      color: const Color(0xFFFF7801),
+      color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: LayoutBuilder(
               builder: (context, constraints) {
@@ -312,12 +312,12 @@ class _FeedHeader extends StatelessWidget {
                   children: [
                     const Align(
                       alignment: Alignment.center,
-                      child: Text(
-                        'BIZ SOOQ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
+                      child: SizedBox(
+                        height: 56,
+                        width: 145,
+                        child: Image(
+                          image: AssetImage('assets/branding/logo.png'),
+                          fit: BoxFit.cover,
                         ),
                       ),
                     ),

@@ -228,9 +228,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 ],
               );
             },
-            child: SizedBox(
-              height: 50,
-              child: BottomNavigationBar(
+            child: BottomNavigationBar(
                 currentIndex: _currentIndex,
                 onTap: _onTabTapped,
                 type: BottomNavigationBarType.fixed,
@@ -240,7 +238,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 unselectedFontSize: 0,
                 showSelectedLabels: false,
                 showUnselectedLabels: false,
-                iconSize: 22,
+                iconSize: 24,
                 items: const [
                   BottomNavigationBarItem(
                     icon: Icon(Icons.home),
@@ -264,7 +262,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
                   ),
                 ],
               ),
-            ),
           ),
         ),
       ),
@@ -448,17 +445,17 @@ class _SellerTabHeader extends StatelessWidget {
     return Container(
       height: 56,
       width: double.infinity,
-      color: const Color(0xFFFF7801),
+      color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: const Center(
-        child: Text(
-            'BIZ SOOQ',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w600,
-            ),
+        child: SizedBox(
+          height: 56,
+          width: 145,
+          child: Image(
+            image: AssetImage('assets/branding/logo.png'),
+            fit: BoxFit.cover,
           ),
+        ),
       ),
     );
   }

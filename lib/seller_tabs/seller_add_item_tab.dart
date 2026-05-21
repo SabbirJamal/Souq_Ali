@@ -718,10 +718,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Time period',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-          ),
           const SizedBox(height: 8),
           Row(
             children: options.map((hours) {
@@ -732,7 +728,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                     right: hours == options.last ? 0 : 8,
                   ),
                   child: ChoiceChip(
-                    label: Text('${hours}hrs'),
+                    label: Text('${hours} hrs'),
                     selected: isSelected,
                     onSelected: _isUploading
                         ? null
