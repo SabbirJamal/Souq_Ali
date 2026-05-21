@@ -31,6 +31,82 @@ class SellerProfilePage extends StatelessWidget {
     );
   }
 
+  Future<void> _logout(BuildContext context) async {
+    await SellerSession.clear();
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
+      (route) => false,
+    );
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Center(
+          child: Text('Logout !', style: TextStyle(fontSize: 30)),
+        ),
+        contentPadding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    side: const BorderSide(color: Colors.black, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text('No', style: TextStyle(fontSize: 28)),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.black, width: 2),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Yes',
+                    style: TextStyle(fontSize: 28, color: Colors.red),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && context.mounted) {
+      await _logout(context);
+    }
+  }
+
+  void _openSettings(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const SellerHomePage(
+          isSellerMode: true,
+          initialTabIndex: 4,
+        ),
+      ),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sellerDocId = sellerId.isNotEmpty ? sellerId : sellerPhone;
@@ -75,7 +151,10 @@ class SellerProfilePage extends StatelessWidget {
                 );
               },
             ),
-            _FloatingProfileBackButton(onBack: () => Navigator.pop(context)),
+            _ProfileSettingsMenu(
+              onSettings: () => _openSettings(context),
+              onLogout: () => _confirmLogout(context),
+            ),
           ],
         ),
         bottomNavigationBar: BottomNavigationBar(
@@ -100,7 +179,7 @@ class SellerProfilePage extends StatelessWidget {
               label: 'Add',
             ),
             BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
-            BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Settings'),
+            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
           ],
         ),
       ),
@@ -108,10 +187,14 @@ class SellerProfilePage extends StatelessWidget {
   }
 }
 
-class _FloatingProfileBackButton extends StatelessWidget {
-  const _FloatingProfileBackButton({required this.onBack});
+class _ProfileSettingsMenu extends StatelessWidget {
+  const _ProfileSettingsMenu({
+    required this.onSettings,
+    required this.onLogout,
+  });
 
-  final VoidCallback onBack;
+  final VoidCallback onSettings;
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -121,20 +204,32 @@ class _FloatingProfileBackButton extends StatelessWidget {
       left: 14,
       child: SafeArea(
         top: false,
-        child: Material(
-        color: Colors.white,
-        shape: const CircleBorder(),
-        elevation: 3,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onBack,
-          child: const SizedBox(
-            width: 42,
-            height: 42,
-            child: Icon(Icons.arrow_back, color: Colors.black),
+        child: PopupMenuButton<String>(
+          onSelected: (value) {
+            if (value == 'settings') {
+              onSettings();
+            } else if (value == 'logout') {
+              onLogout();
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 'settings', child: Text('Settings')),
+            PopupMenuItem(
+              value: 'logout',
+              child: Text('Log Out', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+          child: Material(
+            color: Colors.white,
+            shape: const CircleBorder(),
+            elevation: 3,
+            child: const SizedBox(
+              width: 42,
+              height: 42,
+              child: Icon(Icons.settings, color: Colors.black),
+            ),
           ),
         ),
-      ),
       ),
     );
   }

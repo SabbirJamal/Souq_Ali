@@ -13,6 +13,7 @@ import 'package:video_compress/video_compress.dart';
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
 import '../story_repository.dart';
+import '../upload_status_manager.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerAddItemTab extends StatefulWidget {
@@ -178,9 +179,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     return true;
   }
 
-  Future<List<_UploadedMedia>> _uploadMedia(String sellerUid) async {
+  Future<List<_UploadedMedia>> _uploadMedia(
+    String sellerUid, [
+    List<_SelectedMedia>? mediaToUpload,
+  ]) async {
     final uploaded = <_UploadedMedia>[];
-    final orderedMedia = [..._selectedMedia]
+    final orderedMedia = [...(mediaToUpload ?? _selectedMedia)]
       ..sort((first, second) {
         if (first.isVideo == second.isVideo) {
           return 0;
@@ -276,15 +280,22 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         return;
       }
 
-      final uploadedMedia = await _uploadMedia(session.sellerId);
+      final mediaToUpload = List<_SelectedMedia>.from(_selectedMedia);
+      final priceUnit = _priceUnit;
+      final timePeriodHours = _totalTimePeriodHours;
+      final selectedTimePeriodHours = _timePeriodHours;
+
+      UploadStatusManager.uploading();
+      widget.onItemAddedDone?.call();
+
+      final uploadedMedia = await _uploadMedia(session.sellerId, mediaToUpload);
       final imageUrls = uploadedMedia
           .where((media) => media.type == 'image')
           .map((media) => media.url)
           .toList();
       final formattedPrice = _formatPriceWithCommas(normalizedPrice);
-      final price = 'OMR $formattedPrice $_priceUnit';
+      final price = 'OMR $formattedPrice $priceUnit';
       final itemRef = FirebaseFirestore.instance.collection('items').doc();
-      final timePeriodHours = _totalTimePeriodHours;
       final expiresAt = Timestamp.fromDate(
         DateTime.now().add(Duration(hours: timePeriodHours)),
       );
@@ -296,12 +307,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'item_name': name,
         'item_price': price,
         'price_number': normalizedPrice,
-        'price_unit': _priceUnit,
+        'price_unit': priceUnit,
         'location': location,
         'image_urls': imageUrls,
         'media_files': uploadedMedia.map((media) => media.toMap()).toList(),
         'time_period_days': 0,
-        'time_period_extra_hours': _timePeriodHours,
+        'time_period_extra_hours': selectedTimePeriodHours,
         'time_period_hours': timePeriodHours,
         'expires_at': expiresAt,
         'created_at': FieldValue.serverTimestamp(),
@@ -321,15 +332,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             .toList(),
       );
 
-      _clearForm();
-      await _showItemAddedDialog();
+      UploadStatusManager.success();
+      if (mounted) {
+        _clearForm();
+      }
     } on FirebaseException catch (error) {
       final message = error.code == 'object-not-found'
           ? 'Storage upload failed. Check Firebase Storage is enabled and rules allow uploads.'
           : error.message ?? error.code;
-      _showMessage('Error: $message');
+      UploadStatusManager.error('Upload failed: $message');
     } catch (error) {
-      _showMessage('Error: $error');
+      UploadStatusManager.error('Upload failed: $error');
     } finally {
       if (mounted) {
         setState(() => _isUploading = false);

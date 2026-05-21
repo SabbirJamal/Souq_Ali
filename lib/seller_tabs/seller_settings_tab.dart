@@ -2,7 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../seller_home_page.dart';
 import '../seller_session.dart';
 
 class SellerSettingsTab extends StatefulWidget {
@@ -21,73 +20,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
   void initState() {
     super.initState();
     _sessionFuture = SellerSession.current();
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    await SellerSession.clear();
-    if (!context.mounted) {
-      return;
-    }
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
-      (route) => false,
-    );
-  }
-
-  Future<void> _confirmLogout(BuildContext context) async {
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Center(
-          child: Text(
-            'Logout !',
-            style: TextStyle(fontSize: 30),
-          ),
-        ),
-        contentPadding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
-        actionsPadding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.black,
-                    side: const BorderSide(color: Colors.black, width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const Text('No', style: TextStyle(fontSize: 28)),
-                ),
-              ),
-              const SizedBox(width: 2),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.black, width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const Text(
-                    'Yes',
-                    style: TextStyle(fontSize: 28, color: Colors.red),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    if (shouldLogout == true && context.mounted) {
-      await _logout(context);
-    }
   }
 
   @override
@@ -124,9 +56,12 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                 children: [
                   const SizedBox(height: 26),
                   Text(
-                    session.phoneNumber,
+                    _formatSettingsPhone(session.phoneNumber),
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey[600]),
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 22),
                   _SellerInfoField(
@@ -155,20 +90,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                     inputFormatters: const [],
                     savedMessage: 'Location saved',
                   ),
-                  const SizedBox(height: 32),
-                  ElevatedButton.icon(
-                    onPressed: () => _confirmLogout(context),
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Logout', style: TextStyle(fontSize: 16)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             );
@@ -177,6 +98,17 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
       },
     );
   }
+}
+
+String _formatSettingsPhone(String value) {
+  final digits = value.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.startsWith('968') && digits.length > 3) {
+    return '+968 ${digits.substring(3)}';
+  }
+  if (digits.isNotEmpty) {
+    return '+968 $digits';
+  }
+  return value;
 }
 
 class _CrNumberField extends StatefulWidget {
@@ -256,8 +188,9 @@ class _CrNumberFieldState extends State<_CrNumberField> {
     if (!_isEditing) {
       final value = _controller.text.trim();
       return _SettingsDisplayField(
-        label: 'CR number',
-        value: value.isEmpty ? 'Optional' : value,
+        label: 'CR No.',
+        value: value.isEmpty ? 'CR No.' : value,
+        isEmpty: value.isEmpty,
         onEdit: () => setState(() => _isEditing = true),
       );
     }
@@ -266,7 +199,7 @@ class _CrNumberFieldState extends State<_CrNumberField> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SettingsEditHeader(
-          label: 'CR number',
+          label: 'CR No.',
           onCancel: () {
             _controller.text = widget.initialValue;
             FocusScope.of(context).unfocus();
@@ -282,7 +215,7 @@ class _CrNumberFieldState extends State<_CrNumberField> {
           textInputAction: TextInputAction.done,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           decoration: InputDecoration(
-            hintText: 'Optional',
+            hintText: 'CR No.',
             filled: true,
             fillColor: Colors.white,
             border: OutlineInputBorder(
@@ -426,6 +359,7 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
       return _SettingsDisplayField(
         label: widget.label,
         value: value.isEmpty ? widget.hint : value,
+        isEmpty: value.isEmpty,
         onEdit: () => setState(() => _isEditing = true),
       );
     }
@@ -495,11 +429,13 @@ class _SettingsDisplayField extends StatelessWidget {
   const _SettingsDisplayField({
     required this.label,
     required this.value,
+    required this.isEmpty,
     required this.onEdit,
   });
 
   final String label;
   final String value;
+  final bool isEmpty;
   final VoidCallback onEdit;
 
   @override
@@ -545,9 +481,9 @@ class _SettingsDisplayField extends StatelessWidget {
               minimumSize: const Size(42, 28),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text(
-              'Edit',
-              style: TextStyle(decoration: TextDecoration.underline),
+            child: Text(
+              isEmpty ? 'Add' : 'Edit',
+              style: const TextStyle(decoration: TextDecoration.underline),
             ),
           ),
         ],

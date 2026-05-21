@@ -8,6 +8,7 @@ import 'seller_tabs/seller_feed_tab.dart';
 import 'seller_tabs/seller_listings_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_tabs/seller_stories_tab.dart';
+import 'seller_profile_page.dart';
 import 'seller_session.dart';
 
 class SellerHomePage extends StatefulWidget {
@@ -58,6 +59,15 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   void _onTabTapped(int index) {
+    if (index == 4) {
+      if (widget.isSellerMode) {
+        _openOwnProfile();
+      } else {
+        _showSellerGate();
+      }
+      return;
+    }
+
     setState(() {
       _currentIndex = index;
     });
@@ -68,6 +78,27 @@ class _SellerHomePageState extends State<SellerHomePage> {
         _addItemKey.currentState?.openMediaSheet();
       });
     }
+  }
+
+  Future<void> _openOwnProfile() async {
+    final session = await SellerSession.current();
+    if (!mounted) {
+      return;
+    }
+    if (session == null) {
+      _showSellerGate();
+      return;
+    }
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SellerProfilePage(
+          sellerId: session.sellerId,
+          sellerPhone: session.phoneNumber,
+          fallbackName: session.name,
+        ),
+      ),
+    );
   }
 
   void _handleBackPressed() {
@@ -257,8 +288,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
                     label: 'Listings',
                   ),
                   BottomNavigationBarItem(
-                    icon: Icon(Icons.settings),
-                    label: 'Settings',
+                    icon: Icon(Icons.person),
+                    label: 'Profile',
                   ),
                 ],
               ),

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
 
 class SellerFeedTab extends StatefulWidget {
@@ -104,9 +105,10 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                 onQueryChanged: (value) => setState(() => _query = value),
                 isGridView: _isGridView,
                 onToggleGrid: _toggleLayoutMode,
-              ),
+            ),
           ),
         ),
+        const _UploadStatusBanner(),
         Expanded(
           child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: _itemsStream,
@@ -219,6 +221,85 @@ class _MasonryColumn extends StatelessWidget {
         return ItemCard(docId: doc.id, item: doc.data(), isCompact: true);
       }).toList(),
     );
+  }
+}
+
+class _UploadStatusBanner extends StatelessWidget {
+  const _UploadStatusBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<UploadStatus?>(
+      valueListenable: UploadStatusManager.current,
+      builder: (context, status, child) {
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: status == null
+              ? const SizedBox.shrink()
+              : Container(
+                  key: ValueKey(status.message),
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.10),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      _UploadStatusIcon(type: status.type),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          status.message,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        );
+      },
+    );
+  }
+}
+
+class _UploadStatusIcon extends StatelessWidget {
+  const _UploadStatusIcon({required this.type});
+
+  final UploadStatusType type;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (type) {
+      UploadStatusType.uploading => const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2.4),
+      ),
+      UploadStatusType.success => const Icon(
+        Icons.check_circle,
+        color: Color(0xFF25D366),
+      ),
+      UploadStatusType.error => const Icon(
+        Icons.error,
+        color: Colors.red,
+      ),
+    };
   }
 }
 
