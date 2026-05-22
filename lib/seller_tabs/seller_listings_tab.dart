@@ -255,18 +255,25 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          vertical: 8,
-                                        ),
-                                        child: Column(
+                                child: SizedBox(
+                                  height: 112,
+                                  child: Column(
+                                    children: [
+                                      Expanded(
+                                        child: Row(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
+                                            Expanded(
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 8,
+                                                    ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
                                             Padding(
                                               padding:
                                                   const EdgeInsets.symmetric(
@@ -297,31 +304,15 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                                                 ),
                                               ),
                                             ),
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    vertical: 2,
-                                                  ),
-                                              child: Text(
-                                                _postedDateTime(
-                                                  item['created_at'],
-                                                ),
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  color: Colors.grey[700],
-                                                  fontWeight: FontWeight.w500,
+                                          ],
                                                 ),
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        TextButton(
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                TextButton(
                                           onPressed: () {
                                             Navigator.push(
                                               context,
@@ -348,7 +339,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                                             ),
                                           ),
                                         ),
-                                        TextButton(
+                                                TextButton(
                                           onPressed: () async {
                                             final confirm =
                                                 await showDialog<bool>(
@@ -478,19 +469,46 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          _expiryText(item),
-                                          textAlign: TextAlign.right,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey[700],
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                              ],
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  ],
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 4,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                _postedDateTime(
+                                                  item['created_at'],
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey[700],
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              _expiryText(item),
+                                              textAlign: TextAlign.right,
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey[700],
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],

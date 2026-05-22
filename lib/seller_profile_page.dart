@@ -6,6 +6,42 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'widgets/item_card.dart';
 
+class SellerProfileTab extends StatelessWidget {
+  const SellerProfileTab({
+    super.key,
+    required this.onSettings,
+    required this.onLogout,
+  });
+
+  final VoidCallback onSettings;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<SellerSession?>(
+      future: SellerSession.current(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final session = snapshot.data;
+        if (session == null) {
+          return const Center(child: Text('Please login again'));
+        }
+        return _SellerProfileBody(
+          sellerId: session.sellerId,
+          sellerPhone: session.phoneNumber,
+          fallbackName: session.name,
+          isOwnProfile: true,
+          onSettings: onSettings,
+          onLogout: onLogout,
+          onBack: null,
+        );
+      },
+    );
+  }
+}
+
 class SellerProfilePage extends StatelessWidget {
   const SellerProfilePage({
     super.key,
@@ -120,7 +156,7 @@ class SellerProfilePage extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => const SellerHomePage(
           isSellerMode: true,
-          initialTabIndex: 4,
+          initialTabIndex: 5,
         ),
       ),
       (route) => false,
@@ -129,8 +165,6 @@ class SellerProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sellerDocId = sellerId.isNotEmpty ? sellerId : sellerPhone;
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.black,
@@ -138,79 +172,119 @@ class SellerProfilePage extends StatelessWidget {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        body: Stack(
-          children: [
-            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: sellerDocId.isEmpty
-                  ? null
-                  : FirebaseFirestore.instance
-                        .collection('sellers')
-                        .doc(sellerDocId)
-                        .snapshots(),
-              builder: (context, sellerSnapshot) {
-                final seller = sellerSnapshot.data?.data() ?? {};
-                final sellerName =
-                    seller['name']?.toString().trim().isNotEmpty == true
-                    ? seller['name'].toString().trim()
-                    : fallbackName;
-                final crNumber =
-                    seller['cr_number']?.toString().trim().isNotEmpty == true
-                    ? seller['cr_number'].toString().trim()
-                    : seller['crNumber']?.toString().trim() ?? '';
-
-                return CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _SellerProfileTop(
-                        sellerName: sellerName,
-                        crNumber: crNumber,
-                      ),
-                    ),
-                    _SellerActivePosts(sellerId: sellerDocId),
-                  ],
-                );
-              },
-            ),
-            if (isOwnProfile)
-              _ProfileSettingsMenu(
-                onSettings: () => _openSettings(context),
-                onLogout: () => _confirmLogout(context),
-              )
-            else
-              _ProfileBackButton(onBack: () => Navigator.pop(context)),
-          ],
+        body: _SellerProfileBody(
+          sellerId: sellerId,
+          sellerPhone: sellerPhone,
+          fallbackName: fallbackName,
+          isOwnProfile: isOwnProfile,
+          onSettings: () => _openSettings(context),
+          onLogout: () => _confirmLogout(context),
+          onBack: () => Navigator.pop(context),
         ),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: 4,
-          onTap: (index) {
-            if (index == 4) {
-              return;
-            }
-            _openHomeTab(context, index);
-          },
-          type: BottomNavigationBarType.fixed,
-          selectedItemColor: const Color(0xFFFF7801),
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 0,
-          unselectedFontSize: 0,
-          showSelectedLabels: false,
-          showUnselectedLabels: false,
-          iconSize: 24,
-          items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.play_circle_fill),
-              label: 'Stories',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.add_circle_outline),
-              label: 'Add',
-            ),
-            BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: 'Listings'),
-            BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-          ],
+        bottomNavigationBar: SizedBox(
+          height: 50,
+          child: BottomNavigationBar(
+            currentIndex: 4,
+            onTap: (index) {
+              if (index == 4) {
+                return;
+              }
+              _openHomeTab(context, index);
+            },
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: const Color(0xFFFF7801),
+            unselectedItemColor: Colors.grey,
+            selectedFontSize: 0,
+            unselectedFontSize: 0,
+            showSelectedLabels: false,
+            showUnselectedLabels: false,
+            iconSize: 24,
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.play_circle_fill),
+                label: 'Stories',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.add_circle_outline),
+                label: 'Add',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.list_alt),
+                label: 'Listings',
+              ),
+              BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _SellerProfileBody extends StatelessWidget {
+  const _SellerProfileBody({
+    required this.sellerId,
+    required this.sellerPhone,
+    required this.fallbackName,
+    required this.isOwnProfile,
+    required this.onSettings,
+    required this.onLogout,
+    required this.onBack,
+  });
+
+  final String sellerId;
+  final String sellerPhone;
+  final String fallbackName;
+  final bool isOwnProfile;
+  final VoidCallback onSettings;
+  final VoidCallback onLogout;
+  final VoidCallback? onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final sellerDocId = sellerId.isNotEmpty ? sellerId : sellerPhone;
+
+    return Stack(
+      children: [
+        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: sellerDocId.isEmpty
+              ? null
+              : FirebaseFirestore.instance
+                    .collection('sellers')
+                    .doc(sellerDocId)
+                    .snapshots(),
+          builder: (context, sellerSnapshot) {
+            final seller = sellerSnapshot.data?.data() ?? {};
+            final sellerName =
+                seller['name']?.toString().trim().isNotEmpty == true
+                ? seller['name'].toString().trim()
+                : fallbackName;
+            final crNumber =
+                seller['cr_number']?.toString().trim().isNotEmpty == true
+                ? seller['cr_number'].toString().trim()
+                : seller['crNumber']?.toString().trim() ?? '';
+
+            return CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _SellerProfileTop(
+                    sellerName: sellerName,
+                    crNumber: crNumber,
+                    sellerPhone: sellerPhone,
+                  ),
+                ),
+                _SellerActivePosts(sellerId: sellerDocId),
+              ],
+            );
+          },
+        ),
+        if (isOwnProfile)
+          _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
+        else if (onBack != null)
+          _ProfileBackButton(onBack: onBack!),
+        const _ProfileShareButton(),
+      ],
     );
   }
 }
@@ -279,7 +353,6 @@ class _ProfileBackButton extends StatelessWidget {
         child: Material(
           color: Colors.white,
           shape: const CircleBorder(),
-          elevation: 3,
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: onBack,
@@ -295,18 +368,65 @@ class _ProfileBackButton extends StatelessWidget {
   }
 }
 
+class _ProfileShareButton extends StatelessWidget {
+  const _ProfileShareButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return Positioned(
+      top: topInset + 8,
+      right: 14,
+      child: SafeArea(
+        top: false,
+        child: Material(
+          color: Colors.white,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () {},
+            child: const SizedBox(
+              width: 42,
+              height: 42,
+              child: Center(
+                child: Text(
+                  'Share',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SellerProfileTop extends StatelessWidget {
   const _SellerProfileTop({
     required this.sellerName,
     required this.crNumber,
+    required this.sellerPhone,
   });
 
   final String sellerName;
   final String crNumber;
+  final String sellerPhone;
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = 36 + (MediaQuery.sizeOf(context).height * 0.05);
+    final topPadding = 56 + (MediaQuery.sizeOf(context).height * 0.05);
+    final visibleName = sellerName.trim();
+    final topLine = [
+      if (visibleName.isNotEmpty) visibleName,
+      if (crNumber.isNotEmpty) 'CR No. $crNumber',
+    ].join(' | ');
+    final phoneNumber = _formatSellerPhone(sellerPhone);
+
     return Container(
       width: double.infinity,
       color: const Color(0xFFF4FBF7),
@@ -314,24 +434,29 @@ class _SellerProfileTop extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            sellerName.isEmpty ? 'Seller' : sellerName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+          if (topLine.isNotEmpty)
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                topLine,
+                maxLines: 1,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.black,
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
-          ),
-          if (crNumber.isNotEmpty) ...[
-            const SizedBox(height: 3),
+          if (phoneNumber.isNotEmpty) ...[
+            if (topLine.isNotEmpty) const SizedBox(height: 5),
             Text(
-              'CR No. $crNumber',
+              phoneNumber,
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.black,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ],
@@ -339,6 +464,17 @@ class _SellerProfileTop extends StatelessWidget {
       ),
     );
   }
+}
+
+String _formatSellerPhone(Object? value) {
+  final digits = value?.toString().replaceAll(RegExp(r'[^0-9]'), '') ?? '';
+  if (digits.isEmpty) {
+    return '';
+  }
+  if (digits.startsWith('968') && digits.length > 3) {
+    return '+968 ${digits.substring(3)}';
+  }
+  return '+968 $digits';
 }
 
 class _SellerActivePosts extends StatelessWidget {

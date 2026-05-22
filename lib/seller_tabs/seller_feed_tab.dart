@@ -340,7 +340,6 @@ class _GridToggleButton extends StatelessWidget {
       child: Material(
         color: const Color(0xFF1877F2),
         shape: const CircleBorder(),
-        elevation: 3,
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
@@ -395,7 +394,7 @@ class _FeedHeader extends StatelessWidget {
                       alignment: Alignment.center,
                       child: SizedBox(
                         height: 56,
-                        width: 145,
+                        width: 152,
                         child: Image(
                           image: AssetImage('assets/branding/logo.png'),
                           fit: BoxFit.cover,
@@ -420,13 +419,6 @@ class _FeedHeader extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.16),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
                         ),
                         child: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 180),

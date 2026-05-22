@@ -48,7 +48,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   void _showSettingsTab() {
-    setState(() => _currentIndex = 4);
+    setState(() => _currentIndex = 5);
   }
 
   void _showSellerGate() {
@@ -61,7 +61,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _onTabTapped(int index) {
     if (index == 4) {
       if (widget.isSellerMode) {
-        _openOwnProfile();
+        setState(() => _currentIndex = 4);
+        _setChromeVisible(true);
       } else {
         _showSellerGate();
       }
@@ -80,25 +81,83 @@ class _SellerHomePageState extends State<SellerHomePage> {
     }
   }
 
-  Future<void> _openOwnProfile() async {
-    final session = await SellerSession.current();
+  Future<void> _logout() async {
+    await SellerSession.clear();
     if (!mounted) {
       return;
     }
-    if (session == null) {
-      _showSellerGate();
-      return;
-    }
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SellerProfilePage(
-          sellerId: session.sellerId,
-          sellerPhone: session.phoneNumber,
-          fallbackName: session.name,
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
+      (route) => false,
+    );
+  }
+
+  Future<void> _confirmLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 22),
+              child: Text(
+                'Logout !',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const Divider(height: 1),
+            SizedBox(
+              height: 58,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text(
+                        'No',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text(
+                        'Yes',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
+
+    if (shouldLogout == true) {
+      await _logout();
+    }
   }
 
   void _handleBackPressed() {
@@ -160,6 +219,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
           ? const SellerListingsTab()
+          : const _SellerAccessPrompt(),
+      4 => widget.isSellerMode
+          ? SellerProfileTab(
+              onSettings: _showSettingsTab,
+              onLogout: _confirmLogout,
+            )
           : const _SellerAccessPrompt(),
       _ => widget.isSellerMode
           ? SellerSettingsTab(onBack: _showFeedTab)
@@ -259,8 +324,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 ],
               );
             },
-            child: BottomNavigationBar(
-                currentIndex: _currentIndex,
+            child: SizedBox(
+              height: 50,
+              child: BottomNavigationBar(
+                currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
                 onTap: _onTabTapped,
                 type: BottomNavigationBarType.fixed,
                 selectedItemColor: const Color(0xFFFF7801),
@@ -293,6 +360,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                   ),
                 ],
               ),
+            ),
           ),
         ),
       ),
@@ -481,7 +549,7 @@ class _SellerTabHeader extends StatelessWidget {
       child: const Center(
         child: SizedBox(
           height: 56,
-          width: 145,
+          width: 152,
           child: Image(
             image: AssetImage('assets/branding/logo.png'),
             fit: BoxFit.cover,

@@ -49,49 +49,70 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                 : seller['crNumber']?.toString() ?? '';
             final sellerLocation = seller['location']?.toString() ?? '';
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 26),
-                  Text(
-                    _formatSettingsPhone(session.phoneNumber),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.bold,
+            return Stack(
+              children: [
+                SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        _formatSettingsPhone(session.phoneNumber),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      _SellerInfoField(
+                        sellerId: session.sellerId,
+                        fieldKey: 'name',
+                        label: 'Company Name',
+                        hint: 'Company Name',
+                        initialValue: sellerName,
+                        keyboardType: TextInputType.text,
+                        inputFormatters: const [],
+                        savedMessage: 'Company name saved',
+                      ),
+                      const SizedBox(height: 12),
+                      _CrNumberField(
+                        sellerId: session.sellerId,
+                        initialValue: crNumber,
+                      ),
+                      const SizedBox(height: 12),
+                      _SellerInfoField(
+                        sellerId: session.sellerId,
+                        fieldKey: 'location',
+                        label: 'Location',
+                        hint: 'Location',
+                        initialValue: sellerLocation,
+                        keyboardType: TextInputType.text,
+                        inputFormatters: const [],
+                        savedMessage: 'Location saved',
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: MediaQuery.paddingOf(context).top + 10,
+                  left: 14,
+                  child: Material(
+                    color: Colors.white,
+                    shape: const CircleBorder(),
+                    elevation: 3,
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: widget.onBack,
+                      child: const SizedBox(
+                        width: 42,
+                        height: 42,
+                        child: Icon(Icons.arrow_back, color: Colors.black),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  _SellerInfoField(
-                    sellerId: session.sellerId,
-                    fieldKey: 'name',
-                    label: 'Name',
-                    hint: 'Name',
-                    initialValue: sellerName,
-                    keyboardType: TextInputType.text,
-                    inputFormatters: const [],
-                    savedMessage: 'Name saved',
-                  ),
-                  const SizedBox(height: 12),
-                  _CrNumberField(
-                    sellerId: session.sellerId,
-                    initialValue: crNumber,
-                  ),
-                  const SizedBox(height: 12),
-                  _SellerInfoField(
-                    sellerId: session.sellerId,
-                    fieldKey: 'location',
-                    label: 'Location',
-                    hint: 'Location',
-                    initialValue: sellerLocation,
-                    keyboardType: TextInputType.text,
-                    inputFormatters: const [],
-                    savedMessage: 'Location saved',
-                  ),
-                ],
-              ),
+                ),
+              ],
             );
           },
         );
@@ -473,17 +494,21 @@ class _SettingsDisplayField extends StatelessWidget {
               ],
             ),
           ),
-          TextButton(
+          OutlinedButton(
             onPressed: onEdit,
-            style: TextButton.styleFrom(
+            style: OutlinedButton.styleFrom(
               foregroundColor: Colors.black,
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(42, 28),
+              side: BorderSide(color: Colors.grey.shade500),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              minimumSize: const Size(58, 34),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: Text(
               isEmpty ? 'Add' : 'Edit',
-              style: const TextStyle(decoration: TextDecoration.underline),
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
         ],

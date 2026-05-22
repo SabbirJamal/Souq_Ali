@@ -92,7 +92,7 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
       appBar: AppBar(
         title: const SizedBox(
           height: kToolbarHeight,
-          width: 145,
+          width: 152,
           child: Image(
             image: AssetImage('assets/branding/logo.png'),
             fit: BoxFit.cover,

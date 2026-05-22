@@ -38,9 +38,12 @@ class _ItemEditPageState extends State<ItemEditPage> {
   late final List<MediaItem> _existingMedia;
   final List<MediaItem> _removedMedia = [];
   final List<_SelectedMedia> _newMedia = [];
+  final _priceUnits = ['/ kg', '/ box', '/ bag'];
 
   String _lastValidPriceText = '';
+  late String _priceUnit;
   bool _isSaving = false;
+  bool _showLocationError = false;
 
   @override
   void initState() {
@@ -56,6 +59,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
       text: widget.itemData['location'] ?? '',
     );
     _existingMedia = mediaItemsFromMap(widget.itemData);
+    _priceUnit = _priceUnits.contains(widget.itemData['price_unit'])
+        ? widget.itemData['price_unit'].toString()
+        : '/ kg';
   }
 
   @override
@@ -181,7 +187,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     final location = _locationController.text.trim();
 
     if (location.isEmpty) {
-      _showMessage('Please fill all fields');
+      setState(() => _showLocationError = true);
       return;
     }
     final normalizedPrice = _normalizePrice(price);
@@ -193,7 +199,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
     setState(() => _isSaving = true);
 
     try {
-      final priceUnit = widget.itemData['price_unit'] ?? '/ kg';
       final formattedPrice = _formatPriceWithCommas(normalizedPrice);
       final sellerUid = widget.itemData['seller_uid'];
       if (sellerUid == null || sellerUid.toString().isEmpty) {
@@ -222,7 +227,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
             'item_quantity': FieldValue.delete(),
             'weight_unit': FieldValue.delete(),
             'price_number': normalizedPrice,
-            'item_price': 'OMR $formattedPrice $priceUnit',
+            'price_unit': _priceUnit,
+            'item_price': 'OMR $formattedPrice $_priceUnit',
             'location': location,
             'media_files': allMedia
                 .map((media) => {'url': media.url, 'type': media.type})
@@ -237,7 +243,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         sellerPhone: widget.itemData['seller_phone']?.toString() ?? '',
         itemId: widget.docId,
         itemName: name,
-        itemPrice: 'OMR $formattedPrice $priceUnit',
+        itemPrice: 'OMR $formattedPrice $_priceUnit',
         videoUrls: videoUrls,
       );
 
@@ -442,52 +448,88 @@ class _ItemEditPageState extends State<ItemEditPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Item')),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF4FBF7),
+        elevation: 0,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+        ),
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
         children: [
+          _buildMediaEditor(),
+          const SizedBox(height: 20),
           _field(
             _nameController,
             'Item Name',
             Icons.shopping_bag,
+            hint: 'Fresh Tomatoes',
             maxLength: 80,
           ),
           const SizedBox(height: 14),
-          _field(
-            _priceController,
-            'Price',
-            null,
-            prefixIconWidget: const Padding(
-              padding: EdgeInsets.all(12),
-              child: RiyalCurrencyIcon(size: 22),
-            ),
-            focusNode: _priceFocusNode,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: _field(
+                  _priceController,
+                  'Price',
+                  null,
+                  hint: '2.500',
+                  prefixIconWidget: const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: RiyalCurrencyIcon(size: 22),
+                  ),
+                  focusNode: _priceFocusNode,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                  ],
+                  onTap: () {
+                    if (_priceController.text == '0') {
+                      _setPriceText('');
+                    }
+                  },
+                  onEditingComplete: _restoreDefaultPriceIfEmpty,
+                  onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
+                  onChanged: _handlePriceChanged,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: _buildDropdown(
+                  value: _priceUnit,
+                  items: _priceUnits,
+                  onChanged: (value) => setState(() => _priceUnit = value),
+                ),
+              ),
             ],
-            onTap: () {
-              if (_priceController.text == '0') {
-                _setPriceText('');
-              }
-            },
-            onEditingComplete: _restoreDefaultPriceIfEmpty,
-            onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
-            onChanged: _handlePriceChanged,
           ),
           const SizedBox(height: 14),
           _field(
             _locationController,
             'Location',
             null,
+            hint: _showLocationError
+                ? 'Please enter the location'
+                : 'Muscat, Al Seeb',
             prefixIconWidget: const Center(
               widthFactor: 1,
               child: Text('📍', style: TextStyle(fontSize: 20)),
             ),
             maxLength: 30,
+            errorText: _showLocationError ? 'Please enter the location' : null,
+            onChanged: (_) {
+              if (_showLocationError) {
+                setState(() => _showLocationError = false);
+              }
+            },
           ),
-          const SizedBox(height: 20),
-          _buildMediaEditor(),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _isSaving ? null : _save,
@@ -495,8 +537,32 @@ class _ItemEditPageState extends State<ItemEditPage> {
               backgroundColor: Colors.teal,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-            child: Text(_isSaving ? 'Saving...' : 'Save Changes'),
+            child: _isSaving
+                ? const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                      SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          'Saving...',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  )
+                : const Text('Save Changes', style: TextStyle(fontSize: 16)),
           ),
         ],
       ),
@@ -580,6 +646,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
     String label,
     IconData? icon, {
     Widget? prefixIconWidget,
+    String? hint,
+    String? errorText,
     int? maxLength,
     FocusNode? focusNode,
     TextInputType? keyboardType,
@@ -592,6 +660,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
     return TextField(
       controller: controller,
       focusNode: focusNode,
+      readOnly: _isSaving,
+      enabled: !_isSaving,
       maxLength: maxLength,
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
@@ -603,10 +673,41 @@ class _ItemEditPageState extends State<ItemEditPage> {
         filled: true,
         fillColor: Colors.white,
         labelText: label,
+        hintText: hint,
         prefixIcon: prefixIconWidget ?? (icon == null ? null : Icon(icon)),
+        errorText: errorText,
         counterText: '',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
+    );
+  }
+
+  Widget _buildDropdown({
+    required String value,
+    required List<String> items,
+    required ValueChanged<String> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 16,
+        ),
+      ),
+      items: items
+          .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+          .toList(),
+      onChanged: _isSaving
+          ? null
+          : (value) {
+              if (value != null) {
+                onChanged(value);
+              }
+            },
     );
   }
 }
