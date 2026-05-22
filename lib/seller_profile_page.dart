@@ -12,20 +12,25 @@ class SellerProfilePage extends StatelessWidget {
     required this.sellerId,
     required this.sellerPhone,
     required this.fallbackName,
+    this.isOwnProfile = true,
   });
 
   final String sellerId;
   final String sellerPhone;
   final String fallbackName;
+  final bool isOwnProfile;
 
-  Future<void> _goHome(BuildContext context) async {
+  Future<void> _openHomeTab(BuildContext context, int index) async {
     final session = await SellerSession.current();
     if (!context.mounted) {
       return;
     }
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => SellerHomePage(isSellerMode: session != null),
+        builder: (_) => SellerHomePage(
+          isSellerMode: session != null,
+          initialTabIndex: index,
+        ),
       ),
       (route) => false,
     );
@@ -45,48 +50,63 @@ class SellerProfilePage extends StatelessWidget {
   Future<void> _confirmLogout(BuildContext context) async {
     final shouldLogout = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Center(
-          child: Text('Logout !', style: TextStyle(fontSize: 30)),
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 22),
+              child: Text(
+                'Logout !',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const Divider(height: 1),
+            SizedBox(
+              height: 58,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text(
+                        'No',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text(
+                        'Yes',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        contentPadding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
-        actionsPadding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.black,
-                    side: const BorderSide(color: Colors.black, width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const Text('No', style: TextStyle(fontSize: 28)),
-                ),
-              ),
-              const SizedBox(width: 2),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.black, width: 2),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const Text(
-                    'Yes',
-                    style: TextStyle(fontSize: 28, color: Colors.red),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
 
@@ -151,15 +171,23 @@ class SellerProfilePage extends StatelessWidget {
                 );
               },
             ),
-            _ProfileSettingsMenu(
-              onSettings: () => _openSettings(context),
-              onLogout: () => _confirmLogout(context),
-            ),
+            if (isOwnProfile)
+              _ProfileSettingsMenu(
+                onSettings: () => _openSettings(context),
+                onLogout: () => _confirmLogout(context),
+              )
+            else
+              _ProfileBackButton(onBack: () => Navigator.pop(context)),
           ],
         ),
         bottomNavigationBar: BottomNavigationBar(
-          currentIndex: 0,
-          onTap: (_) => _goHome(context),
+          currentIndex: 4,
+          onTap: (index) {
+            if (index == 4) {
+              return;
+            }
+            _openHomeTab(context, index);
+          },
           type: BottomNavigationBarType.fixed,
           selectedItemColor: const Color(0xFFFF7801),
           unselectedItemColor: Colors.grey,
@@ -227,6 +255,38 @@ class _ProfileSettingsMenu extends StatelessWidget {
               width: 42,
               height: 42,
               child: Icon(Icons.settings, color: Colors.black),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileBackButton extends StatelessWidget {
+  const _ProfileBackButton({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    return Positioned(
+      top: topInset + 8,
+      left: 14,
+      child: SafeArea(
+        top: false,
+        child: Material(
+          color: Colors.white,
+          shape: const CircleBorder(),
+          elevation: 3,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onBack,
+            child: const SizedBox(
+              width: 42,
+              height: 42,
+              child: Icon(Icons.arrow_back, color: Colors.black),
             ),
           ),
         ),

@@ -527,6 +527,7 @@ class _SellerAvatarIcon extends StatelessWidget {
                           sellerId: sellerDocId,
                           sellerPhone: sellerPhone?.toString().trim() ?? '',
                           fallbackName: visibleName,
+                          isOwnProfile: false,
                         ),
                       ),
                     );
@@ -955,7 +956,7 @@ class _SingleMediaPageState extends State<_SingleMediaPage> {
                         return _FullscreenMediaView(
                           media: widget.mediaItems[index],
                           allowZoom: true,
-                          fit: BoxFit.cover,
+                          fit: BoxFit.contain,
                         );
                       },
                     ),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -9,8 +11,35 @@ import '../story_repository.dart';
 import '../widgets/media_carousel.dart';
 import '../widgets/price_with_currency.dart';
 
-class SellerListingsTab extends StatelessWidget {
+class SellerListingsTab extends StatefulWidget {
   const SellerListingsTab({super.key});
+
+  @override
+  State<SellerListingsTab> createState() => _SellerListingsTabState();
+}
+
+class _SellerListingsTabState extends State<SellerListingsTab> {
+  late final Future<SellerSession?> _sessionFuture;
+  late DateTime _now;
+  Timer? _expiryTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessionFuture = SellerSession.current();
+    _now = DateTime.now();
+    _expiryTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) {
+        setState(() => _now = DateTime.now());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _expiryTimer?.cancel();
+    super.dispose();
+  }
 
   String _postedDateTime(Object? value) {
     DateTime? postedAt;
@@ -36,6 +65,53 @@ class SellerListingsTab extends StatelessWidget {
       return 'Contact for price';
     }
     return text;
+  }
+
+  DateTime? _expiryAt(Map<String, dynamic> item) {
+    final expiresAt = item['expires_at'];
+    if (expiresAt is Timestamp) {
+      return expiresAt.toDate();
+    }
+    if (expiresAt is DateTime) {
+      return expiresAt;
+    }
+
+    final createdAt = item['created_at'];
+    final timePeriodHours = item['time_period_hours'];
+    DateTime? postedAt;
+    if (createdAt is Timestamp) {
+      postedAt = createdAt.toDate();
+    } else if (createdAt is DateTime) {
+      postedAt = createdAt;
+    }
+    if (postedAt == null || timePeriodHours is! num) {
+      return null;
+    }
+    return postedAt.add(Duration(hours: timePeriodHours.toInt()));
+  }
+
+  String _expiryText(Map<String, dynamic> item) {
+    final expiryAt = _expiryAt(item);
+    if (expiryAt == null) {
+      return 'Exp. not set';
+    }
+    final remaining = expiryAt.difference(_now);
+    if (remaining <= Duration.zero) {
+      return 'Exp. expired';
+    }
+
+    final minutes = (remaining.inSeconds / 60).ceil();
+    if (minutes < 60) {
+      return 'Exp. in $minutes ${minutes == 1 ? 'min' : 'mins'}';
+    }
+
+    final hours = minutes ~/ 60;
+    final extraMinutes = minutes % 60;
+    final hourText = '$hours ${hours == 1 ? 'hr' : 'hrs'}';
+    if (extraMinutes == 0) {
+      return 'Exp. in $hourText';
+    }
+    return 'Exp. in $hourText $extraMinutes mins';
   }
 
   Future<void> _deleteItem(
@@ -65,7 +141,7 @@ class SellerListingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<SellerSession?>(
-      future: SellerSession.current(),
+      future: _sessionFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -99,7 +175,7 @@ class SellerListingsTab extends StatelessWidget {
             }
 
             return ListView.builder(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
               itemCount: docs.length,
               itemBuilder: (context, index) {
                 final item = docs[index].data();
@@ -128,15 +204,17 @@ class SellerListingsTab extends StatelessWidget {
                     child: Stack(
                       children: [
                         Padding(
-                          padding: const EdgeInsets.fromLTRB(6, 4, 10, 8),
+                          padding: const EdgeInsets.fromLTRB(0, 0, 10, 0),
                           child: Row(
                             children: [
                               ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: const BorderRadius.horizontal(
+                                  left: Radius.circular(12),
+                                ),
                                 child: firstMedia == null
                                     ? Container(
-                                        width: 92,
-                                        height: 96,
+                                        width: 112,
+                                        height: 112,
                                         color: const Color(0xFFDCF8C6),
                                         child: const Icon(
                                           Icons.image,
@@ -145,8 +223,8 @@ class SellerListingsTab extends StatelessWidget {
                                       )
                                     : firstMedia.isVideo
                                     ? Container(
-                                        width: 92,
-                                        height: 96,
+                                        width: 112,
+                                        height: 112,
                                         color: Colors.black87,
                                         child: const Icon(
                                           Icons.play_circle_fill,
@@ -155,19 +233,19 @@ class SellerListingsTab extends StatelessWidget {
                                       )
                                     : CachedNetworkImage(
                                         imageUrl: firstMedia.url,
-                                        width: 92,
-                                        height: 96,
+                                        width: 112,
+                                        height: 112,
                                         fit: BoxFit.cover,
                                         placeholder: (context, url) =>
                                             Container(
-                                              width: 92,
-                                              height: 96,
+                                              width: 112,
+                                              height: 112,
                                               color: const Color(0xFFEFF4F1),
                                             ),
                                         errorWidget: (context, url, error) =>
                                             Container(
-                                              width: 92,
-                                              height: 96,
+                                              width: 112,
+                                              height: 112,
                                               color: const Color(0xFFDCF8C6),
                                               child: const Icon(
                                                 Icons.broken_image,
@@ -181,180 +259,233 @@ class SellerListingsTab extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            item['item_name'] ?? 'No name',
-                                            style: const TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.bold,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 2,
+                                                  ),
+                                              child: Text(
+                                                item['item_name'] ?? 'No name',
+                                                style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 4),
-                                          PriceWithCurrency(
-                                            price: _listingPrice(
-                                              item['item_price'],
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 2,
+                                                  ),
+                                              child: PriceWithCurrency(
+                                                price: _listingPrice(
+                                                  item['item_price'],
+                                                ),
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[600],
+                                                ),
+                                              ),
                                             ),
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey[600],
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 2,
+                                                  ),
+                                              child: Text(
+                                                _postedDateTime(
+                                                  item['created_at'],
+                                                ),
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: Colors.grey[700],
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
                                     ),
                                     Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
                                       children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              onPressed: () {
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        ItemEditPage(
-                                                          docId: docId,
-                                                          itemData: item,
-                                                        ),
-                                                  ),
-                                                );
-                                              },
-                                              icon: const Icon(
-                                                Icons.edit,
-                                                color: Colors.blue,
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => ItemEditPage(
+                                                  docId: docId,
+                                                  itemData: item,
+                                                ),
                                               ),
+                                            );
+                                          },
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.blue,
+                                            padding: EdgeInsets.zero,
+                                            minimumSize: const Size(54, 30),
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                            alignment: Alignment.centerRight,
+                                          ),
+                                          child: const Text(
+                                            'Edit',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
                                             ),
-                                            IconButton(
-                                              onPressed: () async {
-                                                final confirm =
-                                                    await showDialog<bool>(
-                                                      context: context,
-                                                      builder: (context) =>
-                                                          AlertDialog(
-                                                            title: const Center(
-                                                              child: Text(
-                                                                'Delete !',
-                                                                style: TextStyle(
-                                                                  fontSize: 30,
-                                                                ),
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () async {
+                                            final confirm =
+                                                await showDialog<bool>(
+                                                  context: context,
+                                                  builder: (context) => Dialog(
+                                                    insetPadding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 36,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            6,
+                                                          ),
+                                                    ),
+                                                    child: Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        const Padding(
+                                                          padding:
+                                                              EdgeInsets.symmetric(
+                                                                vertical: 22,
                                                               ),
+                                                          child: Text(
+                                                            'Delete !',
+                                                            style: TextStyle(
+                                                              fontSize: 24,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w500,
                                                             ),
-                                                            contentPadding:
-                                                                const EdgeInsets
-                                                                    .fromLTRB(
-                                                                      6,
-                                                                      8,
-                                                                      6,
-                                                                      0,
-                                                                    ),
-                                                            actionsPadding:
-                                                                const EdgeInsets
-                                                                    .fromLTRB(
-                                                                      6,
-                                                                      0,
-                                                                      6,
-                                                                      6,
-                                                                    ),
-                                                            actions: [
-                                                              Row(
-                                                                children: [
-                                                                  Expanded(
-                                                                    child: OutlinedButton(
-                                                                      onPressed: () => Navigator.pop(
+                                                          ),
+                                                        ),
+                                                        const Divider(
+                                                          height: 1,
+                                                        ),
+                                                        SizedBox(
+                                                          height: 58,
+                                                          child: Row(
+                                                            children: [
+                                                              Expanded(
+                                                                child: TextButton(
+                                                                  onPressed: () =>
+                                                                      Navigator.pop(
                                                                         context,
                                                                         false,
                                                                       ),
-                                                                      style: OutlinedButton.styleFrom(
-                                                                        foregroundColor:
-                                                                            Colors.black,
-                                                                        side: const BorderSide(
-                                                                          color: Colors.black,
-                                                                          width: 2,
-                                                                        ),
-                                                                        shape: RoundedRectangleBorder(
-                                                                          borderRadius: BorderRadius.circular(
-                                                                            10,
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                      child: const Text(
+                                                                  style: TextButton.styleFrom(
+                                                                    foregroundColor:
+                                                                        Colors
+                                                                            .black,
+                                                                    shape:
+                                                                        const RoundedRectangleBorder(),
+                                                                  ),
+                                                                  child:
+                                                                      const Text(
                                                                         'No',
                                                                         style: TextStyle(
                                                                           fontSize:
-                                                                              28,
+                                                                              18,
+                                                                          fontWeight:
+                                                                              FontWeight.w700,
                                                                         ),
                                                                       ),
-                                                                    ),
-                                                                  ),
-                                                                  const SizedBox(
-                                                                    width: 2,
-                                                                  ),
-                                                                  Expanded(
-                                                                    child: OutlinedButton(
-                                                                      onPressed: () => Navigator.pop(
+                                                                ),
+                                                              ),
+                                                              const VerticalDivider(
+                                                                width: 1,
+                                                              ),
+                                                              Expanded(
+                                                                child: TextButton(
+                                                                  onPressed: () =>
+                                                                      Navigator.pop(
                                                                         context,
                                                                         true,
                                                                       ),
-                                                                      style: OutlinedButton.styleFrom(
-                                                                        foregroundColor:
-                                                                            Colors.red,
-                                                                        side: const BorderSide(
-                                                                          color: Colors.black,
-                                                                          width: 2,
-                                                                        ),
-                                                                        shape: RoundedRectangleBorder(
-                                                                          borderRadius: BorderRadius.circular(
-                                                                            10,
-                                                                          ),
-                                                                        ),
-                                                                      ),
-                                                                      child: const Text(
+                                                                  style: TextButton.styleFrom(
+                                                                    foregroundColor:
+                                                                        Colors
+                                                                            .red,
+                                                                    shape:
+                                                                        const RoundedRectangleBorder(),
+                                                                  ),
+                                                                  child:
+                                                                      const Text(
                                                                         'Yes',
                                                                         style: TextStyle(
                                                                           fontSize:
-                                                                              28,
+                                                                              18,
+                                                                          fontWeight:
+                                                                              FontWeight.w700,
                                                                           color:
                                                                               Colors.red,
                                                                         ),
                                                                       ),
-                                                                    ),
-                                                                  ),
-                                                                ],
+                                                                ),
                                                               ),
                                                             ],
                                                           ),
-                                                    );
-                                                if (confirm == true &&
-                                                    context.mounted) {
-                                                  await _deleteItem(
-                                                    context,
-                                                    docId,
-                                                    item,
-                                                  );
-                                                }
-                                              },
-                                              icon: const Icon(
-                                                Icons.delete,
-                                                color: Colors.red,
-                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                );
+                                            if (confirm == true &&
+                                                context.mounted) {
+                                              await _deleteItem(
+                                                context,
+                                                docId,
+                                                item,
+                                              );
+                                            }
+                                          },
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.red,
+                                            padding: EdgeInsets.zero,
+                                            minimumSize: const Size(54, 30),
+                                            tapTargetSize: MaterialTapTargetSize
+                                                .shrinkWrap,
+                                            alignment: Alignment.centerRight,
+                                          ),
+                                          child: const Text(
+                                            'Delete',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
                                             ),
-                                          ],
+                                          ),
                                         ),
+                                        const SizedBox(height: 4),
                                         Text(
-                                          _postedDateTime(item['created_at']),
+                                          _expiryText(item),
                                           textAlign: TextAlign.right,
                                           style: TextStyle(
                                             fontSize: 11,
                                             color: Colors.grey[700],
-                                            fontWeight: FontWeight.w500,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
                                       ],
