@@ -7,6 +7,28 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:330917548315:android:b7664c8caf7bf46b84c3be",
+        "android_client_info": {
+          "package_name": "com.bizsooq.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbfoGx0dS6Xymfgu4koLAVdHrPN-AKG_8"
+        },
+        {
+          "current_key": "AIzaSyANwbWB5_Bed2gL4ie989QyEGoYCJfF004"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:330917548315:android:980503bfd5b06cbb84c3be",
         "android_client_info": {
           "package_name": "com.example.souqali"
@@ -14,6 +36,9 @@
       },
       "oauth_client": [],
       "api_key": [
+        {
+          "current_key": "AIzaSyBbfoGx0dS6Xymfgu4koLAVdHrPN-AKG_8"
+        },
         {
           "current_key": "AIzaSyANwbWB5_Bed2gL4ie989QyEGoYCJfF004"
         }

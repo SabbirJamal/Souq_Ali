@@ -1,4 +1,4 @@
-package com.example.souqali
+package com.bizsooq.app
 
 import io.flutter.embedding.android.FlutterActivity
 

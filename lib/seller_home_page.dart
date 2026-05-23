@@ -8,7 +8,6 @@ import 'seller_tabs/seller_feed_tab.dart';
 import 'seller_tabs/seller_listings_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_tabs/seller_stories_tab.dart';
-import 'seller_profile_page.dart';
 import 'seller_session.dart';
 
 class SellerHomePage extends StatefulWidget {
@@ -48,7 +47,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   void _showSettingsTab() {
-    setState(() => _currentIndex = 5);
+    setState(() => _currentIndex = 4);
   }
 
   void _showSellerGate() {
@@ -61,7 +60,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _onTabTapped(int index) {
     if (index == 4) {
       if (widget.isSellerMode) {
-        setState(() => _currentIndex = 4);
+        _showSettingsTab();
         _setChromeVisible(true);
       } else {
         _showSellerGate();
@@ -221,14 +220,18 @@ class _SellerHomePageState extends State<SellerHomePage> {
           ? const SellerListingsTab()
           : const _SellerAccessPrompt(),
       4 => widget.isSellerMode
-          ? SellerProfileTab(
-              onSettings: _showSettingsTab,
-              onLogout: _confirmLogout,
-            )
+          ? SellerSettingsTab(onLogout: _confirmLogout)
           : const _SellerAccessPrompt(),
-      _ => widget.isSellerMode
-          ? SellerSettingsTab(onBack: _showFeedTab)
-          : const _SellerAccessPrompt(),
+      _ => SellerFeedTab(
+        key: ValueKey('feed-$_feedRefreshTick'),
+        chromeVisibleListenable: _chromeVisible,
+        onSearchActiveChanged: (isActive) {
+          _isFeedSearchActive = isActive;
+          if (isActive) {
+            _setChromeVisible(true);
+          }
+        },
+      ),
     };
   }
 
@@ -264,13 +267,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    final showTabHeader =
-        widget.isSellerMode &&
-        _currentIndex != 0 &&
-        _currentIndex != 1 &&
-        _currentIndex != 2 &&
-        _currentIndex != 3 &&
-        _currentIndex != 4;
+    final showTabHeader = widget.isSellerMode && _currentIndex == 4;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -325,7 +322,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
               );
             },
             child: SizedBox(
-              height: 50,
+              height: 58,
               child: BottomNavigationBar(
                 currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
                 onTap: _onTabTapped,
@@ -351,12 +348,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
                     label: 'Add',
                   ),
                   BottomNavigationBarItem(
-                    icon: Icon(Icons.list_alt),
+                    icon: Icon(Icons.person),
                     label: 'Listings',
                   ),
                   BottomNavigationBarItem(
-                    icon: Icon(Icons.person),
-                    label: 'Profile',
+                    icon: Icon(Icons.settings),
+                    label: 'Settings',
                   ),
                 ],
               ),

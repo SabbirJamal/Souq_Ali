@@ -338,7 +338,7 @@ class _GridToggleButton extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: bottomPadding),
       child: Material(
-        color: const Color(0xFF1877F2),
+        color: const Color(0xFF001341),
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),

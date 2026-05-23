@@ -156,7 +156,7 @@ class SellerProfilePage extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => const SellerHomePage(
           isSellerMode: true,
-          initialTabIndex: 5,
+          initialTabIndex: 4,
         ),
       ),
       (route) => false,
@@ -182,13 +182,10 @@ class SellerProfilePage extends StatelessWidget {
           onBack: () => Navigator.pop(context),
         ),
         bottomNavigationBar: SizedBox(
-          height: 50,
+          height: 58,
           child: BottomNavigationBar(
             currentIndex: 4,
             onTap: (index) {
-              if (index == 4) {
-                return;
-              }
               _openHomeTab(context, index);
             },
             type: BottomNavigationBarType.fixed,
@@ -200,7 +197,10 @@ class SellerProfilePage extends StatelessWidget {
             showUnselectedLabels: false,
             iconSize: 24,
             items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.home),
+                label: 'Home',
+              ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.play_circle_fill),
                 label: 'Stories',
@@ -210,10 +210,13 @@ class SellerProfilePage extends StatelessWidget {
                 label: 'Add',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.list_alt),
+                icon: Icon(Icons.person),
                 label: 'Listings',
               ),
-              BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.settings),
+                label: 'Settings',
+              ),
             ],
           ),
         ),

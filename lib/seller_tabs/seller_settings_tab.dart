@@ -5,9 +5,9 @@ import 'package:flutter/services.dart';
 import '../seller_session.dart';
 
 class SellerSettingsTab extends StatefulWidget {
-  const SellerSettingsTab({super.key, required this.onBack});
+  const SellerSettingsTab({super.key, required this.onLogout});
 
-  final VoidCallback onBack;
+  final VoidCallback onLogout;
 
   @override
   State<SellerSettingsTab> createState() => _SellerSettingsTabState();
@@ -49,70 +49,65 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                 : seller['crNumber']?.toString() ?? '';
             final sellerLocation = seller['location']?.toString() ?? '';
 
-            return Stack(
-              children: [
-                SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 72, 24, 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        _formatSettingsPhone(session.phoneNumber),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey[700],
-                          fontWeight: FontWeight.bold,
-                        ),
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: widget.onLogout,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      const SizedBox(height: 22),
-                      _SellerInfoField(
-                        sellerId: session.sellerId,
-                        fieldKey: 'name',
-                        label: 'Company Name',
-                        hint: 'Company Name',
-                        initialValue: sellerName,
-                        keyboardType: TextInputType.text,
-                        inputFormatters: const [],
-                        savedMessage: 'Company name saved',
-                      ),
-                      const SizedBox(height: 12),
-                      _CrNumberField(
-                        sellerId: session.sellerId,
-                        initialValue: crNumber,
-                      ),
-                      const SizedBox(height: 12),
-                      _SellerInfoField(
-                        sellerId: session.sellerId,
-                        fieldKey: 'location',
-                        label: 'Location',
-                        hint: 'Location',
-                        initialValue: sellerLocation,
-                        keyboardType: TextInputType.text,
-                        inputFormatters: const [],
-                        savedMessage: 'Location saved',
-                      ),
-                    ],
-                  ),
-                ),
-                Positioned(
-                  top: MediaQuery.paddingOf(context).top + 10,
-                  left: 14,
-                  child: Material(
-                    color: Colors.white,
-                    shape: const CircleBorder(),
-                    elevation: 3,
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: widget.onBack,
-                      child: const SizedBox(
-                        width: 42,
-                        height: 42,
-                        child: Icon(Icons.arrow_back, color: Colors.black),
+                      child: const Text(
+                        'Log out',
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    _formatSettingsPhone(session.phoneNumber),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  _SellerInfoField(
+                    sellerId: session.sellerId,
+                    fieldKey: 'name',
+                    label: 'Company Name',
+                    hint: 'Company Name',
+                    initialValue: sellerName,
+                    keyboardType: TextInputType.text,
+                    inputFormatters: const [],
+                    savedMessage: 'Company name saved',
+                  ),
+                  const SizedBox(height: 12),
+                  _CrNumberField(
+                    sellerId: session.sellerId,
+                    initialValue: crNumber,
+                  ),
+                  const SizedBox(height: 12),
+                  _SellerInfoField(
+                    sellerId: session.sellerId,
+                    fieldKey: 'location',
+                    label: 'Location',
+                    hint: 'Location',
+                    initialValue: sellerLocation,
+                    keyboardType: TextInputType.text,
+                    inputFormatters: const [],
+                    savedMessage: 'Location saved',
+                  ),
+                ],
+              ),
             );
           },
         );
@@ -210,7 +205,7 @@ class _CrNumberFieldState extends State<_CrNumberField> {
       final value = _controller.text.trim();
       return _SettingsDisplayField(
         label: 'CR No.',
-        value: value.isEmpty ? 'CR No.' : value,
+        value: value,
         isEmpty: value.isEmpty,
         onEdit: () => setState(() => _isEditing = true),
       );
@@ -379,7 +374,7 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
       final value = _controller.text.trim();
       return _SettingsDisplayField(
         label: widget.label,
-        value: value.isEmpty ? widget.hint : value,
+        value: value,
         isEmpty: value.isEmpty,
         onEdit: () => setState(() => _isEditing = true),
       );
@@ -497,8 +492,10 @@ class _SettingsDisplayField extends StatelessWidget {
           OutlinedButton(
             onPressed: onEdit,
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.black,
-              side: BorderSide(color: Colors.grey.shade500),
+              foregroundColor: isEmpty ? const Color(0xFFFF7801) : Colors.black,
+              side: BorderSide(
+                color: isEmpty ? const Color(0xFFFF7801) : Colors.grey.shade500,
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 14),
               minimumSize: const Size(58, 34),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
