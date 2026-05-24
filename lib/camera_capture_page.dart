@@ -3,9 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
+import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
@@ -788,52 +788,74 @@ class _ImagePreviewPage extends StatefulWidget {
 }
 
 class _ImagePreviewPageState extends State<_ImagePreviewPage> {
+  final _cropController = CropController();
   late File _file;
+  Uint8List? _imageBytes;
+  bool _isCropping = false;
+  bool _isApplyingCrop = false;
 
   @override
   void initState() {
     super.initState();
     _file = widget.file;
+    _loadImageBytes();
   }
 
-  Future<void> _cropImage() async {
-    final croppedFile = await ImageCropper().cropImage(
-      sourcePath: _file.path,
-      compressFormat: ImageCompressFormat.jpg,
-      compressQuality: 92,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop',
-          toolbarColor: Colors.black,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: const Color(0xFF25D366),
-          initAspectRatio: CropAspectRatioPreset.original,
-          lockAspectRatio: false,
-          aspectRatioPresets: [
-            CropAspectRatioPreset.original,
-            CropAspectRatioPreset.square,
-            CropAspectRatioPreset.ratio3x2,
-            CropAspectRatioPreset.ratio4x3,
-            CropAspectRatioPreset.ratio16x9,
-          ],
-        ),
-        IOSUiSettings(
-          title: 'Crop',
-          aspectRatioPresets: [
-            CropAspectRatioPreset.original,
-            CropAspectRatioPreset.square,
-            CropAspectRatioPreset.ratio3x2,
-            CropAspectRatioPreset.ratio4x3,
-            CropAspectRatioPreset.ratio16x9,
-          ],
-        ),
-      ],
-    );
-
-    if (croppedFile == null || !mounted) {
+  Future<void> _loadImageBytes() async {
+    final bytes = await _file.readAsBytes();
+    if (!mounted) {
       return;
     }
-    setState(() => _file = File(croppedFile.path));
+    setState(() => _imageBytes = bytes);
+  }
+
+  void _startCrop() {
+    if (_imageBytes == null) {
+      return;
+    }
+    setState(() => _isCropping = true);
+  }
+
+  void _cancelCrop() {
+    setState(() {
+      _isCropping = false;
+      _isApplyingCrop = false;
+    });
+  }
+
+  void _applyCrop() {
+    if (_isApplyingCrop) {
+      return;
+    }
+    setState(() => _isApplyingCrop = true);
+    _cropController.crop();
+  }
+
+  Future<void> _handleCropResult(CropResult result) async {
+    switch (result) {
+      case CropSuccess(:final croppedImage):
+        final file = File(
+          '${Directory.systemTemp.path}/bizsooq_crop_${DateTime.now().microsecondsSinceEpoch}.jpg',
+        );
+        await file.writeAsBytes(croppedImage, flush: true);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _file = file;
+          _imageBytes = croppedImage;
+          _isCropping = false;
+          _isApplyingCrop = false;
+        });
+      case CropFailure():
+        if (!mounted) {
+          return;
+        }
+        setState(() => _isApplyingCrop = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not crop image')),
+        );
+    }
   }
 
   void _accept() {
@@ -847,22 +869,92 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.file(
-              _file,
-              fit: BoxFit.cover,
+            child: _isCropping && _imageBytes != null
+                ? Crop(
+                    image: _imageBytes!,
+                    controller: _cropController,
+                    onCropped: _handleCropResult,
+                    baseColor: Colors.black,
+                    maskColor: Colors.black.withValues(alpha: 0.52),
+                    radius: 0,
+                    overlayBuilder: (context, rect) {
+                      return CustomPaint(painter: _CropGridPainter());
+                    },
+                  )
+                : Image.file(
+                    _file,
+                    fit: BoxFit.cover,
+                  ),
+          ),
+          Positioned(
+            top: 14,
+            left: 14,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: _isCropping
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _FloatingCircleButton(
+                          icon: Icons.close,
+                          onTap: _cancelCrop,
+                        ),
+                        _AcceptButton(onTap: _applyCrop, size: 54),
+                      ],
+                    )
+                  : Align(
+                      alignment: Alignment.topRight,
+                      child: _FloatingCircleButton(
+                        icon: Icons.crop,
+                        onTap: _startCrop,
+                      ),
+                    ),
             ),
           ),
+          if (_isApplyingCrop)
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
           Positioned(
             right: 24,
             bottom: 34,
             child: SafeArea(
-              child: _AcceptButton(onTap: _accept, size: 64),
+              child: _isCropping
+                  ? const SizedBox.shrink()
+                  : _AcceptButton(onTap: _accept, size: 64),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _CropGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final gridPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.7)
+      ..strokeWidth = 1;
+
+    final rect = Offset.zero & size;
+    canvas.drawRect(rect, borderPaint);
+
+    final oneThirdWidth = size.width / 3;
+    final oneThirdHeight = size.height / 3;
+    for (var i = 1; i < 3; i++) {
+      final x = oneThirdWidth * i;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+      final y = oneThirdHeight * i;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _VideoPreviewPage extends StatefulWidget {
