@@ -50,27 +50,10 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
             final sellerLocation = seller['location']?.toString() ?? '';
 
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: widget.onLogout,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: const Size(0, 36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      child: const Text(
-                        'Log out',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
                   Text(
                     _formatSettingsPhone(session.phoneNumber),
                     textAlign: TextAlign.center,
@@ -475,7 +458,7 @@ class _SettingsDisplayField extends StatelessWidget {
                   style: const TextStyle(
                     color: Colors.black,
                     fontSize: 15,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.normal,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -484,6 +467,9 @@ class _SettingsDisplayField extends StatelessWidget {
                   style: TextStyle(
                     color: Colors.grey.shade700,
                     fontSize: 13,
+                    fontWeight: value.trim().isEmpty
+                        ? FontWeight.normal
+                        : FontWeight.bold,
                   ),
                 ),
               ],

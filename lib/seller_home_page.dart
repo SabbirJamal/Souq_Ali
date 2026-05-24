@@ -26,6 +26,7 @@ class SellerHomePage extends StatefulWidget {
 
 class _SellerHomePageState extends State<SellerHomePage> {
   final _addItemKey = GlobalKey<SellerAddItemTabState>();
+  final _feedKey = GlobalKey<SellerFeedTabState>();
   final _chromeVisible = ValueNotifier<bool>(true);
   late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
@@ -58,6 +59,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   void _onTabTapped(int index) {
+    if (index == 0 && _currentIndex == 0) {
+      _feedKey.currentState?.scrollToTop();
+      _setChromeVisible(true);
+      return;
+    }
+
     if (index == 4) {
       if (widget.isSellerMode) {
         _showSettingsTab();
@@ -203,7 +210,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   Widget _buildCurrentPage() {
     return switch (_currentIndex) {
       0 => SellerFeedTab(
-        key: ValueKey('feed-$_feedRefreshTick'),
+        key: _feedKey,
         chromeVisibleListenable: _chromeVisible,
         onSearchActiveChanged: (isActive) {
           _isFeedSearchActive = isActive;
@@ -223,7 +230,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           ? SellerSettingsTab(onLogout: _confirmLogout)
           : const _SellerAccessPrompt(),
       _ => SellerFeedTab(
-        key: ValueKey('feed-$_feedRefreshTick'),
+        key: _feedKey,
         chromeVisibleListenable: _chromeVisible,
         onSearchActiveChanged: (isActive) {
           _isFeedSearchActive = isActive;
@@ -267,7 +274,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    final showTabHeader = widget.isSellerMode && _currentIndex == 4;
+    final showTabHeader =
+        widget.isSellerMode && (_currentIndex == 3 || _currentIndex == 4);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -287,7 +295,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
             children: [
               Container(height: topInset, color: Colors.black),
               if (showTabHeader)
-                const _SellerTabHeader(),
+                _SellerTabHeader(
+                  rightAction: _currentIndex == 3
+                      ? const _HeaderShareButton()
+                      : _HeaderLogoutButton(onLogout: _confirmLogout),
+                ),
               Expanded(
                 child: NotificationListener<ScrollNotification>(
                   onNotification: _onScrollNotification,
@@ -534,7 +546,9 @@ String _localDigits(String? value) {
 }
 
 class _SellerTabHeader extends StatelessWidget {
-  const _SellerTabHeader();
+  const _SellerTabHeader({required this.rightAction});
+
+  final Widget rightAction;
 
   @override
   Widget build(BuildContext context) {
@@ -543,15 +557,68 @@ class _SellerTabHeader extends StatelessWidget {
       width: double.infinity,
       color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: const Center(
-        child: SizedBox(
-          height: 56,
-          width: 152,
-          child: Image(
-            image: AssetImage('assets/branding/logo.png'),
-            fit: BoxFit.cover,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const SizedBox(
+            height: 56,
+            width: 152,
+            child: Image(
+              image: AssetImage('assets/branding/logo.png'),
+              fit: BoxFit.cover,
+            ),
           ),
-        ),
+          Positioned(
+            right: 0,
+            child: rightAction,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderLogoutButton extends StatelessWidget {
+  const _HeaderLogoutButton({required this.onLogout});
+
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onLogout,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.red,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 36),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: const Text(
+        'Log out',
+        style: TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _HeaderShareButton extends StatelessWidget {
+  const _HeaderShareButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: () {},
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.black,
+        side: const BorderSide(color: Colors.black, width: 1.2),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        minimumSize: const Size(82, 38),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      child: const Text(
+        'Share',
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
       ),
     );
   }

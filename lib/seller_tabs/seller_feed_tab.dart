@@ -16,12 +16,13 @@ class SellerFeedTab extends StatefulWidget {
   final ValueChanged<bool> onSearchActiveChanged;
 
   @override
-  State<SellerFeedTab> createState() => _SellerFeedTabState();
+  SellerFeedTabState createState() => SellerFeedTabState();
 }
 
-class _SellerFeedTabState extends State<SellerFeedTab> {
+class SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  final _scrollController = ScrollController();
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
       FirebaseFirestore.instance
           .collection('items')
@@ -31,13 +32,31 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
   bool _isGridView = true;
   String _query = '';
   final DateTime _openedAt = DateTime.now();
+  int _refreshTick = 0;
 
   @override
   void dispose() {
     widget.onSearchActiveChanged(false);
+    _scrollController.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void scrollToTop() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _refreshFeed() async {
+    setState(() => _refreshTick++);
+    await Future<void>.delayed(const Duration(milliseconds: 350));
   }
 
   void _openSearch() {
@@ -122,55 +141,64 @@ class _SellerFeedTabState extends State<SellerFeedTab> {
                     .toList(),
               );
 
-              return CustomScrollView(
-                slivers: [
-                  if (isLoading)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (hasError)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: Text('Error: ${snapshot.error}')),
-                    )
-                  else if (docs.isEmpty)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Text(
-                          'No items available',
-                          style: TextStyle(fontSize: 16, color: Colors.grey),
+              return RefreshIndicator(
+                color: const Color(0xFFFF7801),
+                onRefresh: _refreshFeed,
+                child: CustomScrollView(
+                  key: PageStorageKey(
+                    'seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick',
+                  ),
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    if (isLoading)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (hasError)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: Text('Error: ${snapshot.error}')),
+                      )
+                    else if (docs.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text(
+                            'No items available',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
                         ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: _isGridView
+                            ? const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 8,
+                              )
+                            : const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 12,
+                              ),
+                        sliver: _isGridView
+                            ? SliverToBoxAdapter(
+                                child: _MasonryItemGrid(docs: docs),
+                              )
+                            : SliverList.builder(
+                                itemCount: docs.length,
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+                                  return ItemCard(
+                                    docId: doc.id,
+                                    item: doc.data(),
+                                  );
+                                },
+                              ),
                       ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: _isGridView
-                          ? const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 8,
-                            )
-                          : const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 12,
-                            ),
-                      sliver: _isGridView
-                          ? SliverToBoxAdapter(
-                              child: _MasonryItemGrid(docs: docs),
-                            )
-                          : SliverList.builder(
-                              itemCount: docs.length,
-                              itemBuilder: (context, index) {
-                                final doc = docs[index];
-                                return ItemCard(
-                                  docId: doc.id,
-                                  item: doc.data(),
-                                );
-                              },
-                            ),
-                    ),
-                ],
+                  ],
+                ),
               );
             },
           ),
@@ -417,7 +445,9 @@ class _FeedHeader extends StatelessWidget {
                         width: isSearchOpen ? constraints.maxWidth - 56 : 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: isSearchOpen
+                              ? Colors.white
+                              : const Color(0xFFFF7801),
                           borderRadius: BorderRadius.circular(24),
                         ),
                         child: AnimatedSwitcher(
@@ -456,7 +486,7 @@ class _FeedHeader extends StatelessWidget {
                                   key: const ValueKey('search-button'),
                                   onPressed: onOpenSearch,
                                   icon: const Icon(Icons.search),
-                                  color: const Color(0xFFFF7801),
+                                  color: Colors.white,
                                 ),
                         ),
                       ),

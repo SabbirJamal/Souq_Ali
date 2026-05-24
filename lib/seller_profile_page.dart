@@ -285,8 +285,7 @@ class _SellerProfileBody extends StatelessWidget {
         if (isOwnProfile)
           _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
         else if (onBack != null)
-          _ProfileBackButton(onBack: onBack!),
-        const _ProfileShareButton(),
+          _ProfileHeader(onBack: onBack!),
       ],
     );
   }
@@ -340,8 +339,8 @@ class _ProfileSettingsMenu extends StatelessWidget {
   }
 }
 
-class _ProfileBackButton extends StatelessWidget {
-  const _ProfileBackButton({required this.onBack});
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({required this.onBack});
 
   final VoidCallback onBack;
 
@@ -349,60 +348,81 @@ class _ProfileBackButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
     return Positioned(
-      top: topInset + 8,
-      left: 14,
-      child: SafeArea(
-        top: false,
-        child: Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onBack,
-            child: const SizedBox(
-              width: 42,
-              height: 42,
-              child: Icon(Icons.arrow_back, color: Colors.black),
+      top: topInset,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 56,
+        color: const Color(0xFFF4FBF7),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            const SizedBox(
+              height: 56,
+              width: 152,
+              child: Image(
+                image: AssetImage('assets/branding/logo.png'),
+                fit: BoxFit.cover,
+              ),
             ),
-          ),
+            Positioned(
+              left: 0,
+              child: _BorderedHeaderButton(
+                onTap: onBack,
+                child: const Icon(Icons.arrow_back, color: Colors.black),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              child: _BorderedHeaderButton(
+                width: 88,
+                onTap: () {},
+                child: const Text(
+                  'Share',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _ProfileShareButton extends StatelessWidget {
-  const _ProfileShareButton();
+class _BorderedHeaderButton extends StatelessWidget {
+  const _BorderedHeaderButton({
+    required this.onTap,
+    required this.child,
+    this.width = 44,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+  final double width;
 
   @override
   Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-    return Positioned(
-      top: topInset + 8,
-      right: 14,
-      child: SafeArea(
-        top: false,
-        child: Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () {},
-            child: const SizedBox(
-              width: 42,
-              height: 42,
-              child: Center(
-                child: Text(
-                  'Share',
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: width,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.black, width: 1.2),
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: child,
         ),
       ),
     );

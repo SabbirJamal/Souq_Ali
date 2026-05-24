@@ -259,7 +259,6 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
 
         return CustomScrollView(
           slivers: [
-            const SliverToBoxAdapter(child: _ListingsHeader()),
             SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: FirebaseFirestore.instance
@@ -389,55 +388,6 @@ class _SellerInfoHeader extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _ListingsHeader extends StatelessWidget {
-  const _ListingsHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 58,
-      width: double.infinity,
-      color: const Color(0xFFF4FBF7),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const SizedBox(
-            height: 58,
-            width: 152,
-            child: Image(
-              image: AssetImage('assets/branding/logo.png'),
-              fit: BoxFit.cover,
-            ),
-          ),
-          Positioned(
-            right: 0,
-            child: OutlinedButton(
-              onPressed: () {},
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.black,
-                side: const BorderSide(color: Colors.black, width: 1.2),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 10,
-                ),
-                minimumSize: const Size(88, 42),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text(
-                'Share',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -685,9 +635,9 @@ class _ManageActions extends StatelessWidget {
         _DarkBadge(text: uploadedAgo),
         const SizedBox(height: 4),
         _DarkBadge(text: expiryText),
-        const SizedBox(height: 4),
+        const SizedBox(height: 7),
         _ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit),
-        const SizedBox(height: 4),
+        const SizedBox(height: 7),
         _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete),
       ],
     );
@@ -714,7 +664,7 @@ class _ActionPill extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: color,
             border: Border.all(color: Colors.black, width: 1.2),
