@@ -82,11 +82,20 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       return;
     }
 
-    final captured = await Navigator.push<CapturedMedia>(
+    final result = await Navigator.push<Object?>(
       context,
       MaterialPageRoute(builder: (_) => const CameraCapturePage()),
     );
-    if (captured == null) {
+    if (result == CameraCaptureAction.openGallery) {
+      await _openGallerySheet();
+      return;
+    }
+    if (result is! CapturedMedia) {
+      return;
+    }
+    final captured = result;
+    if (captured.isVideo && !await _isVideoWithinLimit(captured.file)) {
+      _showMessage('Video cannot be more than 1 minute');
       return;
     }
 
@@ -99,10 +108,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> openMediaSheet() async {
-    await _openMediaSheet();
+    await _openCamera();
   }
 
-  Future<void> _openMediaSheet() async {
+  Future<void> _openGallerySheet() async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -116,10 +125,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               .toSet(),
           selectedCount: _selectedMedia.length,
           maxCount: _maxMediaCount,
-          onCameraTap: () async {
-            Navigator.pop(context);
-            await _openCamera();
-          },
           onAssetsDone: _addGalleryAssets,
         );
       },
@@ -140,6 +145,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final file = await asset.fileWithSubtype ?? await asset.file;
       if (file == null) {
         _showMessage('Could not open selected file');
+        continue;
+      }
+      if (asset.type == AssetType.video && asset.duration > 60) {
+        _showMessage('Video cannot be more than 1 minute');
         continue;
       }
 
@@ -177,6 +186,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       return false;
     }
     return true;
+  }
+
+  Future<bool> _isVideoWithinLimit(File file) async {
+    final info = await VideoCompress.getMediaInfo(file.path);
+    final duration = info.duration;
+    if (duration == null) {
+      return true;
+    }
+    return duration <= const Duration(seconds: 60).inMilliseconds;
   }
 
   Future<List<_UploadedMedia>> _uploadMedia(
@@ -659,7 +677,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           itemCount: _selectedMedia.length + 1,
           itemBuilder: (context, index) {
             if (index == _selectedMedia.length) {
-              return Center(child: _buildAddMediaCircle());
+              return Center(
+                child: _buildMediaActionCircle(
+                  onTap: _openCamera,
+                ),
+              );
             }
 
             final media = _selectedMedia[index];
@@ -701,9 +723,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     );
   }
 
-  Widget _buildAddMediaCircle() {
+  Widget _buildMediaActionCircle({
+    required VoidCallback onTap,
+  }) {
     return InkWell(
-      onTap: _isUploading ? null : _openMediaSheet,
+      onTap: _isUploading ? null : onTap,
       borderRadius: BorderRadius.circular(24),
       child: Container(
         width: 76,
@@ -719,7 +743,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             ),
           ],
         ),
-        child: const Icon(Icons.add_a_photo, color: Color(0xFF111820), size: 38),
+        child: const Icon(
+          Icons.add_a_photo,
+          color: Color(0xFF111820),
+          size: 38,
+        ),
       ),
     );
   }
@@ -852,14 +880,12 @@ class _MediaPickerSheet extends StatefulWidget {
     required this.selectedIds,
     required this.selectedCount,
     required this.maxCount,
-    required this.onCameraTap,
     required this.onAssetsDone,
   });
 
   final Set<String> selectedIds;
   final int selectedCount;
   final int maxCount;
-  final VoidCallback onCameraTap;
   final Future<void> Function(List<AssetEntity> assets) onAssetsDone;
 
   @override
@@ -1024,6 +1050,12 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
       );
       return;
     }
+    if (asset.type == AssetType.video && asset.duration > 60) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Video cannot be more than 1 minute')),
+      );
+      return;
+    }
 
     setState(() {
       _selectedIds.add(asset.id);
@@ -1077,15 +1109,8 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                             context,
                             index,
                           ) {
-                            if (index == 0) {
-                              return _CameraTile(
-                                icon: Icons.camera_alt_outlined,
-                                label: 'Camera',
-                                onTap: widget.onCameraTap,
-                              );
-                            }
-                            final asset = _assets[index - 1];
-                            _maybeLoadMore(index - 1);
+                            final asset = _assets[index];
+                            _maybeLoadMore(index);
                             final selectedIndex = _selectedIds
                                 .toList()
                                 .indexOf(asset.id);
@@ -1096,7 +1121,7 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                                   : selectedIndex + 1,
                               onTap: () => _toggleAsset(asset),
                             );
-                          }, childCount: _assets.length + 1),
+                          }, childCount: _assets.length),
                         ),
                       ),
                       if (_isLoadingMore)
