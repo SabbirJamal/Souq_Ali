@@ -135,14 +135,27 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
     final albums = await PhotoManager.getAssetPathList(
       type: RequestType.common,
-      onlyAll: true,
     );
     if (albums.isEmpty) {
       return;
     }
-    final assets = await albums.first.getAssetListPaged(page: 0, size: 12);
+
+    final byId = <String, AssetEntity>{};
+    for (final album in albums) {
+      final assets = await album.getAssetListPaged(page: 0, size: 30);
+      for (final asset in assets) {
+        if (asset.type == AssetType.video && asset.duration > 60) {
+          continue;
+        }
+        byId[asset.id] = asset;
+      }
+    }
+
+    final assets = byId.values.toList()
+      ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+
     if (mounted) {
-      setState(() => _recentAssets = assets);
+      setState(() => _recentAssets = assets.take(10).toList());
     }
   }
 
@@ -406,13 +419,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
                             assets: _recentAssets,
                             onAssetTap: _selectRecentAsset,
                           ),
-                          const SizedBox(height: 10),
-                          _LatestMediaPreview(
-                            asset: _recentAssets.first,
-                            onTap: () => _selectRecentAsset(
-                              _recentAssets.first,
-                            ),
-                          ),
                           const SizedBox(height: 12),
                         ],
                         if (_isRecording) ...[
@@ -551,23 +557,24 @@ class _RecentMediaStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 74,
+      width: double.infinity,
+      height: 78,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        padding: EdgeInsets.zero,
         itemCount: assets.length,
         separatorBuilder: (_, __) => const SizedBox(width: 6),
         itemBuilder: (context, index) {
           final asset = assets[index];
-          return GestureDetector(
-            onTap: () => onAssetTap(asset),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                SizedBox(
-                  width: 74,
-                  height: 74,
-                  child: FutureBuilder<Uint8List?>(
+          return SizedBox(
+            width: 78,
+            height: 78,
+            child: GestureDetector(
+              onTap: () => onAssetTap(asset),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  FutureBuilder<Uint8List?>(
                     future: asset.thumbnailDataWithSize(
                       const ThumbnailSize.square(180),
                     ),
@@ -579,18 +586,30 @@ class _RecentMediaStrip extends StatelessWidget {
                       return Image.memory(bytes, fit: BoxFit.cover);
                     },
                   ),
-                ),
-                if (asset.type == AssetType.video)
-                  const Positioned(
-                    left: 5,
-                    bottom: 4,
-                    child: Icon(
-                      Icons.videocam,
-                      color: Colors.white,
-                      size: 17,
+                  if (asset.type == AssetType.video)
+                    Positioned(
+                      left: 5,
+                      bottom: 4,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 3,
+                          ),
+                          child: Icon(
+                            Icons.videocam,
+                            color: Colors.white,
+                            size: 17,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           );
         },
