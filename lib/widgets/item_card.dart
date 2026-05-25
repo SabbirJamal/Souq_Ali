@@ -128,6 +128,75 @@ class ItemCard extends StatelessWidget {
   }
 }
 
+class ItemCardSkeleton extends StatelessWidget {
+  const ItemCardSkeleton({super.key, this.isCompact = false});
+
+  final bool isCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardHeight = isCompact
+            ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
+            : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
+
+        return Card(
+          elevation: 6,
+          shadowColor: Colors.black.withValues(alpha: 0.12),
+          color: Colors.white,
+          margin: EdgeInsets.only(bottom: isCompact ? 6 : 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(isCompact ? 8 : 10),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            height: cardHeight,
+            child: Stack(
+              children: [
+                const Positioned.fill(child: MediaSkeletonPlaceholder()),
+                Positioned(
+                  left: isCompact ? 8 : 14,
+                  bottom: isCompact ? 10 : 18,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _SkeletonChip(width: isCompact ? 76 : 118),
+                      SizedBox(height: isCompact ? 5 : 8),
+                      _SkeletonChip(width: isCompact ? 94 : 150),
+                      SizedBox(height: isCompact ? 7 : 12),
+                      _SkeletonChip(width: isCompact ? 64 : 110),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SkeletonChip extends StatelessWidget {
+  const _SkeletonChip({required this.width});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: width,
+        height: 28,
+        child: const MediaSkeletonPlaceholder(),
+      ),
+    );
+  }
+}
+
 class _ImageFilledDetails extends StatelessWidget {
   const _ImageFilledDetails({required this.item, required this.isCompact});
 

@@ -1068,8 +1068,10 @@ class _FullscreenMediaView extends StatelessWidget {
           width: constraints.maxWidth,
           height: constraints.maxHeight,
           fit: fit,
-          placeholder: (context, url) =>
-              const Center(child: CircularProgressIndicator()),
+          placeholder: (context, url) => const MediaSkeletonPlaceholder(
+            baseColor: Color(0xFF202421),
+            highlightColor: Color(0xFF333A35),
+          ),
           errorWidget: (context, url, error) => const Icon(
             Icons.broken_image,
             color: Colors.white,

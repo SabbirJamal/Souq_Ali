@@ -265,10 +265,7 @@ class _MediaLoadingPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFEFF4F1),
-      child: const Center(child: CircularProgressIndicator()),
-    );
+    return const MediaSkeletonPlaceholder();
   }
 }
 
@@ -319,10 +316,7 @@ class _VideoPreviewState extends State<VideoPreview> {
   @override
   Widget build(BuildContext context) {
     if (!_isReady) {
-      return Container(
-        color: Colors.black12,
-        child: const Center(child: CircularProgressIndicator()),
-      );
+      return const MediaSkeletonPlaceholder(baseColor: Color(0xFF202421));
     }
 
     return Stack(
@@ -354,6 +348,65 @@ class _VideoPreviewState extends State<VideoPreview> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class MediaSkeletonPlaceholder extends StatefulWidget {
+  const MediaSkeletonPlaceholder({
+    super.key,
+    this.baseColor = const Color(0xFFE9EFEB),
+    this.highlightColor = const Color(0xFFF8FBF9),
+  });
+
+  final Color baseColor;
+  final Color highlightColor;
+
+  @override
+  State<MediaSkeletonPlaceholder> createState() =>
+      _MediaSkeletonPlaceholderState();
+}
+
+class _MediaSkeletonPlaceholderState extends State<MediaSkeletonPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1150),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final value = _controller.value;
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment(-1.0 + value * 2.4, -0.8),
+              end: Alignment(-0.2 + value * 2.4, 0.8),
+              colors: [
+                widget.baseColor,
+                widget.highlightColor,
+                widget.baseColor,
+              ],
+              stops: const [0.25, 0.5, 0.75],
+            ),
+          ),
+        );
+      },
     );
   }
 }

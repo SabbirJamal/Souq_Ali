@@ -88,122 +88,190 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
     return docs.where((doc) {
       final item = doc.data();
-      final searchableText = [
-        item['item_name'],
-        item['item_price'],
-        item['location'],
-      ].whereType<Object>().map((value) => value.toString().toLowerCase()).join(
-        ' ',
-      );
+      final searchableText =
+          [item['item_name'], item['item_price'], item['location']]
+              .whereType<Object>()
+              .map((value) => value.toString().toLowerCase())
+              .join(' ');
       return searchableText.contains(query);
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Stack(
       children: [
-        ClipRect(
+        Column(
+          children: [
+            ClipRect(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: widget.chromeVisibleListenable,
+                builder: (context, visible, child) {
+                  return AnimatedAlign(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    heightFactor: visible ? 1 : 0,
+                    child: child,
+                  );
+                },
+                child: _FeedHeader(
+                  isSearchOpen: _isSearchOpen,
+                  searchController: _searchController,
+                  searchFocusNode: _searchFocusNode,
+                  onOpenSearch: _openSearch,
+                  onCloseSearch: _closeSearch,
+                  onQueryChanged: (value) => setState(() => _query = value),
+                  isGridView: _isGridView,
+                  onToggleGrid: _toggleLayoutMode,
+                ),
+              ),
+            ),
+            const _UploadStatusBanner(),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _itemsStream,
+                builder: (context, snapshot) {
+                  final isLoading =
+                      snapshot.connectionState == ConnectionState.waiting;
+                  final hasError = snapshot.hasError;
+                  final docs = _filterDocs(
+                    (snapshot.data?.docs ?? [])
+                        .where((doc) => _isItemActive(doc.data(), _openedAt))
+                        .toList(),
+                  );
+
+                  return RefreshIndicator(
+                    color: const Color(0xFFFF7801),
+                    onRefresh: _refreshFeed,
+                    child: CustomScrollView(
+                      key: PageStorageKey(
+                        'seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick',
+                      ),
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        if (isLoading)
+                          SliverPadding(
+                            padding: _isGridView
+                                ? const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                    vertical: 8,
+                                  )
+                                : const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                    vertical: 12,
+                                  ),
+                            sliver: _isGridView
+                                ? const SliverToBoxAdapter(
+                                    child: _FeedSkeletonGrid(),
+                                  )
+                                : SliverList.builder(
+                                    itemCount: 3,
+                                    itemBuilder: (context, index) {
+                                      return const ItemCardSkeleton();
+                                    },
+                                  ),
+                          )
+                        else if (hasError)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Text('Error: ${snapshot.error}'),
+                            ),
+                          )
+                        else if (docs.isEmpty)
+                          const SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Text(
+                                'No items available',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: _isGridView
+                                ? const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                    vertical: 8,
+                                  )
+                                : const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                    vertical: 12,
+                                  ),
+                            sliver: _isGridView
+                                ? SliverToBoxAdapter(
+                                    child: _MasonryItemGrid(docs: docs),
+                                  )
+                                : SliverList.builder(
+                                    itemCount: docs.length,
+                                    itemBuilder: (context, index) {
+                                      final doc = docs[index];
+                                      return ItemCard(
+                                        docId: doc.id,
+                                        item: doc.data(),
+                                      );
+                                    },
+                                  ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        Positioned(
+          top: 10,
+          right: 12,
           child: ValueListenableBuilder<bool>(
             valueListenable: widget.chromeVisibleListenable,
             builder: (context, visible, child) {
-              return AnimatedAlign(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                heightFactor: visible ? 1 : 0,
-                child: child,
-              );
-            },
-            child: _FeedHeader(
-                isSearchOpen: _isSearchOpen,
-                searchController: _searchController,
-                searchFocusNode: _searchFocusNode,
-                onOpenSearch: _openSearch,
-                onCloseSearch: _closeSearch,
-                onQueryChanged: (value) => setState(() => _query = value),
-                isGridView: _isGridView,
-                onToggleGrid: _toggleLayoutMode,
-            ),
-          ),
-        ),
-        const _UploadStatusBanner(),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _itemsStream,
-            builder: (context, snapshot) {
-              final isLoading =
-                  snapshot.connectionState == ConnectionState.waiting;
-              final hasError = snapshot.hasError;
-              final docs = _filterDocs(
-                (snapshot.data?.docs ?? [])
-                    .where((doc) => _isItemActive(doc.data(), _openedAt))
-                    .toList(),
-              );
-
-              return RefreshIndicator(
-                color: const Color(0xFFFF7801),
-                onRefresh: _refreshFeed,
-                child: CustomScrollView(
-                  key: PageStorageKey(
-                    'seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick',
-                  ),
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    if (isLoading)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (hasError)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: Text('Error: ${snapshot.error}')),
-                      )
-                    else if (docs.isEmpty)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text(
-                            'No items available',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: _isGridView
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 8,
-                              )
-                            : const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 12,
-                              ),
-                        sliver: _isGridView
-                            ? SliverToBoxAdapter(
-                                child: _MasonryItemGrid(docs: docs),
-                              )
-                            : SliverList.builder(
-                                itemCount: docs.length,
-                                itemBuilder: (context, index) {
-                                  final doc = docs[index];
-                                  return ItemCard(
-                                    docId: doc.id,
-                                    item: doc.data(),
-                                  );
-                                },
-                              ),
-                      ),
-                  ],
+              final showButton = !visible && !_isSearchOpen;
+              return AnimatedScale(
+                duration: const Duration(milliseconds: 160),
+                scale: showButton ? 1 : 0.85,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 160),
+                  opacity: showButton ? 1 : 0,
+                  child: IgnorePointer(ignoring: !showButton, child: child),
                 ),
               );
             },
+            child: _FloatingFeedSearchButton(onPressed: _openSearch),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FloatingFeedSearchButton extends StatelessWidget {
+  const _FloatingFeedSearchButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFF7801),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onPressed,
+        child: const SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(Icons.search, color: Colors.white, size: 24),
+        ),
+      ),
     );
   }
 }
@@ -232,6 +300,38 @@ class _MasonryItemGrid extends StatelessWidget {
         Expanded(child: _MasonryColumn(docs: leftDocs)),
         const SizedBox(width: 4),
         Expanded(child: _MasonryColumn(docs: rightDocs)),
+      ],
+    );
+  }
+}
+
+class _FeedSkeletonGrid extends StatelessWidget {
+  const _FeedSkeletonGrid();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            children: [
+              ItemCardSkeleton(isCompact: true),
+              ItemCardSkeleton(isCompact: true),
+              ItemCardSkeleton(isCompact: true),
+            ],
+          ),
+        ),
+        SizedBox(width: 4),
+        Expanded(
+          child: Column(
+            children: [
+              ItemCardSkeleton(isCompact: true),
+              ItemCardSkeleton(isCompact: true),
+              ItemCardSkeleton(isCompact: true),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -323,10 +423,7 @@ class _UploadStatusIcon extends StatelessWidget {
         Icons.check_circle,
         color: Color(0xFF25D366),
       ),
-      UploadStatusType.error => const Icon(
-        Icons.error,
-        color: Colors.red,
-      ),
+      UploadStatusType.error => const Icon(Icons.error, color: Colors.red),
     };
   }
 }
@@ -414,87 +511,87 @@ class _FeedHeader extends StatelessWidget {
       color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: LayoutBuilder(
-              builder: (context, constraints) {
-                return Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    const Align(
-                      alignment: Alignment.center,
-                      child: SizedBox(
-                        height: 56,
-                        width: 152,
-                        child: Image(
-                          image: AssetImage('assets/branding/logo.png'),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: _GridToggleButton(
-                        isGridView: isGridView,
-                        onTap: onToggleGrid,
-                        bottomPadding: 0,
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 260),
-                        curve: Curves.easeOutCubic,
-                        width: isSearchOpen ? constraints.maxWidth - 56 : 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: isSearchOpen
-                              ? Colors.white
-                              : const Color(0xFFFF7801),
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: isSearchOpen
-                              ? Row(
-                                  key: const ValueKey('search-field'),
-                                  children: [
-                                    const SizedBox(width: 12),
-                                    const Icon(
-                                      Icons.search,
-                                      color: Color(0xFFFF7801),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: searchController,
-                                        focusNode: searchFocusNode,
-                                        autofocus: true,
-                                        onChanged: onQueryChanged,
-                                        decoration: const InputDecoration(
-                                          hintText: 'Search items...',
-                                          border: InputBorder.none,
-                                          isDense: true,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: onCloseSearch,
-                                      icon: const Icon(Icons.close),
-                                      color: const Color(0xFFFF7801),
-                                    ),
-                                  ],
-                                )
-                              : IconButton(
-                                  key: const ValueKey('search-button'),
-                                  onPressed: onOpenSearch,
-                                  icon: const Icon(Icons.search),
-                                  color: Colors.white,
+        builder: (context, constraints) {
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              const Align(
+                alignment: Alignment.center,
+                child: SizedBox(
+                  height: 56,
+                  width: 152,
+                  child: Image(
+                    image: AssetImage('assets/branding/logo.png'),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _GridToggleButton(
+                  isGridView: isGridView,
+                  onTap: onToggleGrid,
+                  bottomPadding: 0,
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  width: isSearchOpen ? constraints.maxWidth - 56 : 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isSearchOpen
+                        ? Colors.white
+                        : const Color(0xFFFF7801),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: isSearchOpen
+                        ? Row(
+                            key: const ValueKey('search-field'),
+                            children: [
+                              const SizedBox(width: 12),
+                              const Icon(
+                                Icons.search,
+                                color: Color(0xFFFF7801),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: searchController,
+                                  focusNode: searchFocusNode,
+                                  autofocus: true,
+                                  onChanged: onQueryChanged,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Search items...',
+                                    border: InputBorder.none,
+                                    isDense: true,
+                                  ),
                                 ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
+                              ),
+                              IconButton(
+                                onPressed: onCloseSearch,
+                                icon: const Icon(Icons.close),
+                                color: const Color(0xFFFF7801),
+                              ),
+                            ],
+                          )
+                        : IconButton(
+                            key: const ValueKey('search-button'),
+                            onPressed: onOpenSearch,
+                            icon: const Icon(Icons.search),
+                            color: Colors.white,
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

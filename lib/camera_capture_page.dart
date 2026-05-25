@@ -7,6 +7,7 @@ import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
+import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 class CapturedMedia {
@@ -869,21 +870,29 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: _isCropping && _imageBytes != null
-                ? Crop(
-                    image: _imageBytes!,
-                    controller: _cropController,
-                    onCropped: _handleCropResult,
-                    baseColor: Colors.black,
-                    maskColor: Colors.black.withValues(alpha: 0.52),
-                    radius: 0,
-                    overlayBuilder: (context, rect) {
-                      return CustomPaint(painter: _CropGridPainter());
-                    },
-                  )
-                : Image.file(
-                    _file,
-                    fit: BoxFit.cover,
+            child: _imageBytes == null
+                ? Image.file(_file, fit: BoxFit.cover)
+                : IgnorePointer(
+                    ignoring: !_isCropping,
+                    child: Crop(
+                      image: _imageBytes!,
+                      controller: _cropController,
+                      onCropped: _handleCropResult,
+                      baseColor: Colors.black,
+                      maskColor: _isCropping
+                          ? Colors.black.withValues(alpha: 0.52)
+                          : Colors.transparent,
+                      radius: 0,
+                      fixCropRect: !_isCropping,
+                      interactive: _isCropping,
+                      overlayBuilder: _isCropping
+                          ? (context, rect) {
+                              return CustomPaint(
+                                painter: _CropGridPainter(),
+                              );
+                            }
+                          : null,
+                    ),
                   ),
           ),
           Positioned(
@@ -969,15 +978,26 @@ class _VideoPreviewPage extends StatefulWidget {
 class _VideoPreviewPageState extends State<_VideoPreviewPage> {
   late final VideoPlayerController _controller;
   late final Future<void> _initializeVideo;
+  RangeValues _trimRange = const RangeValues(0, 0);
+  Duration _videoDuration = Duration.zero;
+  Rect? _cropRect;
+  bool _isCropping = false;
+  bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.file(widget.file);
     _initializeVideo = _controller.initialize().then((_) {
+      _videoDuration = _controller.value.duration;
+      _trimRange = RangeValues(
+        0,
+        _videoDuration.inMilliseconds.toDouble(),
+      );
       _controller
         ..setLooping(true)
         ..play();
+      _controller.addListener(_keepPlaybackInsideTrim);
       if (mounted) {
         setState(() {});
       }
@@ -986,12 +1006,76 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
 
   @override
   void dispose() {
+    _controller.removeListener(_keepPlaybackInsideTrim);
     _controller.dispose();
     super.dispose();
   }
 
-  void _accept(BuildContext context) {
-    Navigator.pop(context, CapturedMedia(file: widget.file, type: 'video'));
+  void _keepPlaybackInsideTrim() {
+    if (!_controller.value.isInitialized || _videoDuration == Duration.zero) {
+      return;
+    }
+
+    final positionMs = _controller.value.position.inMilliseconds.toDouble();
+    final startMs = _trimRange.start;
+    final endMs = _trimRange.end;
+    if (positionMs < startMs || positionMs >= endMs) {
+      _controller.seekTo(Duration(milliseconds: startMs.round()));
+    }
+  }
+
+  Future<void> _accept(BuildContext context) async {
+    if (_isProcessing) {
+      return;
+    }
+
+    final trimChanged =
+        _trimRange.start > 250 ||
+        (_videoDuration.inMilliseconds - _trimRange.end).abs() > 250;
+    if (!trimChanged) {
+      Navigator.pop(context, CapturedMedia(file: widget.file, type: 'video'));
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+    final startSeconds = (_trimRange.start / 1000).floor();
+    final durationSeconds = ((_trimRange.end - _trimRange.start) / 1000)
+        .ceil()
+        .clamp(1, 60);
+    final info = await VideoCompress.compressVideo(
+      widget.file.path,
+      quality: VideoQuality.MediumQuality,
+      startTime: startSeconds,
+      duration: durationSeconds,
+      includeAudio: true,
+      deleteOrigin: false,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isProcessing = false);
+    final editedFile = info?.file ?? widget.file;
+    Navigator.pop(context, CapturedMedia(file: editedFile, type: 'video'));
+  }
+
+  void _toggleCrop() {
+    setState(() {
+      _isCropping = !_isCropping;
+      _cropRect ??= const Rect.fromLTWH(0.12, 0.18, 0.76, 0.58);
+    });
+  }
+
+  void _cancelCrop() {
+    setState(() => _isCropping = false);
+  }
+
+  void _applyCrop() {
+    setState(() => _isCropping = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Video crop preview applied. Export will be added later.'),
+      ),
+    );
   }
 
   @override
@@ -1008,13 +1092,23 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
                     !_controller.value.isInitialized) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                return FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: _controller.value.size.width,
-                    height: _controller.value.size.height,
-                    child: VideoPlayer(_controller),
-                  ),
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _controller.value.size.width,
+                        height: _controller.value.size.height,
+                        child: VideoPlayer(_controller),
+                      ),
+                    ),
+                    if (_isCropping && _cropRect != null)
+                      _VideoCropOverlay(
+                        rect: _cropRect!,
+                        onChanged: (rect) => setState(() => _cropRect = rect),
+                      ),
+                  ],
                 );
               },
             ),
@@ -1049,24 +1143,198 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
                     icon: const Icon(Icons.close),
                   ),
                   const Spacer(),
-                  _RoundToolButton(
-                    icon: Icons.hd,
-                    onTap: () {},
-                  ),
+                  if (_isCropping) ...[
+                    _RoundToolButton(
+                      icon: Icons.close,
+                      onTap: _cancelCrop,
+                    ),
+                    const SizedBox(width: 10),
+                    _AcceptButton(onTap: _applyCrop, size: 54),
+                  ] else
+                    _RoundToolButton(
+                      icon: Icons.crop,
+                      onTap: _toggleCrop,
+                    ),
                 ],
               ),
             ),
           ),
+          if (!_isCropping)
+            Positioned(
+              left: 14,
+              right: 14,
+              top: 86,
+              child: SafeArea(
+                top: false,
+                bottom: false,
+                child: _VideoTrimBar(
+                  duration: _videoDuration,
+                  range: _trimRange,
+                  onChanged: (value) {
+                    setState(() => _trimRange = value);
+                    _controller.seekTo(
+                      Duration(milliseconds: value.start.round()),
+                    );
+                  },
+                ),
+              ),
+            ),
           Positioned(
             right: 24,
             bottom: 44,
             child: SafeArea(
-              child: _AcceptButton(onTap: () => _accept(context)),
+              child: _isProcessing
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : _AcceptButton(onTap: () => _accept(context)),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+class _VideoTrimBar extends StatelessWidget {
+  const _VideoTrimBar({
+    required this.duration,
+    required this.range,
+    required this.onChanged,
+  });
+
+  final Duration duration;
+  final RangeValues range;
+  final ValueChanged<RangeValues> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxMs = duration.inMilliseconds.toDouble();
+    if (maxMs <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          trackHeight: 5,
+          activeTrackColor: Colors.white,
+          inactiveTrackColor: Colors.white24,
+          thumbColor: Colors.white,
+          overlayColor: Colors.white24,
+          rangeThumbShape: const RoundRangeSliderThumbShape(
+            enabledThumbRadius: 8,
+          ),
+        ),
+        child: RangeSlider(
+          min: 0,
+          max: maxMs,
+          values: RangeValues(
+            range.start.clamp(0, maxMs - 1000),
+            range.end.clamp(1000, maxMs),
+          ),
+          onChanged: (value) {
+            if (value.end - value.start < 1000) {
+              return;
+            }
+            onChanged(value);
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoCropOverlay extends StatelessWidget {
+  const _VideoCropOverlay({
+    required this.rect,
+    required this.onChanged,
+  });
+
+  final Rect rect;
+  final ValueChanged<Rect> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = Size(constraints.maxWidth, constraints.maxHeight);
+        final cropRect = Rect.fromLTWH(
+          rect.left * size.width,
+          rect.top * size.height,
+          rect.width * size.width,
+          rect.height * size.height,
+        );
+
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _VideoCropMaskPainter(cropRect),
+                ),
+              ),
+            ),
+            Positioned.fromRect(
+              rect: cropRect,
+              child: GestureDetector(
+                onPanUpdate: (details) {
+                  final nextLeft =
+                      ((cropRect.left + details.delta.dx) / size.width).clamp(
+                    0.0,
+                    1 - rect.width,
+                  );
+                  final nextTop =
+                      ((cropRect.top + details.delta.dy) / size.height).clamp(
+                    0.0,
+                    1 - rect.height,
+                  );
+                  onChanged(
+                    Rect.fromLTWH(
+                      nextLeft,
+                      nextTop,
+                      rect.width,
+                      rect.height,
+                    ),
+                  );
+                },
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: CustomPaint(painter: _CropGridPainter()),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _VideoCropMaskPainter extends CustomPainter {
+  const _VideoCropMaskPainter(this.cropRect);
+
+  final Rect cropRect;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.black.withValues(alpha: 0.48);
+    final fullPath = Path()..addRect(Offset.zero & size);
+    final cropPath = Path()..addRect(cropRect);
+    canvas.drawPath(
+      Path.combine(PathOperation.difference, fullPath, cropPath),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _VideoCropMaskPainter oldDelegate) {
+    return oldDelegate.cropRect != cropRect;
   }
 }
 
