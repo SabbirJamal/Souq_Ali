@@ -40,24 +40,28 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   bool _isFinishingCapture = false;
   Timer? _holdTimer;
   Timer? _recordingLimitTimer;
+  Timer? _recordingTickTimer;
+  Duration _recordingElapsed = Duration.zero;
   double _minZoom = 1;
   double _maxZoom = 1;
   double _currentZoom = 1;
   double _recordingStartZoom = 1;
+  double _pinchStartZoom = 1;
   double? _pressStartY;
+  Offset? _focusPoint;
   List<AssetEntity> _recentAssets = const [];
 
   @override
   void initState() {
     super.initState();
     _initializeCamera = _setupCamera();
-    _loadRecentAssets();
   }
 
   @override
   void dispose() {
     _holdTimer?.cancel();
     _recordingLimitTimer?.cancel();
+    _recordingTickTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
@@ -86,8 +90,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     _minZoom = await controller.getMinZoomLevel();
     _maxZoom = await controller.getMaxZoomLevel();
     _currentZoom = _minZoom;
+    _pinchStartZoom = _currentZoom;
     await controller.setZoomLevel(_currentZoom);
     _isFlashOn = false;
+    _loadRecentAssets();
   }
 
   Future<void> _toggleCamera() async {
@@ -129,33 +135,39 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   }
 
   Future<void> _loadRecentAssets() async {
-    final permission = await PhotoManager.requestPermissionExtend();
-    if (!permission.hasAccess) {
-      return;
-    }
-    final albums = await PhotoManager.getAssetPathList(
-      type: RequestType.common,
-    );
-    if (albums.isEmpty) {
-      return;
-    }
-
-    final byId = <String, AssetEntity>{};
-    for (final album in albums) {
-      final assets = await album.getAssetListPaged(page: 0, size: 30);
-      for (final asset in assets) {
-        if (asset.type == AssetType.video && asset.duration > 60) {
-          continue;
-        }
-        byId[asset.id] = asset;
+    try {
+      final permission = await PhotoManager.requestPermissionExtend();
+      if (!permission.hasAccess) {
+        return;
       }
-    }
+      final albums = await PhotoManager.getAssetPathList(
+        type: RequestType.common,
+      );
+      if (albums.isEmpty) {
+        return;
+      }
 
-    final assets = byId.values.toList()
-      ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+      final byId = <String, AssetEntity>{};
+      for (final album in albums) {
+        final assets = await album.getAssetListPaged(page: 0, size: 30);
+        for (final asset in assets) {
+          if (asset.type == AssetType.video && asset.duration > 60) {
+            continue;
+          }
+          byId[asset.id] = asset;
+        }
+      }
 
-    if (mounted) {
-      setState(() => _recentAssets = assets.take(10).toList());
+      final assets = byId.values.toList()
+        ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
+
+      if (mounted) {
+        setState(() => _recentAssets = assets.take(10).toList());
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _recentAssets = const []);
+      }
     }
   }
 
@@ -227,8 +239,76 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     if ((nextZoom - _currentZoom).abs() < 0.03) {
       return;
     }
-    _currentZoom = nextZoom;
-    controller.setZoomLevel(nextZoom);
+    _setCameraZoom(nextZoom);
+  }
+
+  void _onPreviewScaleStart(ScaleStartDetails details) {
+    if (details.pointerCount < 2) {
+      return;
+    }
+    _pinchStartZoom = _currentZoom;
+  }
+
+  void _onPreviewScaleUpdate(ScaleUpdateDetails details) {
+    final controller = _controller;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        details.pointerCount < 2) {
+      return;
+    }
+
+    final nextZoom = (_pinchStartZoom * details.scale).clamp(
+      _minZoom,
+      _maxZoom,
+    );
+    _setCameraZoom(nextZoom);
+  }
+
+  Future<void> _onPreviewTapDown(TapDownDetails details) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) {
+      return;
+    }
+    final localPosition = box.globalToLocal(details.globalPosition);
+    final size = box.size;
+    final normalizedPoint = Offset(
+      (localPosition.dx / size.width).clamp(0.0, 1.0),
+      (localPosition.dy / size.height).clamp(0.0, 1.0),
+    );
+
+    try {
+      await controller.setFocusPoint(normalizedPoint);
+      await controller.setExposurePoint(normalizedPoint);
+    } on CameraException {
+      // Some devices do not support tap focus/exposure points.
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() => _focusPoint = localPosition);
+    Future<void>.delayed(const Duration(milliseconds: 850), () {
+      if (mounted && _focusPoint == localPosition) {
+        setState(() => _focusPoint = null);
+      }
+    });
+  }
+
+  void _setCameraZoom(double zoom) {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    if ((zoom - _currentZoom).abs() < 0.02) {
+      return;
+    }
+    _currentZoom = zoom;
+    controller.setZoomLevel(zoom);
     if (mounted) {
       setState(() {});
     }
@@ -266,11 +346,24 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
 
     await controller.startVideoRecording();
+    _recordingElapsed = Duration.zero;
     _recordingLimitTimer?.cancel();
     _recordingLimitTimer = Timer(_maxRecordingDuration, () {
       if (_isRecording && !_isFinishingCapture) {
         _stopVideoRecording();
       }
+    });
+    _recordingTickTimer?.cancel();
+    _recordingTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!_isRecording || !mounted) {
+        return;
+      }
+      final nextElapsed = _recordingElapsed + const Duration(seconds: 1);
+      setState(() {
+        _recordingElapsed = nextElapsed > _maxRecordingDuration
+            ? _maxRecordingDuration
+            : nextElapsed;
+      });
     });
     if (mounted) {
       setState(() {
@@ -287,6 +380,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
 
     _recordingLimitTimer?.cancel();
+    _recordingTickTimer?.cancel();
     setState(() => _isFinishingCapture = true);
     try {
       final file = await controller.stopVideoRecording();
@@ -299,6 +393,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
         setState(() {
           _isRecording = false;
           _isFinishingCapture = false;
+          _recordingElapsed = Duration.zero;
         });
       }
     }
@@ -340,6 +435,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
   }
 
+  String _formatRecordingTime(Duration duration) {
+    final totalSeconds = duration.inSeconds.clamp(
+      0,
+      _maxRecordingDuration.inSeconds,
+    );
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -362,8 +467,20 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
           return Stack(
             children: [
               Positioned.fill(
-                child: _CameraPreviewCover(controller: _controller!),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: _onPreviewTapDown,
+                  onScaleStart: _onPreviewScaleStart,
+                  onScaleUpdate: _onPreviewScaleUpdate,
+                  child: _CameraPreviewCover(controller: _controller!),
+                ),
               ),
+              if (_focusPoint != null)
+                Positioned(
+                  left: _focusPoint!.dx - 34,
+                  top: _focusPoint!.dy - 34,
+                  child: const _FocusRing(),
+                ),
               Positioned.fill(
                 child: IgnorePointer(
                   child: DecoratedBox(
@@ -403,6 +520,34 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
                   ),
                 ),
               ),
+              if (_isRecording)
+                Positioned(
+                  top: 20,
+                  left: 0,
+                  right: 0,
+                  child: SafeArea(
+                    bottom: false,
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _formatRecordingTime(_recordingElapsed),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 left: 0,
                 right: 0,
@@ -414,32 +559,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (_recentAssets.isNotEmpty) ...[
+                        if (!_isRecording && _recentAssets.isNotEmpty) ...[
                           _RecentMediaStrip(
                             assets: _recentAssets,
                             onAssetTap: _selectRecentAsset,
+                            onSwipeUp: () => Navigator.pop(
+                              context,
+                              CameraCaptureAction.openGallery,
+                            ),
                           ),
                           const SizedBox(height: 12),
-                        ],
-                        if (_isRecording) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 7,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              '${_currentZoom.toStringAsFixed(1)}x',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
                         ],
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -466,38 +595,21 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
                                   child: _CaptureButton(
                                     isRecording: _isRecording,
                                     isBusy: _isFinishingCapture,
+                                    progress:
+                                        _recordingElapsed.inMilliseconds /
+                                            _maxRecordingDuration
+                                                .inMilliseconds,
                                   ),
                                 ),
                               ),
-                              _FloatingCircleButton(
-                                icon: Icons.cameraswitch_outlined,
-                                size: 52,
-                                onTap: _isRecording || _isFinishingCapture
-                                    ? null
-                                    : _toggleCamera,
+                              SizedBox(
+                                width: 52,
+                                child: Center(
+                                  child: _ZoomIndicator(zoom: _currentZoom),
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _CameraModeText(
-                              text: 'Video',
-                              active: _isRecording,
-                            ),
-                            const SizedBox(width: 18),
-                            _CameraModeText(
-                              text: 'Photo',
-                              active: !_isRecording,
-                            ),
-                            const SizedBox(width: 18),
-                            const _CameraModeText(
-                              text: 'Video note',
-                              active: false,
-                            ),
-                          ],
                         ),
                       ],
                     ),
@@ -549,10 +661,12 @@ class _RecentMediaStrip extends StatelessWidget {
   const _RecentMediaStrip({
     required this.assets,
     required this.onAssetTap,
+    required this.onSwipeUp,
   });
 
   final List<AssetEntity> assets;
   final ValueChanged<AssetEntity> onAssetTap;
+  final VoidCallback onSwipeUp;
 
   @override
   Widget build(BuildContext context) {
@@ -571,13 +685,17 @@ class _RecentMediaStrip extends StatelessWidget {
             height: 78,
             child: GestureDetector(
               onTap: () => onAssetTap(asset),
+              onVerticalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                if (velocity < -350) {
+                  onSwipeUp();
+                }
+              },
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   FutureBuilder<Uint8List?>(
-                    future: asset.thumbnailDataWithSize(
-                      const ThumbnailSize.square(180),
-                    ),
+                    future: _safeAssetThumbnail(asset),
                     builder: (context, snapshot) {
                       final bytes = snapshot.data;
                       if (bytes == null) {
@@ -683,6 +801,16 @@ class _LatestMediaPreview extends StatelessWidget {
   }
 }
 
+Future<Uint8List?> _safeAssetThumbnail(AssetEntity asset) async {
+  try {
+    return await asset.thumbnailDataWithSize(
+      const ThumbnailSize.square(180),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
 class _FloatingCircleButton extends StatelessWidget {
   const _FloatingCircleButton({
     required this.icon,
@@ -719,52 +847,134 @@ class _FloatingCircleButton extends StatelessWidget {
   }
 }
 
+class _ZoomIndicator extends StatelessWidget {
+  const _ZoomIndicator({required this.zoom});
+
+  final double zoom;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.52),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+      ),
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Center(
+          child: Text(
+            '${zoom.toStringAsFixed(2)}x',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _FocusRing extends StatelessWidget {
+  const _FocusRing();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 1.25, end: 1),
+        duration: const Duration(milliseconds: 170),
+        builder: (context, scale, child) {
+          return Transform.scale(scale: scale, child: child);
+        },
+        child: Container(
+          width: 68,
+          height: 68,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 8,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CaptureButton extends StatelessWidget {
   const _CaptureButton({
     required this.isRecording,
     required this.isBusy,
+    required this.progress,
   });
 
   final bool isRecording;
   final bool isBusy;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
-    final outerSize = isRecording ? 92.0 : 84.0;
+    final outerSize = isRecording ? 100.0 : 84.0;
     final innerSize = isRecording ? 34.0 : 64.0;
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 140),
       opacity: isBusy ? 0.55 : 1,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+      child: SizedBox(
         width: outerSize,
         height: outerSize,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 5),
-          color: isRecording
-              ? Colors.red.withValues(alpha: 0.9)
-              : Colors.white.withValues(alpha: 0.16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: isRecording ? 94 : 84,
+              height: isRecording ? 94 : 84,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 5),
+                color: isRecording
+                    ? Colors.red.withValues(alpha: 0.9)
+                    : Colors.white.withValues(alpha: 0.16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+            ),
+            if (isRecording)
+              SizedBox(
+                width: outerSize,
+                height: outerSize,
+                child: CircularProgressIndicator(
+                  value: progress.clamp(0, 1),
+                  strokeWidth: 5,
+                  color: Colors.redAccent,
+                  backgroundColor: Colors.white.withValues(alpha: 0.28),
+                ),
+              ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: innerSize,
+              height: innerSize,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: isRecording ? BoxShape.rectangle : BoxShape.circle,
+                borderRadius: isRecording ? BorderRadius.circular(9) : null,
+              ),
             ),
           ],
-        ),
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            width: innerSize,
-            height: innerSize,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: isRecording ? BoxShape.rectangle : BoxShape.circle,
-              borderRadius: isRecording ? BorderRadius.circular(9) : null,
-            ),
-          ),
         ),
       ),
     );
@@ -907,10 +1117,11 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
                       overlayBuilder: _isCropping
                           ? (context, rect) {
                               return CustomPaint(
-                                painter: _CropGridPainter(),
+                painter: _CropGridPainter(),
                               );
                             }
                           : null,
+                      withCircleUi: _isCropping,
                     ),
                   ),
           ),
@@ -931,12 +1142,18 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
                         _AcceptButton(onTap: _applyCrop, size: 54),
                       ],
                     )
-                  : Align(
-                      alignment: Alignment.topRight,
-                      child: _FloatingCircleButton(
-                        icon: Icons.crop,
-                        onTap: _startCrop,
-                      ),
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _FloatingCircleButton(
+                          icon: Icons.close,
+                          onTap: () => Navigator.pop(context),
+                        ),
+                        _FloatingCircleButton(
+                          icon: Icons.crop,
+                          onTap: _startCrop,
+                        ),
+                      ],
                     ),
             ),
           ),
@@ -999,8 +1216,6 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
   late final Future<void> _initializeVideo;
   RangeValues _trimRange = const RangeValues(0, 0);
   Duration _videoDuration = Duration.zero;
-  Rect? _cropRect;
-  bool _isCropping = false;
   bool _isProcessing = false;
 
   @override
@@ -1077,26 +1292,6 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
     Navigator.pop(context, CapturedMedia(file: editedFile, type: 'video'));
   }
 
-  void _toggleCrop() {
-    setState(() {
-      _isCropping = !_isCropping;
-      _cropRect ??= const Rect.fromLTWH(0.12, 0.18, 0.76, 0.58);
-    });
-  }
-
-  void _cancelCrop() {
-    setState(() => _isCropping = false);
-  }
-
-  void _applyCrop() {
-    setState(() => _isCropping = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Video crop preview applied. Export will be added later.'),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1111,23 +1306,13 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
                     !_controller.value.isInitialized) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                return Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: _controller.value.size.width,
-                        height: _controller.value.size.height,
-                        child: VideoPlayer(_controller),
-                      ),
-                    ),
-                    if (_isCropping && _cropRect != null)
-                      _VideoCropOverlay(
-                        rect: _cropRect!,
-                        onChanged: (rect) => setState(() => _cropRect = rect),
-                      ),
-                  ],
+                return FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _controller.value.size.width,
+                    height: _controller.value.size.height,
+                    child: VideoPlayer(_controller),
+                  ),
                 );
               },
             ),
@@ -1161,43 +1346,29 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close),
                   ),
-                  const Spacer(),
-                  if (_isCropping) ...[
-                    _RoundToolButton(
-                      icon: Icons.close,
-                      onTap: _cancelCrop,
-                    ),
-                    const SizedBox(width: 10),
-                    _AcceptButton(onTap: _applyCrop, size: 54),
-                  ] else
-                    _RoundToolButton(
-                      icon: Icons.crop,
-                      onTap: _toggleCrop,
-                    ),
                 ],
               ),
             ),
           ),
-          if (!_isCropping)
-            Positioned(
-              left: 14,
-              right: 14,
-              top: 86,
-              child: SafeArea(
-                top: false,
-                bottom: false,
-                child: _VideoTrimBar(
-                  duration: _videoDuration,
-                  range: _trimRange,
-                  onChanged: (value) {
-                    setState(() => _trimRange = value);
-                    _controller.seekTo(
-                      Duration(milliseconds: value.start.round()),
-                    );
-                  },
-                ),
+          Positioned(
+            left: 14,
+            right: 14,
+            top: 116,
+            child: SafeArea(
+              top: false,
+              bottom: false,
+              child: _VideoTrimBar(
+                duration: _videoDuration,
+                range: _trimRange,
+                onChanged: (value) {
+                  setState(() => _trimRange = value);
+                  _controller.seekTo(
+                    Duration(milliseconds: value.start.round()),
+                  );
+                },
               ),
             ),
+          ),
           Positioned(
             right: 24,
             bottom: 44,
@@ -1264,96 +1435,6 @@ class _VideoTrimBar extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _VideoCropOverlay extends StatelessWidget {
-  const _VideoCropOverlay({
-    required this.rect,
-    required this.onChanged,
-  });
-
-  final Rect rect;
-  final ValueChanged<Rect> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = Size(constraints.maxWidth, constraints.maxHeight);
-        final cropRect = Rect.fromLTWH(
-          rect.left * size.width,
-          rect.top * size.height,
-          rect.width * size.width,
-          rect.height * size.height,
-        );
-
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _VideoCropMaskPainter(cropRect),
-                ),
-              ),
-            ),
-            Positioned.fromRect(
-              rect: cropRect,
-              child: GestureDetector(
-                onPanUpdate: (details) {
-                  final nextLeft =
-                      ((cropRect.left + details.delta.dx) / size.width).clamp(
-                    0.0,
-                    1 - rect.width,
-                  );
-                  final nextTop =
-                      ((cropRect.top + details.delta.dy) / size.height).clamp(
-                    0.0,
-                    1 - rect.height,
-                  );
-                  onChanged(
-                    Rect.fromLTWH(
-                      nextLeft,
-                      nextTop,
-                      rect.width,
-                      rect.height,
-                    ),
-                  );
-                },
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: CustomPaint(painter: _CropGridPainter()),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _VideoCropMaskPainter extends CustomPainter {
-  const _VideoCropMaskPainter(this.cropRect);
-
-  final Rect cropRect;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.black.withValues(alpha: 0.48);
-    final fullPath = Path()..addRect(Offset.zero & size);
-    final cropPath = Path()..addRect(cropRect);
-    canvas.drawPath(
-      Path.combine(PathOperation.difference, fullPath, cropPath),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _VideoCropMaskPainter oldDelegate) {
-    return oldDelegate.cropRect != cropRect;
   }
 }
 

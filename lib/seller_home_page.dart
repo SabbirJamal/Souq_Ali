@@ -116,7 +116,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
             ),
             const Divider(height: 1),
             SizedBox(
-              height: 58,
+            height: 64,
               child: Row(
                 children: [
                   Expanded(
@@ -249,25 +249,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
-    if (_currentIndex != 0) {
-      return false;
-    }
-    if (_isFeedSearchActive) {
-      _setChromeVisible(true);
-      return false;
-    }
-    if (notification.metrics.axis != Axis.vertical) {
-      return false;
-    }
-    if (notification is UserScrollNotification) {
-      final shouldShow = notification.direction == ScrollDirection.forward;
-      final shouldHide = notification.direction == ScrollDirection.reverse;
-      if (shouldShow) {
-        _setChromeVisible(true);
-      } else if (shouldHide) {
-        _setChromeVisible(false);
-      }
-    }
     return false;
   }
 
@@ -308,32 +289,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
               ),
             ],
           ),
-          bottomNavigationBar: ValueListenableBuilder<bool>(
-            valueListenable: _chromeVisible,
-            builder: (context, visible, child) {
-              final shouldShow = _currentIndex != 0 || visible;
-              final systemBottomInset = MediaQuery.paddingOf(context).bottom;
-              final hiddenFeedSpacer = _currentIndex == 0 && !shouldShow
-                  ? systemBottomInset.clamp(24.0, 48.0)
-                  : 0.0;
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRect(
-                    child: AnimatedAlign(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.bottomCenter,
-                      heightFactor: shouldShow ? 1 : 0,
-                      child: child,
-                    ),
-                  ),
-                  if (hiddenFeedSpacer > 0)
-                    SizedBox(height: hiddenFeedSpacer),
-                ],
-              );
-            },
-            child: SizedBox(
+          bottomNavigationBar: SizedBox(
               height: 58,
               child: BottomNavigationBar(
                 currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
@@ -369,7 +325,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
                   ),
                 ],
               ),
-            ),
           ),
         ),
       ),
@@ -609,8 +564,9 @@ class _HeaderShareButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: () {},
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.black,
-        side: const BorderSide(color: Colors.black, width: 1.2),
+        backgroundColor: const Color(0xFFFF7801),
+        foregroundColor: Colors.white,
+        side: BorderSide.none,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         minimumSize: const Size(82, 38),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,

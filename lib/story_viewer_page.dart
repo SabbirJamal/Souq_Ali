@@ -479,7 +479,7 @@ class _StoryVideoPageState extends State<_StoryVideoPage> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    backgroundColor: const Color(0xFF222222),
+                    backgroundColor: const Color(0xFFFF7801),
                     onTap: () {},
                   ),
                 ],

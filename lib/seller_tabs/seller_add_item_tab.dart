@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart'
+    as device_permissions;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_compress/video_compress.dart';
 
@@ -81,6 +83,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if (!_canAddMedia()) {
       return;
     }
+    if (!await _ensureMediaPermissions()) {
+      return;
+    }
 
     final result = await Navigator.push<Object?>(
       context,
@@ -107,6 +112,39 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     });
   }
 
+  Future<bool> _ensureMediaPermissions() async {
+    final cameraAndAudio = await [
+      device_permissions.Permission.camera,
+      device_permissions.Permission.microphone,
+    ].request();
+    final gallery = await PhotoManager.requestPermissionExtend();
+
+    final hasCamera =
+        cameraAndAudio[device_permissions.Permission.camera]?.isGranted ??
+        false;
+    final hasMicrophone =
+        cameraAndAudio[device_permissions.Permission.microphone]?.isGranted ??
+        false;
+
+    if (hasCamera && hasMicrophone && gallery.hasAccess) {
+      return true;
+    }
+
+    if (!mounted) {
+      return false;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Camera, microphone and gallery access are needed'),
+        action: SnackBarAction(
+          label: 'Settings',
+          onPressed: device_permissions.openAppSettings,
+        ),
+      ),
+    );
+    return false;
+  }
+
   Future<void> openMediaSheet() async {
     await _openCamera();
   }
@@ -118,14 +156,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       backgroundColor: const Color(0xFF111614),
       shape: const RoundedRectangleBorder(),
       builder: (context) {
-        return _MediaPickerSheet(
-          selectedIds: _selectedMedia
-              .map((media) => media.assetId)
-              .whereType<String>()
-              .toSet(),
-          selectedCount: _selectedMedia.length,
-          maxCount: _maxMediaCount,
-          onAssetsDone: _addGalleryAssets,
+        return FractionallySizedBox(
+          heightFactor: 0.85,
+          child: _MediaPickerSheet(
+            selectedIds: _selectedMedia
+                .map((media) => media.assetId)
+                .whereType<String>()
+                .toSet(),
+            selectedCount: _selectedMedia.length,
+            maxCount: _maxMediaCount,
+            onAssetsDone: _addGalleryAssets,
+          ),
         );
       },
     );
@@ -628,7 +669,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           ElevatedButton(
             onPressed: _isUploading ? null : _addItem,
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
+              backgroundColor: const Color(0xFFFF7801),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
@@ -1074,103 +1115,102 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   Widget build(BuildContext context) {
     return SafeArea(
       top: true,
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 1,
-        minChildSize: 0.25,
-        maxChildSize: 1,
-        builder: (context, scrollController) {
-          return Stack(
-            children: [
-              CustomScrollView(
-                controller: scrollController,
-                slivers: [
-                  SliverToBoxAdapter(child: _buildHeader(context)),
-                  if (_isLoading)
-                    const SliverFillRemaining(
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (!_hasPermission)
-                    SliverFillRemaining(child: _buildPermissionDenied())
-                  else
-                    ...[
-                      if (_hasLimitedPermission)
-                        SliverToBoxAdapter(child: _buildLimitedAccessNotice()),
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(8, 12, 8, 92),
-                        sliver: SliverGrid(
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 3,
-                                mainAxisSpacing: 3,
-                              ),
-                          delegate: SliverChildBuilderDelegate((
-                            context,
-                            index,
-                          ) {
-                            final asset = _assets[index];
-                            _maybeLoadMore(index);
-                            final selectedIndex = _selectedIds
-                                .toList()
-                                .indexOf(asset.id);
-                            return _AssetTile(
-                              asset: asset,
-                              selectionNumber: selectedIndex == -1
-                                  ? null
-                                  : selectedIndex + 1,
-                              onTap: () => _toggleAsset(asset),
-                            );
-                          }, childCount: _assets.length),
-                        ),
-                      ),
-                      if (_isLoadingMore)
-                        const SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.only(bottom: 96),
-                            child: Center(child: CircularProgressIndicator()),
+      child: Column(
+        children: [
+          _buildHeader(context),
+          Expanded(
+            child: Stack(
+              children: [
+                CustomScrollView(
+                  slivers: [
+                    if (_isLoading)
+                      const SliverFillRemaining(
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (!_hasPermission)
+                      SliverFillRemaining(child: _buildPermissionDenied())
+                    else
+                      ...[
+                        if (_hasLimitedPermission)
+                          SliverToBoxAdapter(
+                            child: _buildLimitedAccessNotice(),
+                          ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 92),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  crossAxisSpacing: 3,
+                                  mainAxisSpacing: 3,
+                                ),
+                            delegate: SliverChildBuilderDelegate((
+                              context,
+                              index,
+                            ) {
+                              final asset = _assets[index];
+                              _maybeLoadMore(index);
+                              final selectedIndex = _selectedIds
+                                  .toList()
+                                  .indexOf(asset.id);
+                              return _AssetTile(
+                                asset: asset,
+                                selectionNumber: selectedIndex == -1
+                                    ? null
+                                    : selectedIndex + 1,
+                                onTap: () => _toggleAsset(asset),
+                              );
+                            }, childCount: _assets.length),
                           ),
                         ),
-                    ],
-                ],
-              ),
-              Positioned(
-                right: 18,
-                bottom: 18,
-                child: SafeArea(
-                  child: FloatingActionButton(
-                    heroTag: 'media_done',
-                    backgroundColor: const Color(0xFF25D366),
-                    foregroundColor: Colors.black,
-                    onPressed: _finishSelection,
-                    child: const Icon(Icons.check),
-                  ),
+                        if (_isLoadingMore)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.only(bottom: 96),
+                              child: Center(child: CircularProgressIndicator()),
+                            ),
+                          ),
+                      ],
+                  ],
                 ),
-              ),
-              if (_pendingAssets.isNotEmpty)
                 Positioned(
-                  left: 8,
-                  right: 86,
+                  right: 18,
                   bottom: 18,
                   child: SafeArea(
-                    child: SizedBox(
-                      height: 54,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _pendingAssets.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 6),
-                        itemBuilder: (context, index) {
-                          return _SelectedAssetPreview(
-                            asset: _pendingAssets[index],
-                          );
-                        },
-                      ),
+                    child: FloatingActionButton(
+                      heroTag: 'media_done',
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.black,
+                      onPressed: _finishSelection,
+                      child: const Icon(Icons.check),
                     ),
                   ),
                 ),
-            ],
-          );
-        },
+                if (_pendingAssets.isNotEmpty)
+                  Positioned(
+                    left: 8,
+                    right: 86,
+                    bottom: 18,
+                    child: SafeArea(
+                      child: SizedBox(
+                        height: 54,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _pendingAssets.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 6),
+                          itemBuilder: (context, index) {
+                            return _SelectedAssetPreview(
+                              asset: _pendingAssets[index],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

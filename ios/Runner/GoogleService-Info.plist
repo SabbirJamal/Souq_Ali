@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.souqali</string>
+	<string>com.bizsooq.app</string>
 	<key>PROJECT_ID</key>
 	<string>souqali-42fd9</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:330917548315:ios:5d79ae5ba871e36a84c3be</string>
+	<string>1:330917548315:ios:7aa7df6daa64932884c3be</string>
 </dict>
 </plist>

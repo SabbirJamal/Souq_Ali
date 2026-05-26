@@ -378,10 +378,12 @@ class _ProfileHeader extends StatelessWidget {
               child: _BorderedHeaderButton(
                 width: 88,
                 onTap: () {},
+                backgroundColor: const Color(0xFFFF7801),
+                borderColor: null,
                 child: const Text(
                   'Share',
                   style: TextStyle(
-                    color: Colors.black,
+                    color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
@@ -400,16 +402,20 @@ class _BorderedHeaderButton extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.width = 44,
+    this.backgroundColor = Colors.white,
+    this.borderColor = Colors.black,
   });
 
   final VoidCallback onTap;
   final Widget child;
   final double width;
+  final Color backgroundColor;
+  final Color? borderColor;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: backgroundColor,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
@@ -419,7 +425,9 @@ class _BorderedHeaderButton extends StatelessWidget {
           height: 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.black, width: 1.2),
+            border: borderColor == null
+                ? null
+                : Border.all(color: borderColor!, width: 1.2),
             borderRadius: BorderRadius.circular(10),
           ),
           child: child,

@@ -478,10 +478,11 @@ class _SettingsDisplayField extends StatelessWidget {
           OutlinedButton(
             onPressed: onEdit,
             style: OutlinedButton.styleFrom(
-              foregroundColor: isEmpty ? const Color(0xFFFF7801) : Colors.black,
-              side: BorderSide(
-                color: isEmpty ? const Color(0xFFFF7801) : Colors.grey.shade500,
-              ),
+              backgroundColor: isEmpty ? const Color(0xFFFF7801) : null,
+              foregroundColor: isEmpty ? Colors.white : Colors.black,
+              side: isEmpty
+                  ? BorderSide.none
+                  : BorderSide(color: Colors.grey.shade500),
               padding: const EdgeInsets.symmetric(horizontal: 14),
               minimumSize: const Size(58, 34),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,

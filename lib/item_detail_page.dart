@@ -391,8 +391,8 @@ class _FixedActionBar extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: onShare,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
+                        backgroundColor: const Color(0xFFFF7801),
+                        foregroundColor: Colors.white,
                         fixedSize: const Size.fromHeight(48),
                         padding: EdgeInsets.zero,
                         shape: RoundedRectangleBorder(
@@ -432,9 +432,10 @@ class _SharePostButton extends StatelessWidget {
         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.black,
+        backgroundColor: const Color(0xFFFF7801),
+        foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 15),
-        side: const BorderSide(color: Colors.black, width: 2),
+        side: BorderSide.none,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
@@ -1173,8 +1174,8 @@ class _FullscreenContactBar extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: () {},
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: Colors.black,
+                    backgroundColor: const Color(0xFFFF7801),
+                    foregroundColor: Colors.white,
                     fixedSize: const Size.fromHeight(48),
                     padding: EdgeInsets.zero,
                     shape: RoundedRectangleBorder(
@@ -1186,7 +1187,7 @@ class _FullscreenContactBar extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black,
+                      color: Colors.white,
                     ),
                   ),
                 ),

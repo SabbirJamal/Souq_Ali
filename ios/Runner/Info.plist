@@ -32,6 +32,8 @@
 	<string>Souqali needs microphone access when sellers record item videos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Souqali needs photo library access so sellers can choose item photos and videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Souqali needs permission to save edited item media to your photo library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

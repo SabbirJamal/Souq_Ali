@@ -637,7 +637,7 @@ class _ManageActions extends StatelessWidget {
         _DarkBadge(text: expiryText),
         const SizedBox(height: 7),
         _ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit),
-        const SizedBox(height: 7),
+        const SizedBox(height: 12),
         _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete),
       ],
     );
