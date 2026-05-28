@@ -295,7 +295,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     try {
       final thumbnail = await VideoCompress.getFileThumbnail(
         videoFile.path,
-        quality: 55,
+        quality: 45,
         position: -1,
       );
       final ref = FirebaseStorage.instance.ref().child(
@@ -319,9 +319,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     final result = await FlutterImageCompress.compressAndGetFile(
       file.absolute.path,
       targetPath,
-      minWidth: 1280,
-      minHeight: 1280,
-      quality: 45,
+      minWidth: 1080,
+      minHeight: 1080,
+      quality: 42,
       format: CompressFormat.jpeg,
     );
 
@@ -389,6 +389,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final formattedPrice = _formatPriceWithCommas(normalizedPrice);
       final price = 'OMR $formattedPrice $priceUnit';
       final itemRef = FirebaseFirestore.instance.collection('items').doc();
+      final mediaFileMaps = uploadedMedia.map((media) => media.toMap()).toList();
       final expiresAt = Timestamp.fromDate(
         DateTime.now().add(Duration(hours: timePeriodHours)),
       );
@@ -403,7 +404,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'price_unit': priceUnit,
         'location': location,
         'image_urls': imageUrls,
-        'media_files': uploadedMedia.map((media) => media.toMap()).toList(),
+        'media_files': mediaFileMaps,
         'time_period_days': 0,
         'time_period_extra_hours': selectedTimePeriodHours,
         'time_period_hours': timePeriodHours,
@@ -419,6 +420,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         sellerName: session.name,
         sellerPhone: session.phoneNumber,
         itemPrice: price,
+        location: location,
+        expiresAt: expiresAt,
+        mediaFiles: mediaFileMaps,
         videoUrls: uploadedMedia
             .where((media) => media.type == 'video')
             .map((media) => media.url)
@@ -919,6 +923,8 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   static const _pageSize = 90;
 
   final Set<String> _selectedIds = {};
+  final Map<String, int> _selectedOrder = {};
+  final Map<String, Future<Uint8List?>> _thumbnailFutures = {};
   final List<AssetEntity> _pendingAssets = [];
   List<AssetPathEntity> _albums = [];
   List<AssetEntity> _assets = [];
@@ -935,7 +941,25 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   void initState() {
     super.initState();
     _selectedIds.addAll(widget.selectedIds);
+    _rebuildSelectedOrder();
     _loadAssets();
+  }
+
+  void _rebuildSelectedOrder() {
+    _selectedOrder
+      ..clear()
+      ..addEntries(
+        _selectedIds.toList().asMap().entries.map(
+              (entry) => MapEntry(entry.value, entry.key + 1),
+            ),
+      );
+  }
+
+  Future<Uint8List?> _thumbnailFor(AssetEntity asset, ThumbnailSize size) {
+    return _thumbnailFutures.putIfAbsent(
+      '${asset.id}-${size.width}-${size.height}',
+      () => asset.thumbnailDataWithSize(size),
+    );
   }
 
   Future<void> _loadAssets() async {
@@ -1063,6 +1087,7 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
       setState(() {
         _selectedIds.remove(asset.id);
         _pendingAssets.removeWhere((pending) => pending.id == asset.id);
+        _rebuildSelectedOrder();
       });
       return;
     }
@@ -1083,6 +1108,7 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
     setState(() {
       _selectedIds.add(asset.id);
       _pendingAssets.add(asset);
+      _rebuildSelectedOrder();
     });
   }
 
@@ -1132,14 +1158,13 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                             ) {
                               final asset = _assets[index];
                               _maybeLoadMore(index);
-                              final selectedIndex = _selectedIds
-                                  .toList()
-                                  .indexOf(asset.id);
                               return _AssetTile(
                                 asset: asset,
-                                selectionNumber: selectedIndex == -1
-                                    ? null
-                                    : selectedIndex + 1,
+                                thumbnailFuture: _thumbnailFor(
+                                  asset,
+                                  const ThumbnailSize.square(240),
+                                ),
+                                selectionNumber: _selectedOrder[asset.id],
                                 onTap: () => _toggleAsset(asset),
                               );
                             }, childCount: _assets.length),
@@ -1181,8 +1206,13 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                           itemCount: _pendingAssets.length,
                           separatorBuilder: (_, _) => const SizedBox(width: 6),
                           itemBuilder: (context, index) {
+                            final asset = _pendingAssets[index];
                             return _SelectedAssetPreview(
-                              asset: _pendingAssets[index],
+                              asset: asset,
+                              thumbnailFuture: _thumbnailFor(
+                                asset,
+                                const ThumbnailSize(90, 120),
+                              ),
                             );
                           },
                         ),
@@ -1355,87 +1385,95 @@ class _CameraTile extends StatelessWidget {
 class _AssetTile extends StatelessWidget {
   const _AssetTile({
     required this.asset,
+    required this.thumbnailFuture,
     required this.selectionNumber,
     required this.onTap,
   });
 
   final AssetEntity asset;
+  final Future<Uint8List?> thumbnailFuture;
   final int? selectionNumber;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: FutureBuilder<Uint8List?>(
-              future: asset.thumbnailDataWithSize(
-                const ThumbnailSize.square(240),
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: FutureBuilder<Uint8List?>(
+                future: thumbnailFuture,
+                builder: (context, snapshot) {
+                  final bytes = snapshot.data;
+                  if (bytes == null) {
+                    return Container(color: const Color(0xFF252A28));
+                  }
+                  return Image.memory(bytes, fit: BoxFit.cover);
+                },
               ),
-              builder: (context, snapshot) {
-                final bytes = snapshot.data;
-                if (bytes == null) {
-                  return Container(color: const Color(0xFF252A28));
-                }
-                return Image.memory(bytes, fit: BoxFit.cover);
-              },
             ),
-          ),
-          if (asset.type == AssetType.video)
-            const Positioned(
-              left: 6,
-              bottom: 6,
-              child: Icon(Icons.play_circle_fill, color: Colors.white),
-            ),
-          Positioned(
-            top: 6,
-            right: 6,
-            child: CircleAvatar(
-              radius: 12,
-              backgroundColor: selectionNumber != null
-                  ? const Color(0xFF25D366)
-                  : Colors.black54,
-              child: Text(
-                selectionNumber?.toString() ?? '',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+            if (asset.type == AssetType.video)
+              const Positioned(
+                left: 6,
+                bottom: 6,
+                child: Icon(Icons.play_circle_fill, color: Colors.white),
+              ),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: CircleAvatar(
+                radius: 12,
+                backgroundColor: selectionNumber != null
+                    ? const Color(0xFF25D366)
+                    : Colors.black54,
+                child: Text(
+                  selectionNumber?.toString() ?? '',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 class _SelectedAssetPreview extends StatelessWidget {
-  const _SelectedAssetPreview({required this.asset});
+  const _SelectedAssetPreview({
+    required this.asset,
+    required this.thumbnailFuture,
+  });
 
   final AssetEntity asset;
+  final Future<Uint8List?> thumbnailFuture;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
-      child: SizedBox(
-        width: 42,
-        height: 54,
-        child: FutureBuilder<Uint8List?>(
-          future: asset.thumbnailDataWithSize(const ThumbnailSize(90, 120)),
-          builder: (context, snapshot) {
-            final bytes = snapshot.data;
-            if (bytes == null) {
-              return Container(color: const Color(0xFF252A28));
-            }
-            return Image.memory(bytes, fit: BoxFit.cover);
-          },
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: SizedBox(
+          width: 42,
+          height: 54,
+          child: FutureBuilder<Uint8List?>(
+            future: thumbnailFuture,
+            builder: (context, snapshot) {
+              final bytes = snapshot.data;
+              if (bytes == null) {
+                return Container(color: const Color(0xFF252A28));
+              }
+              return Image.memory(bytes, fit: BoxFit.cover);
+            },
+          ),
         ),
       ),
     );

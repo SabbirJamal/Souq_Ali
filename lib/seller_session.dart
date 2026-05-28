@@ -15,7 +15,13 @@ class SellerSession {
   final String name;
   final String phoneNumber;
 
+  static SellerSession? _cached;
+
   static Future<SellerSession?> current() async {
+    if (_cached != null) {
+      return _cached;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final sellerId = prefs.getString(_sellerIdKey);
     final phoneNumber = prefs.getString(_sellerPhoneKey);
@@ -24,11 +30,12 @@ class SellerSession {
       return null;
     }
 
-    return SellerSession(
+    _cached = SellerSession(
       sellerId: sellerId,
       name: prefs.getString(_sellerNameKey) ?? 'Seller',
       phoneNumber: phoneNumber,
     );
+    return _cached;
   }
 
   static Future<void> save({
@@ -40,6 +47,11 @@ class SellerSession {
     await prefs.setString(_sellerIdKey, sellerId);
     await prefs.setString(_sellerNameKey, name);
     await prefs.setString(_sellerPhoneKey, phoneNumber);
+    _cached = SellerSession(
+      sellerId: sellerId,
+      name: name,
+      phoneNumber: phoneNumber,
+    );
   }
 
   static Future<void> clear() async {
@@ -47,5 +59,6 @@ class SellerSession {
     await prefs.remove(_sellerIdKey);
     await prefs.remove(_sellerNameKey);
     await prefs.remove(_sellerPhoneKey);
+    _cached = null;
   }
 }

@@ -207,8 +207,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
       );
   }
 
-  Widget _buildCurrentPage() {
-    return switch (_currentIndex) {
+  Widget _buildPageAt(int index) {
+    return switch (index) {
       0 => SellerFeedTab(
         key: _feedKey,
         chromeVisibleListenable: _chromeVisible,
@@ -219,7 +219,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           }
         },
       ),
-      1 => const SellerStoriesTab(),
+      1 => _currentIndex == 1 ? const SellerStoriesTab() : const SizedBox.shrink(),
       2 => widget.isSellerMode
           ? SellerAddItemTab(key: _addItemKey, onItemAddedDone: _showFeedTab)
           : const _SellerAccessPrompt(),
@@ -229,16 +229,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
       4 => widget.isSellerMode
           ? SellerSettingsTab(onLogout: _confirmLogout)
           : const _SellerAccessPrompt(),
-      _ => SellerFeedTab(
-        key: _feedKey,
-        chromeVisibleListenable: _chromeVisible,
-        onSearchActiveChanged: (isActive) {
-          _isFeedSearchActive = isActive;
-          if (isActive) {
-            _setChromeVisible(true);
-          }
-        },
-      ),
+      _ => const SizedBox.shrink(),
     };
   }
 
@@ -284,7 +275,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
               Expanded(
                 child: NotificationListener<ScrollNotification>(
                   onNotification: _onScrollNotification,
-                  child: _buildCurrentPage(),
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: List.generate(5, _buildPageAt),
+                  ),
                 ),
               ),
             ],

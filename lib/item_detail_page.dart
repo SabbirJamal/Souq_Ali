@@ -211,7 +211,7 @@ class _DetailMediaHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trimmedLocation = location.trim();
-    final mediaHeight = MediaQuery.sizeOf(context).height * 0.75;
+    final mediaHeight = MediaQuery.sizeOf(context).height * 0.80;
     return SizedBox(
       height: mediaHeight,
       child: Stack(
@@ -837,6 +837,8 @@ class _FullscreenMediaView extends StatelessWidget {
           imageUrl: media.url,
           width: constraints.maxWidth,
           height: constraints.maxHeight,
+          memCacheWidth: 1400,
+          maxWidthDiskCache: 1800,
           fit: fit,
           placeholder: (context, url) => const MediaSkeletonPlaceholder(
             baseColor: Color(0xFF202421),

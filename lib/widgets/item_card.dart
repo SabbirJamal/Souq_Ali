@@ -24,72 +24,74 @@ class ItemCard extends StatelessWidget {
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
     final videoCount = mediaItems.where((media) => media.isVideo).length;
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ItemDetailPage(itemData: item, itemId: docId),
-          ),
-        );
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final cardHeight = isCompact
-              ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
-              : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
-
-          return Card(
-            elevation: 6,
-            shadowColor: Colors.black.withValues(alpha: 0.18),
-            color: Colors.white,
-            margin: EdgeInsets.only(bottom: isCompact ? 6 : 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(isCompact ? 8 : 10),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              height: cardHeight,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: MediaPreview(
-                      media: mediaItems.isEmpty ? null : mediaItems.first,
-                      height: cardHeight,
-                      borderRadius: 0,
-                    ),
-                  ),
-                  Positioned(
-                    top: isCompact ? 7 : 10,
-                    left: isCompact ? 7 : 10,
-                    child: _MediaCountBadges(
-                      imageCount: imageCount,
-                      videoCount: videoCount,
-                      isCompact: isCompact,
-                    ),
-                  ),
-                  Positioned(
-                    top: isCompact ? 7 : 10,
-                    right: isCompact ? 7 : 10,
-                    child: _UploadedAgoBadge(
-                      uploadedAgo: uploadedAgo,
-                      isCompact: isCompact,
-                    ),
-                  ),
-                  Positioned(
-                    left: isCompact ? 8 : 14,
-                    right: isCompact ? 8 : 14,
-                    bottom: isCompact ? 10 : 18,
-                    child: _ImageFilledDetails(
-                      item: item,
-                      isCompact: isCompact,
-                    ),
-                  ),
-                ],
-              ),
+    return RepaintBoundary(
+      child: GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ItemDetailPage(itemData: item, itemId: docId),
             ),
           );
         },
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final cardHeight = isCompact
+                ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
+                : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
+
+            return Card(
+              elevation: 6,
+              shadowColor: Colors.black.withValues(alpha: 0.18),
+              color: Colors.white,
+              margin: EdgeInsets.only(bottom: isCompact ? 6 : 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(isCompact ? 8 : 10),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                height: cardHeight,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: MediaPreview(
+                        media: mediaItems.isEmpty ? null : mediaItems.first,
+                        height: cardHeight,
+                        borderRadius: 0,
+                      ),
+                    ),
+                    Positioned(
+                      top: isCompact ? 7 : 10,
+                      left: isCompact ? 7 : 10,
+                      child: _MediaCountBadges(
+                        imageCount: imageCount,
+                        videoCount: videoCount,
+                        isCompact: isCompact,
+                      ),
+                    ),
+                    Positioned(
+                      top: isCompact ? 7 : 10,
+                      right: isCompact ? 7 : 10,
+                      child: _UploadedAgoBadge(
+                        uploadedAgo: uploadedAgo,
+                        isCompact: isCompact,
+                      ),
+                    ),
+                    Positioned(
+                      left: isCompact ? 8 : 14,
+                      right: isCompact ? 8 : 14,
+                      bottom: isCompact ? 10 : 18,
+                      child: _ImageFilledDetails(
+                        item: item,
+                        isCompact: isCompact,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -139,36 +141,38 @@ class ItemCardSkeleton extends StatelessWidget {
             ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
             : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
 
-        return Card(
-          elevation: 6,
-          shadowColor: Colors.black.withValues(alpha: 0.12),
-          color: Colors.white,
-          margin: EdgeInsets.only(bottom: isCompact ? 6 : 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(isCompact ? 8 : 10),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: SizedBox(
-            height: cardHeight,
-            child: Stack(
-              children: [
-                const Positioned.fill(child: MediaSkeletonPlaceholder()),
-                Positioned(
-                  left: isCompact ? 8 : 14,
-                  bottom: isCompact ? 10 : 18,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _SkeletonChip(width: isCompact ? 76 : 118),
-                      SizedBox(height: isCompact ? 5 : 8),
-                      _SkeletonChip(width: isCompact ? 94 : 150),
-                      SizedBox(height: isCompact ? 7 : 12),
-                      _SkeletonChip(width: isCompact ? 64 : 110),
-                    ],
+        return RepaintBoundary(
+          child: Card(
+            elevation: 6,
+            shadowColor: Colors.black.withValues(alpha: 0.12),
+            color: Colors.white,
+            margin: EdgeInsets.only(bottom: isCompact ? 6 : 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(isCompact ? 8 : 10),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              height: cardHeight,
+              child: Stack(
+                children: [
+                  const Positioned.fill(child: MediaSkeletonPlaceholder()),
+                  Positioned(
+                    left: isCompact ? 8 : 14,
+                    bottom: isCompact ? 10 : 18,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _SkeletonChip(width: isCompact ? 76 : 118),
+                        SizedBox(height: isCompact ? 5 : 8),
+                        _SkeletonChip(width: isCompact ? 94 : 150),
+                        SizedBox(height: isCompact ? 7 : 12),
+                        _SkeletonChip(width: isCompact ? 64 : 110),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

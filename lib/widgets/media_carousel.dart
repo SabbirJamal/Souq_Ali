@@ -91,24 +91,28 @@ class MediaPreview extends StatelessWidget {
       );
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: currentMedia.isVideo
-          ? _VideoThumbnailPreview(
-              thumbnailUrl: currentMedia.thumbnailUrl,
-              height: height,
-              fit: fit,
-            )
-          : CachedNetworkImage(
-              imageUrl: currentMedia.url,
-              width: double.infinity,
-              height: height,
-              fit: fit,
-              fadeInDuration: const Duration(milliseconds: 120),
-              placeholder: (context, url) => const _MediaLoadingPlaceholder(),
-              errorWidget: (context, url, error) =>
-                  const _MediaErrorPlaceholder(),
-            ),
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: currentMedia.isVideo
+            ? _VideoThumbnailPreview(
+                thumbnailUrl: currentMedia.thumbnailUrl,
+                height: height,
+                fit: fit,
+              )
+            : CachedNetworkImage(
+                imageUrl: currentMedia.url,
+                width: double.infinity,
+                height: height,
+                memCacheWidth: 720,
+                maxWidthDiskCache: 1080,
+                fit: fit,
+                fadeInDuration: const Duration(milliseconds: 120),
+                placeholder: (context, url) => const _MediaLoadingPlaceholder(),
+                errorWidget: (context, url, error) =>
+                    const _MediaErrorPlaceholder(),
+              ),
+      ),
     );
   }
 }
@@ -140,6 +144,8 @@ class _VideoThumbnailPreview extends StatelessWidget {
             imageUrl: url,
             width: double.infinity,
             height: height,
+            memCacheWidth: 720,
+            maxWidthDiskCache: 1080,
             fit: fit,
             fadeInDuration: const Duration(milliseconds: 120),
             placeholder: (context, url) => const _MediaLoadingPlaceholder(),
@@ -153,22 +159,24 @@ class _VideoThumbnailPreview extends StatelessWidget {
             ),
           );
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        preview,
-        Center(
-          child: Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              shape: BoxShape.circle,
+    return RepaintBoundary(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          preview,
+          Center(
+            child: Container(
+              width: 54,
+              height: 54,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
             ),
-            child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -234,31 +242,35 @@ class _MediaCarouselState extends State<MediaCarousel> {
                             right: isLast ? 0 : 3,
                           )
                         : EdgeInsets.zero;
-                    return Padding(
-                      padding: edgePadding,
-                      child: GestureDetector(
-                        onTap: widget.onMediaTap == null
-                            ? null
-                            : () => widget.onMediaTap!(media, index),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(
-                            widget.borderRadius,
-                          ),
-                          child: media.isVideo
-                              ? VideoPreview(url: media.url, fit: widget.fit)
-                              : CachedNetworkImage(
-                                  imageUrl: media.url,
-                                  width: double.infinity,
-                                  height: widget.height,
-                                  fit: widget.fit,
-                                  fadeInDuration: const Duration(
-                                    milliseconds: 120,
+                    return RepaintBoundary(
+                      child: Padding(
+                        padding: edgePadding,
+                        child: GestureDetector(
+                          onTap: widget.onMediaTap == null
+                              ? null
+                              : () => widget.onMediaTap!(media, index),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              widget.borderRadius,
+                            ),
+                            child: media.isVideo
+                                ? VideoPreview(url: media.url, fit: widget.fit)
+                                : CachedNetworkImage(
+                                    imageUrl: media.url,
+                                    width: double.infinity,
+                                    height: widget.height,
+                                    memCacheWidth: 1200,
+                                    maxWidthDiskCache: 1600,
+                                    fit: widget.fit,
+                                    fadeInDuration: const Duration(
+                                      milliseconds: 120,
+                                    ),
+                                    placeholder: (context, url) =>
+                                        const _MediaLoadingPlaceholder(),
+                                    errorWidget: (context, url, error) =>
+                                        const _MediaErrorPlaceholder(),
                                   ),
-                                  placeholder: (context, url) =>
-                                      const _MediaLoadingPlaceholder(),
-                                  errorWidget: (context, url, error) =>
-                                      const _MediaErrorPlaceholder(),
-                                ),
+                          ),
                         ),
                       ),
                     );
@@ -439,35 +451,37 @@ class _VideoPreviewState extends State<VideoPreview> {
       return const MediaSkeletonPlaceholder(baseColor: Color(0xFF202421));
     }
 
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          color: Colors.black,
-          child: SizedBox.expand(
-            child: FittedBox(
-              fit: widget.fit,
-              child: SizedBox(
-                width: _controller.value.size.width,
-                height: _controller.value.size.height,
-                child: VideoPlayer(_controller),
+    return RepaintBoundary(
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            color: Colors.black,
+            child: SizedBox.expand(
+              child: FittedBox(
+                fit: widget.fit,
+                child: SizedBox(
+                  width: _controller.value.size.width,
+                  height: _controller.value.size.height,
+                  child: VideoPlayer(_controller),
+                ),
               ),
             ),
           ),
-        ),
-        IconButton.filled(
-          onPressed: () {
-            setState(() {
-              _controller.value.isPlaying
-                  ? _controller.pause()
-                  : _controller.play();
-            });
-          },
-          icon: Icon(
-            _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+          IconButton.filled(
+            onPressed: () {
+              setState(() {
+                _controller.value.isPlaying
+                    ? _controller.pause()
+                    : _controller.play();
+              });
+            },
+            icon: Icon(
+              _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -512,17 +526,19 @@ class _MediaSkeletonPlaceholderState extends State<MediaSkeletonPlaceholder>
       animation: _controller,
       builder: (context, child) {
         final value = _controller.value;
-        return Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment(-1.0 + value * 2.4, -0.8),
-              end: Alignment(-0.2 + value * 2.4, 0.8),
-              colors: [
-                widget.baseColor,
-                widget.highlightColor,
-                widget.baseColor,
-              ],
-              stops: const [0.25, 0.5, 0.75],
+        return RepaintBoundary(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment(-1.0 + value * 2.4, -0.8),
+                end: Alignment(-0.2 + value * 2.4, 0.8),
+                colors: [
+                  widget.baseColor,
+                  widget.highlightColor,
+                  widget.baseColor,
+                ],
+                stops: const [0.25, 0.5, 0.75],
+              ),
             ),
           ),
         );

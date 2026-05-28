@@ -25,12 +25,14 @@ class _SellerStoriesTabState extends State<SellerStoriesTab> {
 
   @override
   Widget build(BuildContext context) {
+    final now = Timestamp.now();
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
           .collection('stories')
-          .orderBy('created_at', descending: true)
+          .where('expires_at', isGreaterThan: now)
+          .orderBy('expires_at')
           .limit(100)
-          .snapshots(includeMetadataChanges: true),
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -38,10 +40,6 @@ class _SellerStoriesTabState extends State<SellerStoriesTab> {
         if (snapshot.hasError) {
           return Center(child: Text('Error: ${snapshot.error}'));
         }
-        if (snapshot.data?.metadata.isFromCache ?? false) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
         final docs = (snapshot.data?.docs ?? [])
             .where((doc) => (doc.data()['video_url']?.toString() ?? '').isNotEmpty)
             .toList();
@@ -50,37 +48,29 @@ class _SellerStoriesTabState extends State<SellerStoriesTab> {
           return const _EmptyStories();
         }
 
-        return FutureBuilder<List<StorySeller>>(
-          future: _storiesFromDocs(docs, _now),
-          builder: (context, activeStoriesSnapshot) {
-            if (activeStoriesSnapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final stories = activeStoriesSnapshot.data ?? [];
-            if (stories.isEmpty) {
-              return const _EmptyStories();
-            }
+        final stories = _storiesFromDocs(docs, _now);
+        if (stories.isEmpty) {
+          return const _EmptyStories();
+        }
 
-            return StoryViewerPage(
-              stories: stories,
-              initialStoryIndex: 0,
-              showCloseButton: false,
-              popOnComplete: false,
-            );
-          },
+        return StoryViewerPage(
+          stories: stories,
+          initialStoryIndex: 0,
+          showCloseButton: false,
+          popOnComplete: false,
         );
       },
     );
   }
 
-  Future<List<StorySeller>> _storiesFromDocs(
+  List<StorySeller> _storiesFromDocs(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     DateTime activeNow,
-  ) async {
+  ) {
     final stories = <StorySeller>[];
     for (final doc in docs) {
       final story = doc.data();
-      final video = await _storyVideoFromMap(story, activeNow);
+      final video = _storyVideoFromMap(story, activeNow);
       if (video == null) {
         continue;
       }
@@ -94,45 +84,31 @@ class _SellerStoriesTabState extends State<SellerStoriesTab> {
     return stories;
   }
 
-  Future<StoryVideo?> _storyVideoFromMap(
+  StoryVideo? _storyVideoFromMap(
     Map<String, dynamic> story,
     DateTime activeNow,
-  ) async {
+  ) {
     final itemId = story['item_id']?.toString() ?? '';
     final videoUrl = story['video_url']?.toString() ?? '';
     if (itemId.isEmpty || videoUrl.isEmpty) {
       return null;
     }
 
-    final itemDoc = await FirebaseFirestore.instance
-        .collection('items')
-        .doc(itemId)
-        .get();
-    if (!itemDoc.exists) {
-      return null;
-    }
-
-    final item = itemDoc.data() ?? {};
-    if (!_isItemActive(item, activeNow)) {
+    if (!_isItemActive(story, activeNow)) {
       return null;
     }
     final sellerPhone =
-        item['seller_phone']?.toString() ??
         story['seller_phone']?.toString() ??
         '';
+    final item = Map<String, dynamic>.from(story);
+    item['seller_uid'] = story['seller_uid'] ?? story['seller_id'];
 
     return StoryVideo(
       url: videoUrl,
       itemId: itemId,
-      itemName:
-          item['item_name']?.toString() ??
-          story['item_name']?.toString() ??
-          'Item',
-      itemPrice:
-          item['item_price']?.toString() ??
-          story['item_price']?.toString() ??
-          '',
-      location: item['location']?.toString() ?? story['location']?.toString() ?? '',
+      itemName: story['item_name']?.toString() ?? 'Item',
+      itemPrice: story['item_price']?.toString() ?? '',
+      location: story['location']?.toString() ?? '',
       sellerName: story['seller_name']?.toString() ?? 'Seller',
       sellerPhone: sellerPhone,
       itemData: item,

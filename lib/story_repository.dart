@@ -10,6 +10,9 @@ class StoryRepository {
     required String itemId,
     required String itemName,
     required String itemPrice,
+    required String location,
+    required Timestamp expiresAt,
+    required List<Map<String, dynamic>> mediaFiles,
     required List<String> videoUrls,
   }) async {
     await removeItemVideos(sellerId: sellerId, itemId: itemId);
@@ -37,6 +40,9 @@ class StoryRepository {
         'item_id': itemId,
         'item_name': itemName,
         'item_price': itemPrice,
+        'location': location,
+        'expires_at': expiresAt,
+        'media_files': mediaFiles,
         'video_url': trimmedUrl,
         'created_at': createdAt,
       });

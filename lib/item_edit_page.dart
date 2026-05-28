@@ -216,6 +216,19 @@ class _ItemEditPageState extends State<ItemEditPage> {
           .where((media) => media.isVideo)
           .map((media) => media.url)
           .toList();
+      final mediaFileMaps = allMedia
+          .map(
+            (media) => {
+              'url': media.url,
+              'type': media.type,
+              if (media.thumbnailUrl != null && media.thumbnailUrl!.isNotEmpty)
+                'thumbnail_url': media.thumbnailUrl,
+            },
+          )
+          .toList();
+      final expiresAt = widget.itemData['expires_at'] is Timestamp
+          ? widget.itemData['expires_at'] as Timestamp
+          : Timestamp.fromDate(DateTime.now().add(const Duration(hours: 18)));
 
       await FirebaseFirestore.instance
           .collection('items')
@@ -230,17 +243,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
             'price_unit': _priceUnit,
             'item_price': 'OMR $formattedPrice $_priceUnit',
             'location': location,
-            'media_files': allMedia
-                .map(
-                  (media) => {
-                    'url': media.url,
-                    'type': media.type,
-                    if (media.thumbnailUrl != null &&
-                        media.thumbnailUrl!.isNotEmpty)
-                      'thumbnail_url': media.thumbnailUrl,
-                  },
-                )
-                .toList(),
+            'media_files': mediaFileMaps,
             'image_urls': imageUrls,
             'updated_at': FieldValue.serverTimestamp(),
           });
@@ -252,6 +255,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
         itemId: widget.docId,
         itemName: name,
         itemPrice: 'OMR $formattedPrice $_priceUnit',
+        location: location,
+        expiresAt: expiresAt,
+        mediaFiles: mediaFileMaps,
         videoUrls: videoUrls,
       );
 
@@ -319,7 +325,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     try {
       final thumbnail = await VideoCompress.getFileThumbnail(
         videoFile.path,
-        quality: 55,
+        quality: 45,
         position: -1,
       );
       final ref = FirebaseStorage.instance.ref().child(
@@ -342,9 +348,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
     final result = await FlutterImageCompress.compressAndGetFile(
       file.absolute.path,
       targetPath,
-      minWidth: 1280,
-      minHeight: 1280,
-      quality: 45,
+      minWidth: 1080,
+      minHeight: 1080,
+      quality: 42,
       format: CompressFormat.jpeg,
     );
     return result == null ? file : File(result.path);

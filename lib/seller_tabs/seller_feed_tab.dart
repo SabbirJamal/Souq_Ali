@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -27,20 +29,32 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       FirebaseFirestore.instance
           .collection('items')
           .orderBy('created_at', descending: true)
+          .limit(60)
           .snapshots();
   bool _isSearchOpen = false;
   bool _isGridView = true;
   String _query = '';
+  Timer? _searchDebounce;
   final DateTime _openedAt = DateTime.now();
   int _refreshTick = 0;
 
   @override
   void dispose() {
     widget.onSearchActiveChanged(false);
+    _searchDebounce?.cancel();
     _scrollController.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _handleSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (mounted) {
+        setState(() => _query = value);
+      }
+    });
   }
 
   void scrollToTop() {
@@ -129,7 +143,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                       onToggleGrid: _toggleLayoutMode,
                     ),
                   ),
-                  const SliverToBoxAdapter(child: _UploadStatusBanner()),
                   if (isLoading)
                     SliverPadding(
                       padding: _isGridView
@@ -215,9 +228,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
               searchFocusNode: _searchFocusNode,
               onOpenSearch: _openSearch,
               onCloseSearch: _closeSearch,
-              onQueryChanged: (value) => setState(() => _query = value),
+              onQueryChanged: _handleSearchChanged,
             ),
           ),
+        ),
+        const Positioned(
+          top: 62,
+          right: 12,
+          child: _UploadStatusBanner(),
         ),
       ],
     );
@@ -427,8 +445,7 @@ class _UploadStatusBanner extends StatelessWidget {
               ? const SizedBox.shrink()
               : Container(
                   key: ValueKey(status.message),
-                  width: double.infinity,
-                  margin: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+                  width: 260,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 10,
