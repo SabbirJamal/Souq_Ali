@@ -11,7 +11,7 @@ const bucket = getStorage().bucket();
 
 exports.cleanupExpiredItems = onSchedule(
   {
-    schedule: "every 24 hours",
+    schedule: "every 6 hours",
     timeZone: "Asia/Muscat",
     region: "us-central1",
     timeoutSeconds: 540,
@@ -102,6 +102,13 @@ function collectMediaUrls(item) {
     for (const media of item.media_files) {
       if (media && typeof media.url === "string" && media.url.trim()) {
         urls.add(media.url);
+      }
+      if (
+        media &&
+        typeof media.thumbnail_url === "string" &&
+        media.thumbnail_url.trim()
+      ) {
+        urls.add(media.thumbnail_url);
       }
     }
   }

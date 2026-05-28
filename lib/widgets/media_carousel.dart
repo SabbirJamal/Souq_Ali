@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 class MediaItem {
-  const MediaItem({required this.url, required this.type});
+  const MediaItem({required this.url, required this.type, this.thumbnailUrl});
 
   final String url;
   final String type;
+  final String? thumbnailUrl;
 
   bool get isVideo => type == 'video';
 }
@@ -21,6 +22,7 @@ List<MediaItem> mediaItemsFromMap(Map<String, dynamic> item) {
           return MediaItem(
             url: data['url']?.toString() ?? '',
             type: data['type']?.toString() ?? 'image',
+            thumbnailUrl: data['thumbnail_url']?.toString(),
           );
         })
         .where((media) => media.url.isNotEmpty)
@@ -58,6 +60,117 @@ class MediaCarousel extends StatefulWidget {
 
   @override
   State<MediaCarousel> createState() => _MediaCarouselState();
+}
+
+class MediaPreview extends StatelessWidget {
+  const MediaPreview({
+    super.key,
+    required this.media,
+    required this.height,
+    this.borderRadius = 0,
+    this.fit = BoxFit.cover,
+  });
+
+  final MediaItem? media;
+  final double height;
+  final double borderRadius;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentMedia = media;
+    if (currentMedia == null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: Container(
+          width: double.infinity,
+          height: height,
+          color: const Color(0xFFDCF8C6),
+          child: const Icon(Icons.image, size: 50, color: Color(0xFF075E54)),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: currentMedia.isVideo
+          ? _VideoThumbnailPreview(
+              thumbnailUrl: currentMedia.thumbnailUrl,
+              height: height,
+              fit: fit,
+            )
+          : CachedNetworkImage(
+              imageUrl: currentMedia.url,
+              width: double.infinity,
+              height: height,
+              fit: fit,
+              fadeInDuration: const Duration(milliseconds: 120),
+              placeholder: (context, url) => const _MediaLoadingPlaceholder(),
+              errorWidget: (context, url, error) =>
+                  const _MediaErrorPlaceholder(),
+            ),
+    );
+  }
+}
+
+class _VideoThumbnailPreview extends StatelessWidget {
+  const _VideoThumbnailPreview({
+    required this.thumbnailUrl,
+    required this.height,
+    required this.fit,
+  });
+
+  final String? thumbnailUrl;
+  final double height;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = thumbnailUrl?.trim() ?? '';
+    final Widget preview = url.isEmpty
+        ? Container(
+            color: Colors.black,
+            child: const Icon(
+              Icons.videocam,
+              color: Colors.white,
+              size: 50,
+            ),
+          )
+        : CachedNetworkImage(
+            imageUrl: url,
+            width: double.infinity,
+            height: height,
+            fit: fit,
+            fadeInDuration: const Duration(milliseconds: 120),
+            placeholder: (context, url) => const _MediaLoadingPlaceholder(),
+            errorWidget: (context, url, error) => Container(
+              color: Colors.black,
+              child: const Icon(
+                Icons.videocam,
+                color: Colors.white,
+                size: 50,
+              ),
+            ),
+          );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        preview,
+        Center(
+          child: Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.play_arrow, color: Colors.white, size: 36),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _MediaCarouselState extends State<MediaCarousel> {
@@ -308,7 +421,14 @@ class _VideoPreviewState extends State<VideoPreview> {
   }
 
   @override
+  void deactivate() {
+    _controller.pause();
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
+    _controller.pause();
     _controller.dispose();
     super.dispose();
   }

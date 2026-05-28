@@ -267,14 +267,48 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         compressed,
         SettableMetadata(contentType: contentType),
       );
+      final thumbnailUrl = media.isVideo
+          ? await _uploadVideoThumbnail(
+              videoFile: compressed,
+              sellerUid: sellerUid,
+              fileName: fileName,
+              index: i,
+            )
+          : null;
       uploaded.add(
         _UploadedMedia(
           url: await uploadSnapshot.ref.getDownloadURL(),
           type: media.type,
+          thumbnailUrl: thumbnailUrl,
         ),
       );
     }
     return uploaded;
+  }
+
+  Future<String?> _uploadVideoThumbnail({
+    required File videoFile,
+    required String sellerUid,
+    required int fileName,
+    required int index,
+  }) async {
+    try {
+      final thumbnail = await VideoCompress.getFileThumbnail(
+        videoFile.path,
+        quality: 55,
+        position: -1,
+      );
+      final ref = FirebaseStorage.instance.ref().child(
+        'items/$sellerUid/${fileName}_${index}_thumb.jpg',
+      );
+      final snapshot = await ref.putFile(
+        thumbnail,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      return snapshot.ref.getDownloadURL();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<File> _compressImage(File file) async {
@@ -663,8 +697,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               }
             },
           ),
-          const SizedBox(height: 16),
-          _buildTimePeriodSelector(),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _isUploading ? null : _addItem,
@@ -789,56 +821,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           color: Color(0xFF111820),
           size: 38,
         ),
-      ),
-    );
-  }
-
-  Widget _buildTimePeriodSelector() {
-    const options = [6, 12, 18];
-    return Opacity(
-      opacity: _isUploading ? 0.45 : 1,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Row(
-            children: options.map((hours) {
-              final isSelected = _timePeriodHours == hours;
-              return Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    right: hours == options.last ? 0 : 8,
-                  ),
-                  child: ChoiceChip(
-                    label: Text('${hours} hrs'),
-                    selected: isSelected,
-                    onSelected: _isUploading
-                        ? null
-                        : (_) => setState(() => _timePeriodHours = hours),
-                    showCheckmark: false,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : Colors.black,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    selectedColor: const Color(0xFFFF7801),
-                    backgroundColor: Colors.white,
-                    disabledColor: Colors.grey.shade100,
-                    side: BorderSide(
-                      color: isSelected
-                          ? const Color(0xFFFF7801)
-                          : Colors.grey.shade400,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
       ),
     );
   }
@@ -1471,12 +1453,22 @@ class _SelectedMedia {
 }
 
 class _UploadedMedia {
-  const _UploadedMedia({required this.url, required this.type});
+  const _UploadedMedia({
+    required this.url,
+    required this.type,
+    this.thumbnailUrl,
+  });
 
   final String url;
   final String type;
+  final String? thumbnailUrl;
 
   Map<String, dynamic> toMap() {
-    return {'url': url, 'type': type};
+    return {
+      'url': url,
+      'type': type,
+      if (thumbnailUrl != null && thumbnailUrl!.isNotEmpty)
+        'thumbnail_url': thumbnailUrl,
+    };
   }
 }

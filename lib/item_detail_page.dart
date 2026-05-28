@@ -9,7 +9,6 @@ import 'seller_home_page.dart';
 import 'seller_profile_page.dart';
 import 'seller_session.dart';
 import 'share_listing_page.dart';
-import 'widgets/item_card.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
 
@@ -38,7 +37,7 @@ class ItemDetailPage extends StatelessWidget {
   ) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => _StackedMediaPage(
+        builder: (_) => _SingleMediaPage(
           mediaItems: mediaItems,
           initialIndex: initialIndex,
           sellerPhone: sellerPhone,
@@ -113,11 +112,6 @@ class ItemDetailPage extends StatelessWidget {
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      _SellerActiveItemsSection(
-                        sellerId: itemData['seller_uid'],
-                        sellerPhone: itemData['seller_phone'],
                       ),
                       const SizedBox(height: 8),
                     ],
@@ -592,131 +586,6 @@ String _formatSellerPhone(Object? value) {
   return '+968 $digits';
 }
 
-class _SellerActiveItemsSection extends StatelessWidget {
-  const _SellerActiveItemsSection({
-    required this.sellerId,
-    required this.sellerPhone,
-  });
-
-  final Object? sellerId;
-  final Object? sellerPhone;
-
-  @override
-  Widget build(BuildContext context) {
-    final docId = sellerId?.toString().trim().isNotEmpty == true
-        ? sellerId!.toString().trim()
-        : sellerPhone?.toString().trim() ?? '';
-    if (docId.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    final now = DateTime.now();
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('items')
-          .where('seller_uid', isEqualTo: docId)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (snapshot.hasError) {
-          return const SizedBox.shrink();
-        }
-
-        final docs = (snapshot.data?.docs ?? [])
-            .where((doc) => _isItemActive(doc.data(), now))
-            .toList()
-          ..sort((a, b) {
-            final aTime = a.data()['created_at'];
-            final bTime = b.data()['created_at'];
-            final aDate = aTime is Timestamp
-                ? aTime.toDate()
-                : DateTime.fromMillisecondsSinceEpoch(0);
-            final bDate = bTime is Timestamp
-                ? bTime.toDate()
-                : DateTime.fromMillisecondsSinceEpoch(0);
-            return bDate.compareTo(aDate);
-          });
-
-        if (docs.isEmpty) {
-          return const SizedBox.shrink();
-        }
-
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-          child: _SellerItemGrid(docs: docs),
-        );
-      },
-    );
-  }
-}
-
-class _SellerItemGrid extends StatelessWidget {
-  const _SellerItemGrid({required this.docs});
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-  @override
-  Widget build(BuildContext context) {
-    final leftDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    final rightDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    for (var i = 0; i < docs.length; i++) {
-      if (i.isEven) {
-        leftDocs.add(docs[i]);
-      } else {
-        rightDocs.add(docs[i]);
-      }
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _SellerItemColumn(docs: leftDocs)),
-        const SizedBox(width: 4),
-        Expanded(child: _SellerItemColumn(docs: rightDocs)),
-      ],
-    );
-  }
-}
-
-class _SellerItemColumn extends StatelessWidget {
-  const _SellerItemColumn({required this.docs});
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: docs
-          .map((doc) => ItemCard(docId: doc.id, item: doc.data(), isCompact: true))
-          .toList(),
-    );
-  }
-}
-
-bool _isItemActive(Map<String, dynamic> item, DateTime now) {
-  final createdAt = item['created_at'];
-  final timePeriodHours = item['time_period_hours'];
-  if (createdAt is Timestamp && timePeriodHours is num) {
-    return createdAt
-        .toDate()
-        .add(Duration(hours: timePeriodHours.toInt()))
-        .isAfter(now);
-  }
-  final expiresAt = item['expires_at'];
-  if (expiresAt is Timestamp) {
-    return expiresAt.toDate().isAfter(now);
-  }
-  if (expiresAt is DateTime) {
-    return expiresAt.isAfter(now);
-  }
-  return true;
-}
-
 class _DetailsCard extends StatelessWidget {
   const _DetailsCard({required this.rows});
 
@@ -795,106 +664,6 @@ class _DetailData {
 
   final String label;
   final String valueText;
-}
-
-class _StackedMediaPage extends StatefulWidget {
-  const _StackedMediaPage({
-    required this.mediaItems,
-    required this.initialIndex,
-    required this.sellerPhone,
-  });
-
-  final List<MediaItem> mediaItems;
-  final int initialIndex;
-  final String sellerPhone;
-
-  @override
-  State<_StackedMediaPage> createState() => _StackedMediaPageState();
-}
-
-class _StackedMediaPageState extends State<_StackedMediaPage> {
-  late final ScrollController _scrollController;
-
-  @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients || widget.initialIndex <= 0) {
-        return;
-      }
-      _scrollController.jumpTo(398.0 * widget.initialIndex);
-    });
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    super.dispose();
-  }
-
-  void _openSingleMedia(int index) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => _SingleMediaPage(
-          mediaItems: widget.mediaItems,
-          initialIndex: index,
-          sellerPhone: widget.sellerPhone,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              Expanded(
-                child: ClipRect(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      return ListView.separated(
-                        controller: _scrollController,
-                        padding: EdgeInsets.zero,
-                        itemCount: widget.mediaItems.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 8),
-                        itemBuilder: (context, index) {
-                          return GestureDetector(
-                            onTap: () => _openSingleMedia(index),
-                            child: SizedBox(
-                              width: double.infinity,
-                              height: constraints.maxHeight,
-                              child: _FullscreenMediaView(
-                                media: widget.mediaItems[index],
-                                allowZoom: false,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ),
-              _FullscreenContactBar(sellerPhone: widget.sellerPhone),
-            ],
-          ),
-          _FullscreenHeader(onBack: () => Navigator.pop(context)),
-        ],
-      ),
-    );
-  }
 }
 
 class _SingleMediaPage extends StatefulWidget {

@@ -231,7 +231,15 @@ class _ItemEditPageState extends State<ItemEditPage> {
             'item_price': 'OMR $formattedPrice $_priceUnit',
             'location': location,
             'media_files': allMedia
-                .map((media) => {'url': media.url, 'type': media.type})
+                .map(
+                  (media) => {
+                    'url': media.url,
+                    'type': media.type,
+                    if (media.thumbnailUrl != null &&
+                        media.thumbnailUrl!.isNotEmpty)
+                      'thumbnail_url': media.thumbnailUrl,
+                  },
+                )
                 .toList(),
             'image_urls': imageUrls,
             'updated_at': FieldValue.serverTimestamp(),
@@ -283,11 +291,48 @@ class _ItemEditPageState extends State<ItemEditPage> {
         compressed,
         SettableMetadata(contentType: contentType),
       );
+      final thumbnailUrl = media.isVideo
+          ? await _uploadVideoThumbnail(
+              videoFile: compressed,
+              sellerUid: sellerUid,
+              fileName: fileName,
+              index: i,
+            )
+          : null;
       uploaded.add(
-        MediaItem(url: await snapshot.ref.getDownloadURL(), type: media.type),
+        MediaItem(
+          url: await snapshot.ref.getDownloadURL(),
+          type: media.type,
+          thumbnailUrl: thumbnailUrl,
+        ),
       );
     }
     return uploaded;
+  }
+
+  Future<String?> _uploadVideoThumbnail({
+    required File videoFile,
+    required String sellerUid,
+    required int fileName,
+    required int index,
+  }) async {
+    try {
+      final thumbnail = await VideoCompress.getFileThumbnail(
+        videoFile.path,
+        quality: 55,
+        position: -1,
+      );
+      final ref = FirebaseStorage.instance.ref().child(
+        'items/$sellerUid/${fileName}_edit_${index}_thumb.jpg',
+      );
+      final snapshot = await ref.putFile(
+        thumbnail,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      return snapshot.ref.getDownloadURL();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<File> _compressImage(File file) async {
@@ -321,6 +366,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
   Future<void> _deleteRemovedStorageFiles() async {
     for (final media in _removedMedia) {
       try {
+        final thumbnailUrl = media.thumbnailUrl?.trim() ?? '';
+        if (thumbnailUrl.isNotEmpty) {
+          await FirebaseStorage.instance.refFromURL(thumbnailUrl).delete();
+        }
         await FirebaseStorage.instance.refFromURL(media.url).delete();
       } catch (_) {
         // The Firestore update is the source of truth; missing old files are safe.

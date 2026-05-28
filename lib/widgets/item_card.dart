@@ -53,12 +53,10 @@ class ItemCard extends StatelessWidget {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: MediaCarousel(
-                      mediaItems: mediaItems,
+                    child: MediaPreview(
+                      media: mediaItems.isEmpty ? null : mediaItems.first,
                       height: cardHeight,
-                      peekSideItems: false,
                       borderRadius: 0,
-                      showCountBadge: false,
                     ),
                   ),
                   Positioned(
