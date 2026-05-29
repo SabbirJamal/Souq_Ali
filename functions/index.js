@@ -113,6 +113,13 @@ function collectMediaUrls(item) {
     }
   }
 
+  if (
+    typeof item.audio_description_url === "string" &&
+    item.audio_description_url.trim()
+  ) {
+    urls.add(item.audio_description_url);
+  }
+
   return [...urls];
 }
 

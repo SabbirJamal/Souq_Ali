@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import '../item_detail_page.dart';
 import 'media_carousel.dart';
 import 'price_with_currency.dart';
 
-class ItemCard extends StatelessWidget {
+class ItemCard extends StatefulWidget {
   const ItemCard({
     super.key,
     required this.docId,
@@ -18,80 +19,153 @@ class ItemCard extends StatelessWidget {
   final bool isCompact;
 
   @override
+  State<ItemCard> createState() => _ItemCardState();
+}
+
+class _ItemCardState extends State<ItemCard> {
+  late final AudioPlayer _audioPlayer;
+  Duration _audioDuration = Duration.zero;
+  Duration _audioPosition = Duration.zero;
+  bool _isAudioPlaying = false;
+
+  String get _audioUrl =>
+      widget.item['audio_description_url']?.toString().trim() ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+    _audioPlayer.onDurationChanged.listen((duration) {
+      if (mounted) {
+        setState(() => _audioDuration = duration);
+      }
+    });
+    _audioPlayer.onPositionChanged.listen((position) {
+      if (mounted) {
+        setState(() => _audioPosition = position);
+      }
+    });
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isAudioPlaying = false;
+          _audioPosition = Duration.zero;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleAudio() async {
+    if (_audioUrl.isEmpty) {
+      return;
+    }
+    if (_isAudioPlaying) {
+      await _audioPlayer.pause();
+      if (mounted) {
+        setState(() => _isAudioPlaying = false);
+      }
+      return;
+    }
+    await _audioPlayer.play(UrlSource(_audioUrl));
+    if (mounted) {
+      setState(() => _isAudioPlaying = true);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final mediaItems = mediaItemsFromMap(item);
-    final uploadedAgo = _uploadedAgo(item['created_at']);
+    final mediaItems = mediaItemsFromMap(widget.item);
+    final uploadedAgo = _uploadedAgo(widget.item['created_at']);
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
     final videoCount = mediaItems.where((media) => media.isVideo).length;
 
     return RepaintBoundary(
-      child: GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ItemDetailPage(itemData: item, itemId: docId),
-            ),
-          );
-        },
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final cardHeight = isCompact
-                ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
-                : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
-
-            return Card(
-              elevation: 6,
-              shadowColor: Colors.black.withValues(alpha: 0.18),
-              color: Colors.white,
-              margin: EdgeInsets.only(bottom: isCompact ? 6 : 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(isCompact ? 8 : 10),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: SizedBox(
-                height: cardHeight,
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: MediaPreview(
-                        media: mediaItems.isEmpty ? null : mediaItems.first,
-                        height: cardHeight,
-                        borderRadius: 0,
-                      ),
-                    ),
-                    Positioned(
-                      top: isCompact ? 7 : 10,
-                      left: isCompact ? 7 : 10,
-                      child: _MediaCountBadges(
-                        imageCount: imageCount,
-                        videoCount: videoCount,
-                        isCompact: isCompact,
-                      ),
-                    ),
-                    Positioned(
-                      top: isCompact ? 7 : 10,
-                      right: isCompact ? 7 : 10,
-                      child: _UploadedAgoBadge(
-                        uploadedAgo: uploadedAgo,
-                        isCompact: isCompact,
-                      ),
-                    ),
-                    Positioned(
-                      left: isCompact ? 8 : 14,
-                      right: isCompact ? 8 : 14,
-                      bottom: isCompact ? 10 : 18,
-                      child: _ImageFilledDetails(
-                        item: item,
-                        isCompact: isCompact,
-                      ),
-                    ),
-                  ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ItemDetailPage(
+                    itemData: widget.item,
+                    itemId: widget.docId,
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
+              );
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final cardHeight = widget.isCompact
+                    ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
+                    : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
+
+                return Card(
+                  elevation: 6,
+                  shadowColor: Colors.black.withValues(alpha: 0.18),
+                  color: Colors.white,
+                  margin: EdgeInsets.only(bottom: widget.isCompact ? 6 : 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(widget.isCompact ? 8 : 10),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: SizedBox(
+                    height: cardHeight,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: MediaPreview(
+                            media: mediaItems.isEmpty ? null : mediaItems.first,
+                            height: cardHeight,
+                            borderRadius: 0,
+                          ),
+                        ),
+                        Positioned(
+                          top: widget.isCompact ? 7 : 10,
+                          left: widget.isCompact ? 7 : 10,
+                          child: _MediaCountBadges(
+                            imageCount: imageCount,
+                            videoCount: videoCount,
+                            isCompact: widget.isCompact,
+                          ),
+                        ),
+                        Positioned(
+                          top: widget.isCompact ? 7 : 10,
+                          right: widget.isCompact ? 7 : 10,
+                          child: _UploadedAgoBadge(
+                            uploadedAgo: uploadedAgo,
+                            isCompact: widget.isCompact,
+                          ),
+                        ),
+                        Positioned(
+                          left: widget.isCompact ? 8 : 14,
+                          right: widget.isCompact ? 8 : 14,
+                          bottom: widget.isCompact ? 10 : 18,
+                          child: _ImageFilledDetails(
+                            item: widget.item,
+                            isCompact: widget.isCompact,
+                            hasAudio: _audioUrl.isNotEmpty,
+                            isAudioPlaying: _isAudioPlaying,
+                            audioPosition: _audioPosition,
+                            audioDuration: _audioDuration,
+                            onAudioTap: _toggleAudio,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -200,10 +274,23 @@ class _SkeletonChip extends StatelessWidget {
 }
 
 class _ImageFilledDetails extends StatelessWidget {
-  const _ImageFilledDetails({required this.item, required this.isCompact});
+  const _ImageFilledDetails({
+    required this.item,
+    required this.isCompact,
+    required this.hasAudio,
+    required this.isAudioPlaying,
+    required this.audioPosition,
+    required this.audioDuration,
+    required this.onAudioTap,
+  });
 
   final Map<String, dynamic> item;
   final bool isCompact;
+  final bool hasAudio;
+  final bool isAudioPlaying;
+  final Duration audioPosition;
+  final Duration audioDuration;
+  final VoidCallback onAudioTap;
 
   @override
   Widget build(BuildContext context) {
@@ -217,6 +304,30 @@ class _ImageFilledDetails extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (hasAudio) ...[
+              _AudioIconChip(
+                isPlaying: isAudioPlaying,
+                isCompact: isCompact,
+                onTap: onAudioTap,
+              ),
+              SizedBox(height: isCompact ? 5 : 8),
+            ],
+            if (itemName.isNotEmpty) ...[
+              _TextChip(
+                child: Text(
+                  itemName,
+                  maxLines: isCompact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: isCompact ? 14 : 23,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                isCompact: isCompact,
+              ),
+              SizedBox(height: isCompact ? 5 : 8),
+            ],
             _TextChip(
               child: _OverlayInfoRow(
                 text: item['location']?.toString() ?? '',
@@ -236,23 +347,72 @@ class _ImageFilledDetails extends StatelessWidget {
               ),
               isCompact: isCompact,
             ),
-            if (itemName.isNotEmpty) ...[
-              SizedBox(height: isCompact ? 7 : 12),
-              _TextChip(
-                child: Text(
-                  itemName,
-                  maxLines: isCompact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: isCompact ? 14 : 23,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+            if (isAudioPlaying) ...[
+              SizedBox(height: isCompact ? 6 : 9),
+              _AudioTimeline(
+                position: audioPosition,
+                duration: audioDuration,
                 isCompact: isCompact,
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AudioIconChip extends StatelessWidget {
+  const _AudioIconChip({
+    required this.isPlaying,
+    required this.isCompact,
+    required this.onTap,
+  });
+
+  final bool isPlaying;
+  final bool isCompact;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _TextChip(
+      isCompact: isCompact,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Icon(
+          isPlaying ? Icons.pause : Icons.volume_up,
+          color: const Color(0xFFFF7801),
+          size: isCompact ? 18 : 24,
+        ),
+      ),
+    );
+  }
+}
+
+class _AudioTimeline extends StatelessWidget {
+  const _AudioTimeline({
+    required this.position,
+    required this.duration,
+    required this.isCompact,
+  });
+
+  final Duration position;
+  final Duration duration;
+  final bool isCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
+    final progress = (position.inMilliseconds / total).clamp(0.0, 1.0);
+    return Padding(
+      padding: EdgeInsets.only(right: isCompact ? 42 : 84),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(99),
+        child: LinearProgressIndicator(
+          value: progress,
+          minHeight: isCompact ? 3 : 4,
+          backgroundColor: Colors.black.withValues(alpha: 0.16),
+          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
         ),
       ),
     );

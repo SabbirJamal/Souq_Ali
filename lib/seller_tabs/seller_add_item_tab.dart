@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart'
     as device_permissions;
 import 'package:photo_manager/photo_manager.dart';
+import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../camera_capture_page.dart';
@@ -39,10 +41,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   final List<_SelectedMedia> _selectedMedia = [];
   final _priceUnits = ['/ kg', '/ box', '/ bag'];
+  String? _audioDescriptionPath;
+  Duration _audioDescriptionDuration = Duration.zero;
 
   String _lastValidPriceText = '0';
   String _priceUnit = '/ kg';
   int _timePeriodHours = 18;
+  int _audioResetToken = 0;
   bool _isUploading = false;
   bool _showLocationError = false;
 
@@ -339,6 +344,28 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     return File(compressedPath);
   }
 
+  Future<String?> _uploadAudioDescription(String sellerUid) async {
+    final path = _audioDescriptionPath;
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+
+    final audioFile = File(path);
+    if (!await audioFile.exists()) {
+      return null;
+    }
+
+    final fileName = DateTime.now().millisecondsSinceEpoch;
+    final ref = FirebaseStorage.instance.ref().child(
+      'items/$sellerUid/audio_description_$fileName.m4a',
+    );
+    final snapshot = await ref.putFile(
+      audioFile,
+      SettableMetadata(contentType: 'audio/mp4'),
+    );
+    return snapshot.ref.getDownloadURL();
+  }
+
   Future<void> _addItem() async {
     final name = _nameController.text.trim();
     final priceNumber = _priceController.text.trim().isEmpty
@@ -377,6 +404,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       widget.onItemAddedDone?.call();
 
       final uploadedMedia = await _uploadMedia(session.sellerId, mediaToUpload);
+      final audioDescriptionUrl = await _uploadAudioDescription(
+        session.sellerId,
+      );
       final imageUrls = uploadedMedia
           .where((media) => media.type == 'image')
           .map((media) => media.url)
@@ -400,6 +430,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'location': location,
         'image_urls': imageUrls,
         'media_files': mediaFileMaps,
+        if (audioDescriptionUrl != null) ...{
+          'audio_description_url': audioDescriptionUrl,
+          'audio_description_duration_seconds':
+              _audioDescriptionDuration.inSeconds,
+        },
         'time_period_days': 0,
         'time_period_extra_hours': selectedTimePeriodHours,
         'time_period_hours': timePeriodHours,
@@ -450,6 +485,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
       _timePeriodHours = 18;
+      _audioDescriptionPath = null;
+      _audioDescriptionDuration = Duration.zero;
+      _audioResetToken++;
       _showLocationError = false;
     });
     _loadDefaultSellerLocation();
@@ -695,6 +733,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               }
             },
           ),
+          const SizedBox(height: 14),
+          AudioDescriptionField(
+            isDisabled: _isUploading,
+            resetToken: _audioResetToken,
+            onChanged: (path, duration) {
+              _audioDescriptionPath = path;
+              _audioDescriptionDuration = duration;
+            },
+          ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _isUploading ? null : _addItem,
@@ -910,6 +957,311 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                 onChanged(value);
               }
             },
+    );
+  }
+}
+
+class AudioDescriptionField extends StatefulWidget {
+  const AudioDescriptionField({
+    super.key,
+    required this.isDisabled,
+    required this.resetToken,
+    required this.onChanged,
+  });
+
+  final bool isDisabled;
+  final int resetToken;
+  final void Function(String? path, Duration duration) onChanged;
+
+  @override
+  State<AudioDescriptionField> createState() => _AudioDescriptionFieldState();
+}
+
+class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
+  static const _maxDuration = Duration(seconds: 30);
+  static const _cancelSlideDistance = -80.0;
+
+  final AudioRecorder _recorder = AudioRecorder();
+  final AudioPlayer _player = AudioPlayer();
+
+  Timer? _recordTimer;
+  String? _audioPath;
+  Duration _recordElapsed = Duration.zero;
+  Duration _recordedDuration = Duration.zero;
+  bool _isRecording = false;
+  bool _isCancelArmed = false;
+  bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant AudioDescriptionField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.resetToken != oldWidget.resetToken) {
+      _discardAudio(notifyParent: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _recordTimer?.cancel();
+    _recorder.dispose();
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startRecording(PointerDownEvent event) async {
+    if (widget.isDisabled || _isRecording) {
+      return;
+    }
+
+    final permission = await device_permissions.Permission.microphone.request();
+    if (!permission.isGranted || !await _recorder.hasPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone access is needed')),
+        );
+      }
+      return;
+    }
+
+    await _player.stop();
+    final oldPath = _audioPath;
+    if (oldPath != null) {
+      await File(oldPath).delete().catchError((_) {});
+    }
+    widget.onChanged(null, Duration.zero);
+    final tempDir = await getTemporaryDirectory();
+    final path =
+        '${tempDir.path}/audio_description_${DateTime.now().microsecondsSinceEpoch}.m4a';
+
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 64000,
+        sampleRate: 44100,
+      ),
+      path: path,
+    );
+
+    _recordTimer?.cancel();
+    setState(() {
+      _audioPath = null;
+      _recordElapsed = Duration.zero;
+      _recordedDuration = Duration.zero;
+      _isRecording = true;
+      _isCancelArmed = false;
+      _isPlaying = false;
+    });
+
+    _recordTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) {
+        return;
+      }
+      final nextElapsed = _recordElapsed + const Duration(milliseconds: 200);
+      if (nextElapsed >= _maxDuration) {
+        _finishRecording(cancel: false);
+        return;
+      }
+      setState(() => _recordElapsed = nextElapsed);
+    });
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (!_isRecording) {
+      return;
+    }
+    final shouldCancel = event.localPosition.dx <= _cancelSlideDistance;
+    if (shouldCancel != _isCancelArmed) {
+      setState(() => _isCancelArmed = shouldCancel);
+    }
+  }
+
+  Future<void> _handlePointerUp(PointerUpEvent event) async {
+    if (_isRecording) {
+      await _finishRecording(cancel: _isCancelArmed);
+    }
+  }
+
+  Future<void> _finishRecording({required bool cancel}) async {
+    _recordTimer?.cancel();
+    _recordTimer = null;
+    final elapsed = _recordElapsed;
+    final path = await _recorder.stop();
+    if (!mounted) {
+      return;
+    }
+
+    if (cancel || path == null || elapsed < const Duration(milliseconds: 500)) {
+      if (path != null) {
+        await File(path).delete().catchError((_) {});
+      }
+      setState(() {
+        _isRecording = false;
+        _isCancelArmed = false;
+        _recordElapsed = Duration.zero;
+      _recordedDuration = Duration.zero;
+      _audioPath = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isRecording = false;
+      _isCancelArmed = false;
+      _recordedDuration = elapsed > _maxDuration ? _maxDuration : elapsed;
+      _recordElapsed = Duration.zero;
+      _audioPath = path;
+    });
+    widget.onChanged(path, _recordedDuration);
+  }
+
+  Future<void> _togglePlayback() async {
+    final path = _audioPath;
+    if (path == null || widget.isDisabled) {
+      return;
+    }
+    if (_isPlaying) {
+      await _player.pause();
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+      return;
+    }
+    await _player.play(DeviceFileSource(path));
+    if (mounted) {
+      setState(() => _isPlaying = true);
+    }
+  }
+
+  Future<void> _discardAudio({bool notifyParent = true}) async {
+    final path = _audioPath;
+    await _player.stop();
+    if (path != null) {
+      await File(path).delete().catchError((_) {});
+    }
+    if (mounted) {
+      setState(() {
+        _audioPath = null;
+        _recordedDuration = Duration.zero;
+        _isPlaying = false;
+      });
+    }
+    if (notifyParent) {
+      widget.onChanged(null, Duration.zero);
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final seconds = duration.inSeconds.clamp(0, 30);
+    return '0:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAudio = _audioPath != null;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          height: 58,
+          decoration: BoxDecoration(
+            color: widget.isDisabled ? Colors.grey.shade100 : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade600),
+          ),
+          child: Row(
+            children: [
+              const SizedBox(width: 14),
+              if (_isRecording)
+                Text(
+                  '${_formatDuration(_recordElapsed)} / ${_formatDuration(_maxDuration)}',
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              else if (hasAudio)
+                IconButton(
+                  onPressed: _togglePlayback,
+                  icon: Icon(
+                    _isPlaying ? Icons.pause_circle : Icons.play_circle_fill,
+                    color: const Color(0xFFFF7801),
+                    size: 32,
+                  ),
+                )
+              else
+                Icon(Icons.mic_none, color: Colors.grey.shade700),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _isRecording
+                      ? (_isCancelArmed ? 'Release to cancel' : 'Slide to cancel')
+                      : hasAudio
+                          ? 'Audio description ${_formatDuration(_recordedDuration)}'
+                          : 'Audio description',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _isRecording && _isCancelArmed
+                        ? Colors.red
+                        : Colors.grey.shade700,
+                    fontSize: 15,
+                    fontWeight: hasAudio || _isRecording
+                        ? FontWeight.w700
+                        : FontWeight.normal,
+                  ),
+                ),
+              ),
+              Listener(
+                onPointerDown: _startRecording,
+                onPointerMove: _handlePointerMove,
+                onPointerUp: _handlePointerUp,
+                onPointerCancel: (_) {
+                  if (_isRecording) {
+                    _finishRecording(cancel: true);
+                  }
+                },
+                child: Container(
+                  width: 52,
+                  height: 58,
+                  alignment: Alignment.center,
+                  child: CircleAvatar(
+                    radius: _isRecording ? 21 : 18,
+                    backgroundColor: _isRecording
+                        ? Colors.red
+                        : const Color(0xFFFF7801),
+                    child: const Icon(Icons.mic, color: Colors.white, size: 22),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (hasAudio)
+          Positioned(
+            top: -7,
+            right: -7,
+            child: GestureDetector(
+              onTap: widget.isDisabled ? null : () => _discardAudio(),
+              child: const CircleAvatar(
+                radius: 12,
+                backgroundColor: Colors.red,
+                child: Icon(Icons.close, color: Colors.white, size: 14),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

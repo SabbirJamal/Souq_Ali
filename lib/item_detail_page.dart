@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,11 +13,71 @@ import 'share_listing_page.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
 
-class ItemDetailPage extends StatelessWidget {
+class ItemDetailPage extends StatefulWidget {
   const ItemDetailPage({super.key, required this.itemData, required this.itemId});
 
   final Map<String, dynamic> itemData;
   final String itemId;
+
+  @override
+  State<ItemDetailPage> createState() => _ItemDetailPageState();
+}
+
+class _ItemDetailPageState extends State<ItemDetailPage> {
+  late final AudioPlayer _audioPlayer;
+  Duration _audioDuration = Duration.zero;
+  Duration _audioPosition = Duration.zero;
+  bool _isAudioPlaying = false;
+
+  String get _audioUrl =>
+      widget.itemData['audio_description_url']?.toString().trim() ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer = AudioPlayer();
+    _audioPlayer.onDurationChanged.listen((duration) {
+      if (mounted) {
+        setState(() => _audioDuration = duration);
+      }
+    });
+    _audioPlayer.onPositionChanged.listen((position) {
+      if (mounted) {
+        setState(() => _audioPosition = position);
+      }
+    });
+    _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isAudioPlaying = false;
+          _audioPosition = Duration.zero;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _toggleAudio() async {
+    if (_audioUrl.isEmpty) {
+      return;
+    }
+    if (_isAudioPlaying) {
+      await _audioPlayer.pause();
+      if (mounted) {
+        setState(() => _isAudioPlaying = false);
+      }
+      return;
+    }
+    await _audioPlayer.play(UrlSource(_audioUrl));
+    if (mounted) {
+      setState(() => _isAudioPlaying = true);
+    }
+  }
 
   Future<void> _launchPhone(String phoneNumber) async {
     final phoneUri = Uri(scheme: 'tel', path: phoneNumber);
@@ -67,9 +128,9 @@ class ItemDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mediaItems = mediaItemsFromMap(itemData);
-    final sellerPhone = itemData['seller_phone']?.toString() ?? '';
-    final itemName = itemData['item_name']?.toString().trim() ?? '';
+    final mediaItems = mediaItemsFromMap(widget.itemData);
+    final sellerPhone = widget.itemData['seller_phone']?.toString() ?? '';
+    final itemName = widget.itemData['item_name']?.toString().trim() ?? '';
 
     return PopScope(
       canPop: false,
@@ -90,8 +151,13 @@ class ItemDetailPage extends StatelessWidget {
                       _DetailMediaHeader(
                         mediaItems: mediaItems,
                         itemName: itemName,
-                        price: _formatPrice(itemData['item_price']),
-                        location: itemData['location']?.toString() ?? '',
+                        price: _formatPrice(widget.itemData['item_price']),
+                        location: widget.itemData['location']?.toString() ?? '',
+                        audioUrl: _audioUrl,
+                        isAudioPlaying: _isAudioPlaying,
+                        audioPosition: _audioPosition,
+                        audioDuration: _audioDuration,
+                        onAudioTap: _toggleAudio,
                         onMediaTap: (media, index) => _openFullscreen(
                           context,
                           mediaItems,
@@ -106,9 +172,9 @@ class ItemDetailPage extends StatelessWidget {
                           children: [
                             const SizedBox(height: 2),
                             _SellerAvatarIcon(
-                              name: itemData['seller_name'],
-                              sellerId: itemData['seller_uid'],
-                              sellerPhone: itemData['seller_phone'],
+                              name: widget.itemData['seller_name'],
+                              sellerId: widget.itemData['seller_uid'],
+                              sellerPhone: widget.itemData['seller_phone'],
                             ),
                           ],
                         ),
@@ -126,8 +192,8 @@ class ItemDetailPage extends StatelessWidget {
                       context,
                       MaterialPageRoute(
                         builder: (_) => ShareListingPage(
-                          itemId: itemId,
-                          itemData: itemData,
+                          itemId: widget.itemId,
+                          itemData: widget.itemData,
                           mediaItems: mediaItems,
                         ),
                       ),
@@ -199,6 +265,11 @@ class _DetailMediaHeader extends StatelessWidget {
     required this.itemName,
     required this.price,
     required this.location,
+    required this.audioUrl,
+    required this.isAudioPlaying,
+    required this.audioPosition,
+    required this.audioDuration,
+    required this.onAudioTap,
     required this.onMediaTap,
   });
 
@@ -206,6 +277,11 @@ class _DetailMediaHeader extends StatelessWidget {
   final String itemName;
   final String price;
   final String location;
+  final String audioUrl;
+  final bool isAudioPlaying;
+  final Duration audioPosition;
+  final Duration audioDuration;
+  final VoidCallback onAudioTap;
   final void Function(MediaItem media, int index) onMediaTap;
 
   @override
@@ -234,6 +310,34 @@ class _DetailMediaHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (audioUrl.isNotEmpty) ...[
+                  _DetailOverlayChip(
+                    child: GestureDetector(
+                      onTap: onAudioTap,
+                      child: Icon(
+                        isAudioPlaying ? Icons.pause : Icons.volume_up,
+                        color: const Color(0xFFFF7801),
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                if (itemName.isNotEmpty) ...[
+                  _DetailOverlayChip(
+                    child: Text(
+                      itemName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 if (trimmedLocation.isNotEmpty)
                   _DetailOverlayChip(
                     child: Row(
@@ -269,25 +373,46 @@ class _DetailMediaHeader extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (itemName.isNotEmpty) ...[
+                if (audioUrl.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  _DetailOverlayChip(
-                    child: Text(
-                      itemName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  if (isAudioPlaying)
+                    _DetailAudioTimeline(
+                      position: audioPosition,
+                      duration: audioDuration,
                     ),
-                  ),
                 ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DetailAudioTimeline extends StatelessWidget {
+  const _DetailAudioTimeline({
+    required this.position,
+    required this.duration,
+  });
+
+  final Duration position;
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
+    final progress = (position.inMilliseconds / total).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.only(right: 92),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(99),
+        child: LinearProgressIndicator(
+          value: progress,
+          minHeight: 4,
+          backgroundColor: Colors.black.withValues(alpha: 0.16),
+          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
+        ),
       ),
     );
   }
