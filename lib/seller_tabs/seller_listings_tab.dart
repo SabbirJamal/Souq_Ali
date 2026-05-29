@@ -257,71 +257,130 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
           return const Center(child: Text('Please login again'));
         }
 
-        return CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance
-                  .collection('items')
-                  .where('seller_uid', isEqualTo: session.sellerId)
-                  .snapshots(),
-              builder: (context, itemsSnapshot) {
-                if (itemsSnapshot.connectionState == ConnectionState.waiting) {
-                  return const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-                if (itemsSnapshot.hasError) {
-                  return SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: Text('Error: ${itemsSnapshot.error}')),
-                  );
-                }
+        return Stack(
+          children: [
+            CustomScrollView(
+              slivers: [
+                const SliverToBoxAdapter(child: _ListingsScrollableHeader()),
+                SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('items')
+                      .where('seller_uid', isEqualTo: session.sellerId)
+                      .snapshots(),
+                  builder: (context, itemsSnapshot) {
+                    if (itemsSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (itemsSnapshot.hasError) {
+                      return SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text('Error: ${itemsSnapshot.error}'),
+                        ),
+                      );
+                    }
 
-                final docs = (itemsSnapshot.data?.docs ?? [])
-                    .where((doc) => _isItemActive(doc.data()))
-                    .toList()
-                  ..sort((a, b) {
-                    final aDate =
-                        _createdAt(a.data()) ??
-                        DateTime.fromMillisecondsSinceEpoch(0);
-                    final bDate =
-                        _createdAt(b.data()) ??
-                        DateTime.fromMillisecondsSinceEpoch(0);
-                    return bDate.compareTo(aDate);
-                  });
+                    final docs = (itemsSnapshot.data?.docs ?? [])
+                        .where((doc) => _isItemActive(doc.data()))
+                        .toList()
+                      ..sort((a, b) {
+                        final aDate =
+                            _createdAt(a.data()) ??
+                            DateTime.fromMillisecondsSinceEpoch(0);
+                        final bDate =
+                            _createdAt(b.data()) ??
+                            DateTime.fromMillisecondsSinceEpoch(0);
+                        return bDate.compareTo(aDate);
+                      });
 
-                if (docs.isEmpty) {
-                  return const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Text(
-                        'No items listed yet',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                    if (docs.isEmpty) {
+                      return const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text(
+                            'No items listed yet',
+                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+                      sliver: SliverToBoxAdapter(
+                        child: _ListingsGrid(
+                          docs: docs,
+                          uploadedAgo: _uploadedAgo,
+                          expiryText: _expiryText,
+                          formatPrice: _formatPrice,
+                          onEdit: _openEdit,
+                          onDelete: _confirmDelete,
+                        ),
                       ),
-                    ),
-                  );
-                }
-
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-                  sliver: SliverToBoxAdapter(
-                    child: _ListingsGrid(
-                      docs: docs,
-                      uploadedAgo: _uploadedAgo,
-                      expiryText: _expiryText,
-                      formatPrice: _formatPrice,
-                      onEdit: _openEdit,
-                      onDelete: _confirmDelete,
-                    ),
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ],
+            ),
+            const Positioned(
+              top: 8,
+              right: 14,
+              child: _FloatingShareButton(),
             ),
           ],
         );
       },
+    );
+  }
+}
+
+class _ListingsScrollableHeader extends StatelessWidget {
+  const _ListingsScrollableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      width: double.infinity,
+      color: const Color(0xFFF4FBF7),
+      alignment: Alignment.center,
+      child: const SizedBox(
+        height: 56,
+        width: 152,
+        child: Image(
+          image: AssetImage('assets/branding/logo.png'),
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
+  }
+}
+
+class _FloatingShareButton extends StatelessWidget {
+  const _FloatingShareButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: () {},
+      style: OutlinedButton.styleFrom(
+        backgroundColor: const Color(0xFFFF7801),
+        foregroundColor: Colors.white,
+        side: BorderSide.none,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        minimumSize: const Size(82, 38),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      child: const Text(
+        'Share',
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+      ),
     );
   }
 }

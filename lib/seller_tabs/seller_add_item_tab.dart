@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -80,9 +81,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> _openCamera() async {
-    if (!_canAddMedia()) {
-      return;
-    }
     if (!await _ensureMediaPermissions()) {
       return;
     }
@@ -99,6 +97,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       return;
     }
     final captured = result;
+    if (!_canAddMedia()) {
+      return;
+    }
     if (captured.isVideo && !await _isVideoWithinLimit(captured.file)) {
       _showMessage('Video cannot be more than 1 minute');
       return;
@@ -108,7 +109,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _selectedMedia.add(
         _SelectedMedia(file: captured.file, type: captured.type),
       );
-      _sortSelectedMedia();
     });
   }
 
@@ -172,8 +172,19 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     );
   }
 
-  Future<void> _addGalleryAssets(List<AssetEntity> assets) async {
+  Future<void> _addGalleryAssets(
+    List<AssetEntity> assets,
+    Set<String> selectedAssetIds,
+  ) async {
     if (assets.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _selectedMedia.removeWhere((media) {
+            final assetId = media.assetId;
+            return assetId != null && !selectedAssetIds.contains(assetId);
+          });
+        });
+      }
       return;
     }
 
@@ -202,22 +213,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       );
     }
 
-    if (newMedia.isEmpty) {
-      return;
-    }
-
     setState(() {
+      _selectedMedia.removeWhere((media) {
+        final assetId = media.assetId;
+        return assetId != null && !selectedAssetIds.contains(assetId);
+      });
       _selectedMedia.addAll(newMedia);
-      _sortSelectedMedia();
-    });
-  }
-
-  void _sortSelectedMedia() {
-    _selectedMedia.sort((first, second) {
-      if (first.isVideo == second.isVideo) {
-        return 0;
-      }
-      return first.isVideo ? 1 : -1;
     });
   }
 
@@ -243,13 +244,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     List<_SelectedMedia>? mediaToUpload,
   ]) async {
     final uploaded = <_UploadedMedia>[];
-    final orderedMedia = [...(mediaToUpload ?? _selectedMedia)]
-      ..sort((first, second) {
-        if (first.isVideo == second.isVideo) {
-          return 0;
-        }
-        return first.isVideo ? 1 : -1;
-      });
+    final orderedMedia = [...(mediaToUpload ?? _selectedMedia)];
 
     for (var i = 0; i < orderedMedia.length; i++) {
       final media = orderedMedia[i];
@@ -637,8 +632,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           _buildTextField(
             controller: _nameController,
             label: 'Item Name',
-            hint: 'Fresh Tomatoes',
-            icon: Icons.shopping_bag,
+            hint: '',
             maxLength: 80,
           ),
           const SizedBox(height: 14),
@@ -649,7 +643,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                 child: _buildTextField(
                   controller: _priceController,
                   label: 'Price',
-                  hint: '2.500',
+                  hint: '',
                   icon: null,
                   prefixIconWidget: const Padding(
                     padding: EdgeInsets.all(12),
@@ -762,42 +756,60 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             }
 
             final media = _selectedMedia[index];
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: media.isVideo
-                      ? Container(
-                          color: Colors.black87,
-                          child: const Icon(
-                            Icons.play_circle_fill,
-                            color: Colors.white,
-                            size: 42,
-                          ),
-                        )
-                      : Image.file(media.file, fit: BoxFit.cover),
-                ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: GestureDetector(
-                    onTap: _isUploading
-                        ? null
-                        : () => setState(() => _selectedMedia.removeAt(index)),
-                    child: const CircleAvatar(
-                      radius: 12,
-                      backgroundColor: Colors.red,
-                      child: Icon(Icons.close, size: 14, color: Colors.white),
+            return DragTarget<int>(
+              onWillAcceptWithDetails: (details) =>
+                  !_isUploading && details.data != index,
+              onAcceptWithDetails: (details) {
+                _moveSelectedMedia(details.data, index);
+              },
+              builder: (context, candidateData, rejectedData) {
+                final tile = _SelectedMediaTile(
+                  media: media,
+                  sequenceNumber: index + 1,
+                  isDropTarget: candidateData.isNotEmpty,
+                  onRemove: _isUploading
+                      ? null
+                      : () => setState(() => _selectedMedia.removeAt(index)),
+                );
+
+                if (_isUploading) {
+                  return tile;
+                }
+
+                return LongPressDraggable<int>(
+                  data: index,
+                  feedback: SizedBox(
+                    width: 110,
+                    height: 110,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Opacity(opacity: 0.88, child: tile),
                     ),
                   ),
-                ),
-              ],
+                  childWhenDragging: Opacity(opacity: 0.35, child: tile),
+                  child: tile,
+                );
+              },
             );
           },
         ),
       ],
     );
+  }
+
+  void _moveSelectedMedia(int fromIndex, int toIndex) {
+    if (fromIndex == toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= _selectedMedia.length ||
+        toIndex >= _selectedMedia.length) {
+      return;
+    }
+
+    setState(() {
+      final media = _selectedMedia.removeAt(fromIndex);
+      _selectedMedia.insert(toIndex, media);
+    });
   }
 
   Widget _buildMediaActionCircle({
@@ -902,6 +914,107 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 }
 
+class _SelectedMediaTile extends StatelessWidget {
+  const _SelectedMediaTile({
+    required this.media,
+    required this.sequenceNumber,
+    required this.isDropTarget,
+    required this.onRemove,
+  });
+
+  final _SelectedMedia media;
+  final int sequenceNumber;
+  final bool isDropTarget;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: isDropTarget
+            ? Border.all(color: const Color(0xFF25D366), width: 3)
+            : null,
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: media.isVideo
+                ? Container(
+                    color: Colors.black87,
+                    child: const Icon(
+                      Icons.play_circle_fill,
+                      color: Colors.white,
+                      size: 42,
+                    ),
+                  )
+                : Image.file(media.file, fit: BoxFit.cover),
+          ),
+          Positioned(
+            top: 4,
+            left: 4,
+            child: CircleAvatar(
+              radius: 12,
+              backgroundColor: const Color(0xFF25D366),
+              child: Text(
+                '$sequenceNumber',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: const CircleAvatar(
+                radius: 12,
+                backgroundColor: Colors.red,
+                child: Icon(Icons.close, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PickerLimitMessage extends StatelessWidget {
+  const _PickerLimitMessage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.82),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Text(
+            'Only 9 media can be selected',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MediaPickerSheet extends StatefulWidget {
   const _MediaPickerSheet({
     required this.selectedIds,
@@ -913,7 +1026,8 @@ class _MediaPickerSheet extends StatefulWidget {
   final Set<String> selectedIds;
   final int selectedCount;
   final int maxCount;
-  final Future<void> Function(List<AssetEntity> assets) onAssetsDone;
+  final Future<void> Function(List<AssetEntity> assets, Set<String> selectedIds)
+  onAssetsDone;
 
   @override
   State<_MediaPickerSheet> createState() => _MediaPickerSheetState();
@@ -934,8 +1048,14 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   bool _hasMoreAssets = true;
   bool _hasPermission = true;
   bool _hasLimitedPermission = false;
+  bool _maxSelectionMessageShown = false;
+  bool _isMaxSelectionMessageVisible = false;
   int _currentPage = 0;
   int _loadToken = 0;
+  Timer? _maxSelectionMessageTimer;
+
+  int get _currentTotalSelectionCount =>
+      widget.selectedCount - widget.selectedIds.length + _selectedIds.length;
 
   @override
   void initState() {
@@ -943,6 +1063,12 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
     _selectedIds.addAll(widget.selectedIds);
     _rebuildSelectedOrder();
     _loadAssets();
+  }
+
+  @override
+  void dispose() {
+    _maxSelectionMessageTimer?.cancel();
+    super.dispose();
   }
 
   void _rebuildSelectedOrder() {
@@ -1080,22 +1206,20 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   }
 
   Future<void> _toggleAsset(AssetEntity asset) async {
-    if (widget.selectedIds.contains(asset.id)) {
-      return;
-    }
     if (_selectedIds.contains(asset.id)) {
       setState(() {
         _selectedIds.remove(asset.id);
         _pendingAssets.removeWhere((pending) => pending.id == asset.id);
+        if (_currentTotalSelectionCount < widget.maxCount) {
+          _maxSelectionMessageShown = false;
+        }
         _rebuildSelectedOrder();
       });
       return;
     }
 
-    if (_selectedIds.length >= widget.maxCount) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Only 9 media can be selected')),
-      );
+    if (_currentTotalSelectionCount >= widget.maxCount) {
+      _showMaxSelectionMessage();
       return;
     }
     if (asset.type == AssetType.video && asset.duration > 60) {
@@ -1108,12 +1232,29 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
     setState(() {
       _selectedIds.add(asset.id);
       _pendingAssets.add(asset);
+      if (_currentTotalSelectionCount < widget.maxCount) {
+        _maxSelectionMessageShown = false;
+      }
       _rebuildSelectedOrder();
     });
   }
 
+  void _showMaxSelectionMessage() {
+    if (_maxSelectionMessageShown) {
+      return;
+    }
+    _maxSelectionMessageShown = true;
+    _maxSelectionMessageTimer?.cancel();
+    setState(() => _isMaxSelectionMessageVisible = true);
+    _maxSelectionMessageTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() => _isMaxSelectionMessageVisible = false);
+      }
+    });
+  }
+
   Future<void> _finishSelection() async {
-    await widget.onAssetsDone(_pendingAssets);
+    await widget.onAssetsDone(_pendingAssets, Set<String>.from(_selectedIds));
     if (mounted) {
       Navigator.pop(context);
     }
@@ -1219,6 +1360,19 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
                       ),
                     ),
                   ),
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  bottom: _pendingAssets.isEmpty ? 92 : 84,
+                  child: SafeArea(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: _isMaxSelectionMessageVisible
+                          ? const _PickerLimitMessage()
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1285,7 +1439,9 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
           TextButton(
             onPressed: _finishSelection,
             child: Text(
-              _selectedIds.isEmpty ? 'Done' : 'Done (${_selectedIds.length})',
+              _currentTotalSelectionCount == 0
+                  ? 'Done'
+                  : 'Done ($_currentTotalSelectionCount)',
               style: const TextStyle(color: Color(0xFF25D366)),
             ),
           ),

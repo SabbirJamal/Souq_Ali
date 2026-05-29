@@ -247,6 +247,7 @@ class _SellerProfileBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sellerDocId = sellerId.isNotEmpty ? sellerId : sellerPhone;
+    final topInset = MediaQuery.paddingOf(context).top;
 
     return Stack(
       children: [
@@ -270,11 +271,18 @@ class _SellerProfileBody extends StatelessWidget {
 
             return CustomScrollView(
               slivers: [
+                if (!isOwnProfile)
+                  SliverToBoxAdapter(
+                    child: _ProfileScrollableHeader(onBack: onBack),
+                  ),
                 SliverToBoxAdapter(
                   child: _SellerProfileTop(
                     sellerName: sellerName,
                     crNumber: crNumber,
                     sellerPhone: sellerPhone,
+                    topPadding: isOwnProfile
+                        ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
+                        : 16,
                   ),
                 ),
                 _SellerActivePosts(sellerId: sellerDocId),
@@ -284,8 +292,12 @@ class _SellerProfileBody extends StatelessWidget {
         ),
         if (isOwnProfile)
           _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
-        else if (onBack != null)
-          _ProfileHeader(onBack: onBack!),
+        else
+          Positioned(
+            top: topInset + 8,
+            right: 14,
+            child: const _ProfileFloatingShareButton(),
+          ),
       ],
     );
   }
@@ -339,58 +351,67 @@ class _ProfileSettingsMenu extends StatelessWidget {
   }
 }
 
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.onBack});
+class _ProfileScrollableHeader extends StatelessWidget {
+  const _ProfileScrollableHeader({required this.onBack});
 
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-    return Positioned(
-      top: topInset,
-      left: 0,
-      right: 0,
-      child: Container(
-        height: 56,
-        color: const Color(0xFFF4FBF7),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            const SizedBox(
-              height: 56,
-              width: 152,
-              child: Image(
-                image: AssetImage('assets/branding/logo.png'),
-                fit: BoxFit.cover,
-              ),
+    return Container(
+      height: 56 + MediaQuery.paddingOf(context).top,
+      color: const Color(0xFFF4FBF7),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        MediaQuery.paddingOf(context).top,
+        12,
+        0,
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const SizedBox(
+            height: 56,
+            width: 152,
+            child: Image(
+              image: AssetImage('assets/branding/logo.png'),
+              fit: BoxFit.cover,
             ),
+          ),
+          if (onBack != null)
             Positioned(
               left: 0,
               child: _BorderedHeaderButton(
-                onTap: onBack,
+                onTap: onBack!,
+                circular: true,
                 child: const Icon(Icons.arrow_back, color: Colors.black),
               ),
             ),
-            Positioned(
-              right: 0,
-              child: _BorderedHeaderButton(
-                width: 88,
-                onTap: () {},
-                backgroundColor: const Color(0xFFFF7801),
-                borderColor: null,
-                child: const Text(
-                  'Share',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileFloatingShareButton extends StatelessWidget {
+  const _ProfileFloatingShareButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: _BorderedHeaderButton(
+        width: 88,
+        onTap: () {},
+        backgroundColor: const Color(0xFFFF7801),
+        borderColor: null,
+        child: const Text(
+          'Share',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -404,6 +425,7 @@ class _BorderedHeaderButton extends StatelessWidget {
     this.width = 44,
     this.backgroundColor = Colors.white,
     this.borderColor = Colors.black,
+    this.circular = false,
   });
 
   final VoidCallback onTap;
@@ -411,24 +433,26 @@ class _BorderedHeaderButton extends StatelessWidget {
   final double width;
   final Color backgroundColor;
   final Color? borderColor;
+  final bool circular;
 
   @override
   Widget build(BuildContext context) {
+    final borderRadius = BorderRadius.circular(circular ? 999 : 10);
     return Material(
       color: backgroundColor,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: borderRadius,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: borderRadius,
         child: Container(
           width: width,
-          height: 42,
+          height: circular ? width : 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             border: borderColor == null
                 ? null
                 : Border.all(color: borderColor!, width: 1.2),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: borderRadius,
           ),
           child: child,
         ),
@@ -442,15 +466,16 @@ class _SellerProfileTop extends StatelessWidget {
     required this.sellerName,
     required this.crNumber,
     required this.sellerPhone,
+    required this.topPadding,
   });
 
   final String sellerName;
   final String crNumber;
   final String sellerPhone;
+  final double topPadding;
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = 56 + (MediaQuery.sizeOf(context).height * 0.05);
     final visibleName = sellerName.trim();
     final topLine = [
       if (visibleName.isNotEmpty) visibleName,

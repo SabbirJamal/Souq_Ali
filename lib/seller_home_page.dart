@@ -246,8 +246,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    final showTabHeader =
-        widget.isSellerMode && (_currentIndex == 3 || _currentIndex == 4);
+    final showTabHeader = widget.isSellerMode && _currentIndex == 4;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -268,9 +267,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
               Container(height: topInset, color: Colors.black),
               if (showTabHeader)
                 _SellerTabHeader(
-                  rightAction: _currentIndex == 3
-                      ? const _HeaderShareButton()
-                      : _HeaderLogoutButton(onLogout: _confirmLogout),
+                  rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),
                 ),
               Expanded(
                 child: NotificationListener<ScrollNotification>(
@@ -534,13 +531,15 @@ class _HeaderLogoutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton(
+    return FilledButton(
       onPressed: onLogout,
-      style: TextButton.styleFrom(
-        foregroundColor: Colors.red,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        minimumSize: const Size(0, 36),
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFFFF7801),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        minimumSize: const Size(86, 38),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       child: const Text(
         'Log out',
@@ -550,26 +549,3 @@ class _HeaderLogoutButton extends StatelessWidget {
   }
 }
 
-class _HeaderShareButton extends StatelessWidget {
-  const _HeaderShareButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () {},
-      style: OutlinedButton.styleFrom(
-        backgroundColor: const Color(0xFFFF7801),
-        foregroundColor: Colors.white,
-        side: BorderSide.none,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        minimumSize: const Size(82, 38),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-      child: const Text(
-        'Share',
-        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-      ),
-    );
-  }
-}
