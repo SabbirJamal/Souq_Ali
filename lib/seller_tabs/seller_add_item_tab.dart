@@ -722,7 +722,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               _audioDescriptionDuration = duration;
             },
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -1032,7 +1032,9 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   Duration _recordedDuration = Duration.zero;
   bool _isRecording = false;
   bool _isCancelArmed = false;
+  bool _showCancelFeedback = false;
   bool _isPlaying = false;
+  double _recordDragOffset = 0;
 
   @override
   void initState() {
@@ -1101,7 +1103,9 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
       _recordedDuration = Duration.zero;
       _isRecording = true;
       _isCancelArmed = false;
+      _showCancelFeedback = false;
       _isPlaying = false;
+      _recordDragOffset = 0;
     });
 
     _recordTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
@@ -1121,10 +1125,12 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     if (!_isRecording) {
       return;
     }
-    final shouldCancel = event.localPosition.dx <= _cancelSlideDistance;
-    if (shouldCancel != _isCancelArmed) {
-      setState(() => _isCancelArmed = shouldCancel);
-    }
+    final dragOffset = event.localPosition.dx.clamp(_cancelSlideDistance, 0.0);
+    final shouldCancel = dragOffset <= _cancelSlideDistance;
+    setState(() {
+      _recordDragOffset = dragOffset;
+      _isCancelArmed = shouldCancel;
+    });
   }
 
   Future<void> _handlePointerUp(PointerUpEvent event) async {
@@ -1149,9 +1155,16 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
       setState(() {
         _isRecording = false;
         _isCancelArmed = false;
+        _showCancelFeedback = true;
         _recordElapsed = Duration.zero;
-      _recordedDuration = Duration.zero;
-      _audioPath = null;
+        _recordedDuration = Duration.zero;
+        _audioPath = null;
+        _recordDragOffset = 0;
+      });
+      Future<void>.delayed(const Duration(milliseconds: 820), () {
+        if (mounted) {
+          setState(() => _showCancelFeedback = false);
+        }
       });
       return;
     }
@@ -1159,9 +1172,11 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     setState(() {
       _isRecording = false;
       _isCancelArmed = false;
+      _showCancelFeedback = false;
       _recordedDuration = elapsed > _maxDuration ? _maxDuration : elapsed;
       _recordElapsed = Duration.zero;
       _audioPath = path;
+      _recordDragOffset = 0;
     });
     widget.onChanged(path, _recordedDuration);
   }
@@ -1210,22 +1225,31 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   @override
   Widget build(BuildContext context) {
     final hasAudio = _audioPath != null;
+    final cancelProgress = (_recordDragOffset.abs() /
+            _cancelSlideDistance.abs())
+        .clamp(0.0, 1.0);
+    final cancelHintOffset = -0.28 * cancelProgress;
+    final cancelHintOpacity =
+        _isRecording ? (1 - (cancelProgress * 0.75)).clamp(0.25, 1.0) : 1.0;
 
-    return InputDecorator(
-      isFocused: _isRecording,
-      isEmpty: !hasAudio && !_isRecording,
-      decoration: InputDecoration(
-        filled: true,
-        fillColor: widget.isDisabled ? Colors.grey.shade100 : Colors.white,
-        labelText: widget.label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-      ),
-      child: SizedBox(
-        height: 40,
+    return SizedBox(
+      height: 70,
+      child: InputDecorator(
+        isFocused: _isRecording || _showCancelFeedback,
+        isEmpty: !hasAudio && !_isRecording && !_showCancelFeedback,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: widget.isDisabled ? Colors.grey.shade100 : Colors.white,
+          labelText: widget.label,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          constraints: const BoxConstraints(minHeight: 70, maxHeight: 70),
+        ),
         child: Row(
           children: [
-            const SizedBox(width: 14),
             if (_isRecording)
               Text(
                 '${_formatDuration(_recordElapsed)} / ${_formatDuration(_maxDuration)}',
@@ -1237,14 +1261,15 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
               )
             else if (hasAudio)
               Container(
-                width: 44,
-                alignment: Alignment.centerLeft,
+                width: 52,
+                height: 40,
+                alignment: Alignment.center,
                 child: IconButton(
                   onPressed: _togglePlayback,
                   icon: Icon(
                     _isPlaying ? Icons.pause_circle : Icons.play_circle_fill,
                     color: const Color(0xFFFF7801),
-                    size: 38,
+                    size: 36,
                   ),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(
@@ -1254,25 +1279,115 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                 ),
               )
             else
-            const SizedBox(width: 10),
+              const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                _isRecording
-                    ? (_isCancelArmed ? 'Release to cancel' : '<<< Slide to Cancel')
-                    : hasAudio
-                        ? 'Audio description ${_formatDuration(_recordedDuration)}'
-                        : '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: _isRecording ? TextAlign.right : TextAlign.left,
-                style: TextStyle(
-                  color: _isRecording && _isCancelArmed
-                      ? Colors.red
-                      : Colors.grey.shade700,
-                  fontSize: 15,
-                  fontWeight: hasAudio || _isRecording
-                      ? FontWeight.w700
-                      : FontWeight.normal,
+              child: Padding(
+                padding: EdgeInsets.only(left: _isRecording ? 24 : 0),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  child: _showCancelFeedback
+                      ? TweenAnimationBuilder<double>(
+                          key: const ValueKey('cancel-feedback'),
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(milliseconds: 720),
+                          curve: Curves.easeInOut,
+                          builder: (context, value, child) {
+                            final lift = value < 0.45
+                                ? -44 * (value / 0.45)
+                                : -44 + (52 * ((value - 0.45) / 0.55));
+                            final fade = value < 0.72
+                                ? 1.0
+                                : (1 - ((value - 0.72) / 0.28))
+                                      .clamp(0.0, 1.0);
+                            final micScale = value < 0.45
+                                ? 1.0
+                                : (1 - (0.25 * ((value - 0.45) / 0.55)));
+
+                            return Opacity(
+                              opacity: fade,
+                              child: SizedBox(
+                                height: 40,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(
+                                    width: 42,
+                                    height: 40,
+                                    child: OverflowBox(
+                                      maxHeight: 92,
+                                      alignment: Alignment.bottomLeft,
+                                      child: SizedBox(
+                                        width: 42,
+                                        height: 72,
+                                        child: Stack(
+                                      clipBehavior: Clip.none,
+                                      alignment: Alignment.bottomCenter,
+                                      children: [
+                                        const Positioned(
+                                          bottom: 2,
+                                          child: Icon(
+                                            Icons.delete,
+                                            color: Color(0xFF606060),
+                                            size: 22,
+                                          ),
+                                        ),
+                                        Transform.translate(
+                                          offset: Offset(0, lift),
+                                          child: Transform.scale(
+                                            scale: micScale,
+                                            child: const CircleAvatar(
+                                              radius: 10,
+                                              backgroundColor: Colors.red,
+                                              child: Icon(
+                                                Icons.mic,
+                                                color: Colors.white,
+                                                size: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                      : AnimatedSlide(
+                        key: ValueKey(_isRecording ? 'recording' : 'idle'),
+                        offset: Offset(cancelHintOffset, 0),
+                        duration: const Duration(milliseconds: 90),
+                        curve: Curves.easeOut,
+                        child: AnimatedOpacity(
+                          opacity: cancelHintOpacity,
+                          duration: const Duration(milliseconds: 90),
+                          child: Text(
+                            _isRecording
+                                ? (_isCancelArmed
+                                    ? 'Release to cancel'
+                                    : '<<< Slide to Cancel')
+                                : hasAudio
+                                    ? 'Audio description ${_formatDuration(_recordedDuration)}'
+                                    : '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: _isRecording
+                                ? TextAlign.right
+                                : TextAlign.left,
+                            style: TextStyle(
+                              color: _isRecording && _isCancelArmed
+                                  ? Colors.red
+                                  : Colors.grey.shade700,
+                              fontSize: 15,
+                              fontWeight: hasAudio || _isRecording
+                                  ? FontWeight.w700
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ),
+                      ),
                 ),
               ),
             ),
@@ -1300,18 +1415,26 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                     _finishRecording(cancel: true);
                   }
                 },
-                child: Container(
-                  width: _isRecording ? 78 : 52,
-                  height: 40,
-                  alignment: Alignment.center,
-                  child: CircleAvatar(
-                    radius: _isRecording ? 37.5 : 18,
-                    backgroundColor:
-                        _isRecording ? Colors.red : const Color(0xFFFF7801),
-                    child: Icon(
-                      Icons.mic,
-                      color: Colors.white,
-                      size: _isRecording ? 42 : 22,
+                child: Transform.translate(
+                  offset: const Offset(8, 0),
+                  child: Container(
+                    width: 52,
+                    height: 40,
+                    alignment: Alignment.center,
+                    child: OverflowBox(
+                      maxWidth: 88,
+                      maxHeight: 88,
+                      child: CircleAvatar(
+                        radius: _isRecording ? 44 : 18,
+                        backgroundColor: _isRecording
+                            ? Colors.red
+                            : const Color(0xFFFF7801),
+                        child: Icon(
+                          Icons.mic,
+                          color: Colors.white,
+                          size: _isRecording ? 40 : 22,
+                        ),
+                      ),
                     ),
                   ),
                 ),

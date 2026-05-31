@@ -47,6 +47,7 @@ class MediaCarousel extends StatefulWidget {
     this.showCountBadge = true,
     this.showPageDots = false,
     this.peekSideItems = false,
+    this.playVideosInline = false,
     this.onMediaTap,
   });
 
@@ -57,6 +58,7 @@ class MediaCarousel extends StatefulWidget {
   final bool showCountBadge;
   final bool showPageDots;
   final bool peekSideItems;
+  final bool playVideosInline;
   final void Function(MediaItem media, int index)? onMediaTap;
 
   @override
@@ -259,11 +261,18 @@ class _MediaCarouselState extends State<MediaCarousel> {
                               widget.borderRadius,
                             ),
                             child: media.isVideo
-                                ? _VideoThumbnailPreview(
-                                    thumbnailUrl: media.thumbnailUrl,
-                                    height: widget.height,
-                                    fit: widget.fit,
-                                  )
+                                ? widget.playVideosInline
+                                    ? VideoPreview(
+                                        url: media.url,
+                                        thumbnailUrl: media.thumbnailUrl,
+                                        fit: widget.fit,
+                                        playIconSize: 72,
+                                      )
+                                    : _VideoThumbnailPreview(
+                                        thumbnailUrl: media.thumbnailUrl,
+                                        height: widget.height,
+                                        fit: widget.fit,
+                                      )
                                 : CachedNetworkImage(
                                     imageUrl: media.url,
                                     width: double.infinity,
@@ -427,6 +436,7 @@ class VideoPreview extends StatefulWidget {
     this.thumbnailUrl,
     this.controller,
     this.initializeFuture,
+    this.playIconSize = 24,
   });
 
   final String url;
@@ -435,6 +445,7 @@ class VideoPreview extends StatefulWidget {
   final String? thumbnailUrl;
   final VideoPlayerController? controller;
   final Future<void>? initializeFuture;
+  final double playIconSize;
 
   @override
   State<VideoPreview> createState() => _VideoPreviewState();
@@ -531,6 +542,9 @@ class _VideoPreviewState extends State<VideoPreview> {
             ),
           ),
           IconButton.filled(
+            style: IconButton.styleFrom(
+              fixedSize: Size.square(widget.playIconSize + 20),
+            ),
             onPressed: () {
               setState(() {
                 if (_controller.value.isPlaying) {
@@ -543,6 +557,7 @@ class _VideoPreviewState extends State<VideoPreview> {
             },
             icon: Icon(
               _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+              size: widget.playIconSize,
             ),
           ),
         ],

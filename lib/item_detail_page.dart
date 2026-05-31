@@ -438,6 +438,7 @@ class _DetailMediaHeader extends StatelessWidget {
             fit: BoxFit.cover,
             showCountBadge: true,
             showPageDots: true,
+            playVideosInline: true,
             onMediaTap: onMediaTap,
           ),
           Positioned(
@@ -449,38 +450,35 @@ class _DetailMediaHeader extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (audioUrl.isNotEmpty) ...[
-                  _DetailOverlayChip(
-                    child: GestureDetector(
-                      onTap: onAudioTap,
-                      child: Icon(
-                        isAudioPlaying ? Icons.pause : Icons.volume_up,
-                        color: const Color(0xFFFF7801),
-                        size: 24,
-                      ),
-                    ),
+                  _DetailAudioIconChip(
+                    isPlaying: isAudioPlaying,
+                    onTap: onAudioTap,
                   ),
                   const SizedBox(height: 6),
                 ],
                 if (itemName.isNotEmpty) ...[
-                  _DetailOverlayChip(
-                    child: Text(
-                      itemName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                  IgnorePointer(
+                    child: _DetailOverlayChip(
+                      child: Text(
+                        itemName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 6),
                 ],
                 if (trimmedLocation.isNotEmpty)
-                  _DetailOverlayChip(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+                  IgnorePointer(
+                    child: _DetailOverlayChip(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                         const Text('📍', style: TextStyle(fontSize: 15)),
                         const SizedBox(width: 4),
                         Flexible(
@@ -495,18 +493,21 @@ class _DetailMediaHeader extends StatelessWidget {
                             ),
                           ),
                         ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 if (price.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  _DetailOverlayChip(
-                    child: PriceWithCurrency(
-                      price: price,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFD00000),
+                  IgnorePointer(
+                    child: _DetailOverlayChip(
+                      child: PriceWithCurrency(
+                        price: price,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFFD00000),
+                        ),
                       ),
                     ),
                   ),
@@ -550,6 +551,43 @@ class _DetailAudioTimeline extends StatelessWidget {
         minHeight: 4,
         backgroundColor: Colors.black.withValues(alpha: 0.16),
         valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
+      ),
+    );
+  }
+}
+
+class _DetailAudioIconChip extends StatelessWidget {
+  const _DetailAudioIconChip({
+    required this.isPlaying,
+    required this.onTap,
+  });
+
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const iconSize = 24.0;
+    const touchSize = iconSize * 2.5;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onTap,
+      child: SizedBox(
+        width: touchSize,
+        height: touchSize,
+        child: Align(
+          alignment: Alignment.bottomLeft,
+          child: IgnorePointer(
+            child: _DetailOverlayChip(
+              child: Icon(
+                isPlaying ? Icons.pause : Icons.volume_up,
+                color: const Color(0xFFFF7801),
+                size: iconSize,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
