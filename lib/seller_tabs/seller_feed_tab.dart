@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -41,7 +42,8 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   Timer? _searchDebounce;
   Timer? _visibilityDebounce;
   Timer? _seenFlushTimer;
-  String? _sellerId;
+  String? _viewerId;
+  String? _viewerType;
   bool _isLoadingSeenItems = true;
   final DateTime _openedAt = DateTime.now();
   int _refreshTick = 0;
@@ -67,13 +69,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   Future<void> _loadSeenItems() async {
-    final session = await SellerSession.current();
+    final viewer = await _resolveViewerIdentity();
     if (!mounted) {
       return;
     }
-    _sellerId = session?.sellerId;
-    final sellerId = _sellerId;
-    if (sellerId == null || sellerId.isEmpty) {
+    _viewerId = viewer?.id;
+    _viewerType = viewer?.type;
+    final viewerId = _viewerId;
+    if (viewerId == null || viewerId.isEmpty) {
       setState(() => _isLoadingSeenItems = false);
       return;
     }
@@ -81,16 +84,23 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     try {
       final snapshot = await FirebaseFirestore.instance
           .collectionGroup('viewers')
-          .where('seller_id', isEqualTo: sellerId)
+          .where('viewer_id', isEqualTo: viewerId)
           .limit(500)
           .get();
+      final legacySellerSnapshot = _viewerType == 'seller'
+          ? await FirebaseFirestore.instance
+                .collectionGroup('viewers')
+                .where('seller_id', isEqualTo: viewerId)
+                .limit(500)
+                .get()
+          : null;
       if (!mounted) {
         return;
       }
       setState(() {
         _seenItemIds
           ..clear()
-          ..addAll(snapshot.docs.map((doc) {
+          ..addAll([...snapshot.docs, ...?legacySellerSnapshot?.docs].map((doc) {
             final itemId = doc.data()['item_id']?.toString();
             return itemId?.isNotEmpty == true
                 ? itemId!
@@ -102,6 +112,26 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       if (mounted) {
         setState(() => _isLoadingSeenItems = false);
       }
+    }
+  }
+
+  Future<_FeedViewerIdentity?> _resolveViewerIdentity() async {
+    final session = await SellerSession.current();
+    final sellerId = session?.sellerId.trim();
+    if (sellerId != null && sellerId.isNotEmpty) {
+      return _FeedViewerIdentity(id: sellerId, type: 'seller');
+    }
+
+    try {
+      final auth = FirebaseAuth.instance;
+      final user = auth.currentUser ?? (await auth.signInAnonymously()).user;
+      final uid = user?.uid;
+      if (uid == null || uid.isEmpty) {
+        return null;
+      }
+      return _FeedViewerIdentity(id: uid, type: 'anonymous');
+    } catch (_) {
+      return null;
     }
   }
 
@@ -192,8 +222,8 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _markVisibleItemsSeen() {
-    final sellerId = _sellerId;
-    if (sellerId == null || sellerId.isEmpty || !_scrollController.hasClients) {
+    final viewerId = _viewerId;
+    if (viewerId == null || viewerId.isEmpty || !_scrollController.hasClients) {
       return;
     }
 
@@ -239,8 +269,8 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   Future<void> _flushSeenItems() async {
     _seenFlushTimer?.cancel();
     _seenFlushTimer = null;
-    final sellerId = _sellerId;
-    if (sellerId == null || sellerId.isEmpty || _pendingSeenItemIds.isEmpty) {
+    final viewerId = _viewerId;
+    if (viewerId == null || viewerId.isEmpty || _pendingSeenItemIds.isEmpty) {
       return;
     }
 
@@ -253,10 +283,13 @@ class SellerFeedTabState extends State<SellerFeedTab> {
             .collection('item_seen')
             .doc(itemId)
             .collection('viewers')
-            .doc(sellerId);
+            .doc(viewerId);
+        final viewerType = _viewerType ?? 'anonymous';
         batch.set(ref, {
           'item_id': itemId,
-          'seller_id': sellerId,
+          'viewer_id': viewerId,
+          'viewer_type': viewerType,
+          if (viewerType == 'seller') 'seller_id': viewerId,
           'seen_at': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
@@ -299,6 +332,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                   SliverToBoxAdapter(
                     child: _FeedHeader(
                       isGridView: _isGridView,
+                      isSearchOpen: _isSearchOpen,
                       onToggleGrid: _toggleLayoutMode,
                     ),
                   ),
@@ -399,8 +433,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         ),
         const Positioned(
           top: 62,
-          right: 12,
-          child: _UploadStatusBanner(),
+          left: 0,
+          right: 0,
+          child: Center(child: _UploadStatusBanner()),
         ),
       ],
     );
@@ -484,10 +519,12 @@ class _FloatingFeedSearchControl extends StatelessWidget {
 class _FeedHeader extends StatelessWidget {
   const _FeedHeader({
     required this.isGridView,
+    required this.isSearchOpen,
     required this.onToggleGrid,
   });
 
   final bool isGridView;
+  final bool isSearchOpen;
   final VoidCallback onToggleGrid;
 
   @override
@@ -510,14 +547,15 @@ class _FeedHeader extends StatelessWidget {
               ),
             ),
           ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _GridToggleButton(
-              isGridView: isGridView,
-              onTap: onToggleGrid,
-              bottomPadding: 0,
+          if (!isSearchOpen)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _GridToggleButton(
+                isGridView: isGridView,
+                onTap: onToggleGrid,
+                bottomPadding: 0,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -614,42 +652,34 @@ class _UploadStatusBanner extends StatelessWidget {
       valueListenable: UploadStatusManager.current,
       builder: (context, status, child) {
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
+          duration: const Duration(milliseconds: 260),
+          transitionBuilder: (child, animation) {
+            return ScaleTransition(
+              scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+              child: FadeTransition(opacity: animation, child: child),
+            );
+          },
           child: status == null
               ? const SizedBox.shrink()
-              : Container(
-                  key: ValueKey(status.message),
-                  width: 260,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
+              : SizedBox(
+                  key: ValueKey(status.type),
+                  width: 64,
+                  height: 64,
+                  child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.10),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                          color: Colors.black.withValues(alpha: 0.14),
+                          blurRadius: 18,
+                          offset: const Offset(0, 6),
                       ),
                     ],
                   ),
-                  child: Row(
-                    children: [
-                      _UploadStatusIcon(type: status.type),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          status.message,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ),
-                    ],
+                    child: Center(
+                      child: _UploadStatusIcon(type: status.type),
+                    ),
                   ),
                 ),
         );
@@ -667,15 +697,23 @@ class _UploadStatusIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (type) {
       UploadStatusType.uploading => const SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2.4),
+        width: 28,
+        height: 28,
+        child: CircularProgressIndicator(
+          strokeWidth: 3,
+          color: Color(0xFFFF7801),
+        ),
       ),
       UploadStatusType.success => const Icon(
-        Icons.check_circle,
+        Icons.check_circle_rounded,
         color: Color(0xFF25D366),
+        size: 46,
       ),
-      UploadStatusType.error => const Icon(Icons.error, color: Colors.red),
+      UploadStatusType.error => const Icon(
+        Icons.error_rounded,
+        color: Colors.red,
+        size: 34,
+      ),
     };
   }
 }
@@ -699,6 +737,16 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
   return true;
 }
 
+class _FeedViewerIdentity {
+  const _FeedViewerIdentity({
+    required this.id,
+    required this.type,
+  });
+
+  final String id;
+  final String type;
+}
+
 class _GridToggleButton extends StatelessWidget {
   const _GridToggleButton({
     required this.isGridView,
@@ -717,17 +765,15 @@ class _GridToggleButton extends StatelessWidget {
       child: Material(
         color: const Color(0xFF001341),
         shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 46,
-            height: 46,
-            child: Icon(
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: IconButton(
+            onPressed: onTap,
+            icon: Icon(
               isGridView ? Icons.view_agenda : Icons.grid_view,
-              color: Colors.white,
-              size: 24,
             ),
+            color: Colors.white,
           ),
         ),
       ),

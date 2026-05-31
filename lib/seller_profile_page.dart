@@ -293,12 +293,19 @@ class _SellerProfileBody extends StatelessWidget {
         ),
         if (isOwnProfile)
           _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
-        else
+        else ...[
+          if (onBack != null)
+            Positioned(
+              top: topInset + 8,
+              left: 14,
+              child: _ProfileFloatingBackButton(onBack: onBack!),
+            ),
           Positioned(
             top: topInset + 8,
             right: 14,
             child: const _ProfileFloatingShareButton(),
           ),
+        ],
       ],
     );
   }
@@ -379,16 +386,26 @@ class _ProfileScrollableHeader extends StatelessWidget {
               fit: BoxFit.cover,
             ),
           ),
-          if (onBack != null)
-            Positioned(
-              left: 0,
-              child: _BorderedHeaderButton(
-                onTap: onBack!,
-                circular: true,
-                child: const Icon(Icons.arrow_back, color: Colors.black),
-              ),
-            ),
         ],
+      ),
+    );
+  }
+}
+
+class _ProfileFloatingBackButton extends StatelessWidget {
+  const _ProfileFloatingBackButton({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: _BorderedHeaderButton(
+        onTap: onBack,
+        circular: true,
+        borderColor: null,
+        child: const Icon(Icons.arrow_back, color: Colors.black),
       ),
     );
   }

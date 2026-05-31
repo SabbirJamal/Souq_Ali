@@ -34,6 +34,7 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
   bool _isAudioPlaying = false;
   bool _showAudioProgress = false;
   bool _hasLoadedAudioSource = false;
+  bool _isPreloadingAudio = false;
   int _audioCompletionToken = 0;
 
   String get _audioUrl =>
@@ -86,6 +87,7 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
         });
       }
     });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _preloadAudioSource());
   }
 
   @override
@@ -95,6 +97,21 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
     _mediaZoomController.dispose();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _preloadAudioSource() async {
+    if (_audioUrl.isEmpty || _hasLoadedAudioSource || _isPreloadingAudio) {
+      return;
+    }
+    _isPreloadingAudio = true;
+    try {
+      await _audioPlayer.setSource(UrlSource(_audioUrl));
+      _hasLoadedAudioSource = true;
+    } catch (_) {
+      _hasLoadedAudioSource = false;
+    } finally {
+      _isPreloadingAudio = false;
+    }
   }
 
   Future<void> _pauseIfAnotherAudioStarts() async {
@@ -140,7 +157,7 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
     }
     _audioCompletionToken++;
     _activeFeedAudioItemId.value = widget.docId;
-    if (_hasLoadedAudioSource && _audioPosition > Duration.zero) {
+    if (_hasLoadedAudioSource) {
       await _audioPlayer.resume();
     } else {
       await _audioPlayer.play(UrlSource(_audioUrl));
@@ -391,6 +408,7 @@ class _ImageFilledDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final itemName = item['item_name']?.toString().trim() ?? '';
+    final price = _formatPrice(item['item_price']);
 
     return IntrinsicWidth(
       stepWidth: 1,
@@ -415,18 +433,20 @@ class _ImageFilledDetails extends StatelessWidget {
               ),
               isCompact: isCompact,
             ),
-            SizedBox(height: isCompact ? 5 : 8),
-            _TextChip(
-              child: PriceWithCurrency(
-                price: _formatPrice(item['item_price']),
-                style: TextStyle(
-                  color: const Color(0xFFD00000),
-                  fontSize: isCompact ? 13 : 19,
-                  fontWeight: FontWeight.w800,
+            if (price.isNotEmpty) ...[
+              SizedBox(height: isCompact ? 5 : 8),
+              _TextChip(
+                child: PriceWithCurrency(
+                  price: price,
+                  style: TextStyle(
+                    color: const Color(0xFFD00000),
+                    fontSize: isCompact ? 13 : 19,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
+                isCompact: isCompact,
               ),
-              isCompact: isCompact,
-            ),
+            ],
             if (itemName.isNotEmpty) ...[
               SizedBox(height: isCompact ? 5 : 8),
               _TextChip(
@@ -519,7 +539,7 @@ class _AudioTimeline extends StatelessWidget {
 String _formatPrice(Object? value) {
   final text = value?.toString() ?? '';
   if (_isZeroPrice(text)) {
-    return 'Contact for Price';
+    return '';
   }
   return text
       .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')

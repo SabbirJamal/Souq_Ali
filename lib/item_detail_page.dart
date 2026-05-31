@@ -379,7 +379,7 @@ class _DetailHeader extends StatelessWidget {
 String _formatPrice(Object? value) {
   final text = value?.toString() ?? '';
   if (_isZeroPrice(text)) {
-    return 'Contact for Price';
+    return '';
   }
   return text
       .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')

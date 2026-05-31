@@ -39,7 +39,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   final _priceFocusNode = FocusNode();
 
   final List<_SelectedMedia> _selectedMedia = [];
-  final _priceUnits = ['/ kg', '/ box', '/ bag'];
+  final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
   String? _audioDescriptionPath;
   Duration _audioDescriptionDuration = Duration.zero;
 
@@ -988,7 +988,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         ),
       ),
       items: items
-          .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+          .map(
+            (item) => DropdownMenuItem(
+              value: item,
+              child: Text(item.replaceFirst('/ ', '')),
+            ),
+          )
           .toList(),
       onChanged: _isUploading
           ? null

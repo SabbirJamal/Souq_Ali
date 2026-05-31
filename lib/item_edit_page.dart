@@ -42,7 +42,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   final _picker = ImagePicker();
   final List<_EditableMedia> _media = [];
   final List<MediaItem> _removedMedia = [];
-  final _priceUnits = ['/ kg', '/ box', '/ bag'];
+  final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
 
   String? _existingAudioUrl;
   String? _audioDescriptionPath;
@@ -60,8 +60,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
     _nameController = TextEditingController(
       text: widget.itemData['item_name'] ?? '',
     );
+    final existingPrice = widget.itemData['price_number']?.toString() ?? '';
     _priceController = TextEditingController(
-      text: _formatEditingPrice(widget.itemData['price_number']?.toString() ?? ''),
+      text: _isZeroPrice(existingPrice) ? '' : _formatEditingPrice(existingPrice),
     );
     _lastValidPriceText = _priceController.text;
     _locationController = TextEditingController(
@@ -687,6 +688,14 @@ class _ItemEditPageState extends State<ItemEditPage> {
     return buffer.toString();
   }
 
+  bool _isZeroPrice(String value) {
+    final cleanValue = value.replaceAll(',', '').trim();
+    if (cleanValue.isEmpty) {
+      return false;
+    }
+    return double.tryParse(cleanValue) == 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -696,20 +705,24 @@ class _ItemEditPageState extends State<ItemEditPage> {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: const Color(0xFFF4FBF7),
-          elevation: 0,
-          systemOverlayStyle: const SystemUiOverlayStyle(
-            statusBarColor: Colors.black,
-            statusBarIconBrightness: Brightness.light,
-            statusBarBrightness: Brightness.dark,
-          ),
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-          ),
-        ),
-        body: ListView(
+        backgroundColor: const Color(0xFFF4FBF7),
+        body: Column(
+          children: [
+            Container(
+              height: MediaQuery.paddingOf(context).top,
+              color: Colors.black,
+            ),
+            Container(
+              height: kToolbarHeight,
+              color: const Color(0xFFF4FBF7),
+              alignment: Alignment.centerLeft,
+              child: IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back, color: Colors.black),
+              ),
+            ),
+            Expanded(
+              child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           children: [
             _buildMediaEditor(),
@@ -833,6 +846,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
                       ],
                     )
                   : const Text('Save Changes', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+              ),
             ),
           ],
         ),
@@ -991,7 +1007,12 @@ class _ItemEditPageState extends State<ItemEditPage> {
         ),
       ),
       items: items
-          .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+          .map(
+            (item) => DropdownMenuItem(
+              value: item,
+              child: Text(item.replaceFirst('/ ', '')),
+            ),
+          )
           .toList(),
       onChanged: _isSaving
           ? null

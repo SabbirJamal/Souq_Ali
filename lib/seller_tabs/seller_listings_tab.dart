@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../item_detail_page.dart';
 import '../item_edit_page.dart';
 import '../seller_session.dart';
 import '../story_repository.dart';
 import '../widgets/media_carousel.dart';
+import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerListingsTab extends StatefulWidget {
@@ -597,78 +597,37 @@ class _ListingManageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mediaItems = mediaItemsFromMap(item);
-    final imageCount = mediaItems.where((media) => !media.isVideo).length;
-    final videoCount = mediaItems.where((media) => media.isVideo).length;
-
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ItemDetailPage(itemData: item, itemId: docId),
+    return Stack(
+      children: [
+        ItemCard(docId: docId, item: item, isCompact: true),
+        Positioned(
+          top: 7,
+          right: 7,
+          child: _ListingQuickActions(
+            onEdit: () => onEdit(context, docId, item),
+            onDelete: () => onDelete(context, docId, item),
           ),
-        );
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final cardHeight = (constraints.maxWidth * 1.48).clamp(245.0, 310.0);
+        ),
+      ],
+    );
+  }
+}
 
-          return Card(
-            elevation: 6,
-            shadowColor: Colors.black.withValues(alpha: 0.18),
-            color: Colors.white,
-            margin: const EdgeInsets.only(bottom: 6),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: SizedBox(
-              height: cardHeight,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: MediaCarousel(
-                      mediaItems: mediaItems,
-                      height: cardHeight,
-                      peekSideItems: false,
-                      borderRadius: 0,
-                      showCountBadge: false,
-                    ),
-                  ),
-                  Positioned(
-                    top: 7,
-                    left: 7,
-                    child: _MediaCountBadges(
-                      imageCount: imageCount,
-                      videoCount: videoCount,
-                    ),
-                  ),
-                  Positioned(
-                    top: 7,
-                    right: 7,
-                    child: _ManageActions(
-                      uploadedAgo: uploadedAgo,
-                      expiryText: expiryText,
-                      onEdit: () => onEdit(context, docId, item),
-                      onDelete: () => onDelete(context, docId, item),
-                    ),
-                  ),
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 10,
-                    child: _ImageFilledDetails(
-                      item: item,
-                      formatPrice: formatPrice,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+class _ListingQuickActions extends StatelessWidget {
+  const _ListingQuickActions({required this.onEdit, required this.onDelete});
+
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit),
+        const SizedBox(height: 12),
+        _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete),
+      ],
     );
   }
 }
