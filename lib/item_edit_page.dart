@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -8,6 +10,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart'
+    as device_permissions;
+import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
@@ -35,13 +40,17 @@ class _ItemEditPageState extends State<ItemEditPage> {
   final _priceFocusNode = FocusNode();
 
   final _picker = ImagePicker();
-  late final List<MediaItem> _existingMedia;
+  final List<_EditableMedia> _media = [];
   final List<MediaItem> _removedMedia = [];
-  final List<_SelectedMedia> _newMedia = [];
   final _priceUnits = ['/ kg', '/ box', '/ bag'];
 
+  String? _existingAudioUrl;
+  String? _audioDescriptionPath;
+  Duration _audioDescriptionDuration = Duration.zero;
   String _lastValidPriceText = '';
   late String _priceUnit;
+  int _audioResetToken = 0;
+  bool _removeExistingAudio = false;
   bool _isSaving = false;
   bool _showLocationError = false;
 
@@ -58,7 +67,14 @@ class _ItemEditPageState extends State<ItemEditPage> {
     _locationController = TextEditingController(
       text: widget.itemData['location'] ?? '',
     );
-    _existingMedia = mediaItemsFromMap(widget.itemData);
+    _media.addAll(
+      mediaItemsFromMap(widget.itemData).map(_EditableMedia.existing),
+    );
+    _existingAudioUrl =
+        widget.itemData['audio_description_url']?.toString().trim();
+    if (_existingAudioUrl?.isEmpty == true) {
+      _existingAudioUrl = null;
+    }
     _priceUnit = _priceUnits.contains(widget.itemData['price_unit'])
         ? widget.itemData['price_unit'].toString()
         : '/ kg';
@@ -75,25 +91,67 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _openCamera() async {
-    final remaining =
-        _maxMediaCount - (_existingMedia.length + _newMedia.length);
-    if (remaining <= 0) {
-      _showMessage('Maximum $_maxMediaCount media files allowed');
+    if (!await _ensureMediaPermissions()) {
       return;
     }
 
-    final captured = await Navigator.push<CapturedMedia>(
+    final result = await Navigator.push<Object?>(
       context,
       MaterialPageRoute(builder: (_) => const CameraCapturePage()),
     );
-    if (captured == null) {
+    if (result == CameraCaptureAction.openGallery) {
+      await _pickGalleryMedia();
+      return;
+    }
+    if (result is! CapturedMedia) {
+      return;
+    }
+    if (!_canAddMedia()) {
+      return;
+    }
+    if (result.isVideo && !await _isVideoWithinLimit(result.file)) {
+      _showMessage('Video cannot be more than 1 minute');
       return;
     }
 
     setState(() {
-      _newMedia.add(_SelectedMedia(file: captured.file, type: captured.type));
-      _sortNewMedia();
+      _media.add(
+        _EditableMedia.newMedia(
+          _SelectedMedia(file: result.file, type: result.type),
+        ),
+      );
     });
+  }
+
+  Future<bool> _ensureMediaPermissions() async {
+    final cameraAndAudio = await [
+      device_permissions.Permission.camera,
+      device_permissions.Permission.microphone,
+    ].request();
+    final hasCamera =
+        cameraAndAudio[device_permissions.Permission.camera]?.isGranted ??
+        false;
+    final hasMicrophone =
+        cameraAndAudio[device_permissions.Permission.microphone]?.isGranted ??
+        false;
+
+    if (hasCamera && hasMicrophone) {
+      return true;
+    }
+
+    if (!mounted) {
+      return false;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Camera and microphone access are needed'),
+        action: SnackBarAction(
+          label: 'Settings',
+          onPressed: device_permissions.openAppSettings,
+        ),
+      ),
+    );
+    return false;
   }
 
   Future<void> _openMediaSheet() async {
@@ -137,8 +195,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _pickGalleryMedia() async {
-    final remaining =
-        _maxMediaCount - (_existingMedia.length + _newMedia.length);
+    final remaining = _maxMediaCount - _media.length;
     if (remaining <= 0) {
       _showMessage('Maximum $_maxMediaCount media files allowed');
       return;
@@ -154,29 +211,60 @@ class _ItemEditPageState extends State<ItemEditPage> {
       return;
     }
 
-    setState(() {
-      _newMedia.addAll(
-        files.take(remaining).map((file) => _SelectedMedia.fromXFile(file)),
-      );
-      _sortNewMedia();
-    });
+    final selected = <_EditableMedia>[];
+    for (final file in files.take(remaining)) {
+      final media = _SelectedMedia.fromXFile(file);
+      if (media.isVideo && !await _isVideoWithinLimit(media.file)) {
+        _showMessage('Video cannot be more than 1 minute');
+        continue;
+      }
+      selected.add(_EditableMedia.newMedia(media));
+    }
+
+    if (selected.isEmpty) {
+      return;
+    }
+    setState(() => _media.addAll(selected));
   }
 
-  void _sortNewMedia() {
-    _newMedia.sort((first, second) {
-      if (first.isVideo == second.isVideo) {
-        return 0;
-      }
-      return first.isVideo ? 1 : -1;
-    });
+  bool _canAddMedia() {
+    if (_media.length >= _maxMediaCount) {
+      _showMessage('Maximum $_maxMediaCount media files allowed');
+      return false;
+    }
+    return true;
+  }
+
+  Future<bool> _isVideoWithinLimit(File file) async {
+    final info = await VideoCompress.getMediaInfo(file.path);
+    final duration = info.duration;
+    if (duration == null) {
+      return true;
+    }
+    return duration <= const Duration(seconds: 60).inMilliseconds;
   }
 
   bool _canRemoveMedia() {
-    if (_existingMedia.length + _newMedia.length <= 1) {
+    if (_media.length <= 1) {
       _showMessage('Atleast 1 media is required');
       return false;
     }
     return true;
+  }
+
+  void _moveMedia(int fromIndex, int toIndex) {
+    if (fromIndex == toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= _media.length ||
+        toIndex >= _media.length) {
+      return;
+    }
+
+    setState(() {
+      final media = _media.removeAt(fromIndex);
+      _media.insert(toIndex, media);
+    });
   }
 
   Future<void> _save() async {
@@ -206,8 +294,17 @@ class _ItemEditPageState extends State<ItemEditPage> {
         return;
       }
 
-      final uploadedMedia = await _uploadNewMedia(sellerUid.toString());
-      final allMedia = [..._existingMedia, ...uploadedMedia];
+      final newEntries = _media.where((media) => !media.isExisting).toList();
+      final uploadedMedia = await _uploadNewMedia(
+        sellerUid.toString(),
+        newEntries,
+      );
+      final allMedia = _media.map((media) {
+        if (media.isExisting) {
+          return media.existing!;
+        }
+        return uploadedMedia[media]!;
+      }).toList();
       final imageUrls = allMedia
           .where((media) => !media.isVideo)
           .map((media) => media.url)
@@ -228,25 +325,38 @@ class _ItemEditPageState extends State<ItemEditPage> {
           .toList();
       final expiresAt = widget.itemData['expires_at'] is Timestamp
           ? widget.itemData['expires_at'] as Timestamp
-          : Timestamp.fromDate(DateTime.now().add(const Duration(hours: 18)));
+          : Timestamp.fromDate(DateTime.now().add(const Duration(days: 30)));
+      final audioDescriptionUrl = await _uploadAudioDescription(
+        sellerUid.toString(),
+      );
+      final updateData = <String, dynamic>{
+        'item_name': name,
+        'origin': FieldValue.delete(),
+        'quantity_number': FieldValue.delete(),
+        'item_quantity': FieldValue.delete(),
+        'weight_unit': FieldValue.delete(),
+        'price_number': normalizedPrice,
+        'price_unit': _priceUnit,
+        'item_price': 'OMR $formattedPrice $_priceUnit',
+        'location': location,
+        'media_files': mediaFileMaps,
+        'image_urls': imageUrls,
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      if (audioDescriptionUrl != null) {
+        updateData['audio_description_url'] = audioDescriptionUrl;
+        updateData['audio_description_duration_seconds'] =
+            _audioDescriptionDuration.inSeconds;
+      } else if (_removeExistingAudio) {
+        updateData['audio_description_url'] = FieldValue.delete();
+        updateData['audio_description_duration_seconds'] = FieldValue.delete();
+      }
 
       await FirebaseFirestore.instance
           .collection('items')
           .doc(widget.docId)
-          .update({
-            'item_name': name,
-            'origin': FieldValue.delete(),
-            'quantity_number': FieldValue.delete(),
-            'item_quantity': FieldValue.delete(),
-            'weight_unit': FieldValue.delete(),
-            'price_number': normalizedPrice,
-            'price_unit': _priceUnit,
-            'item_price': 'OMR $formattedPrice $_priceUnit',
-            'location': location,
-            'media_files': mediaFileMaps,
-            'image_urls': imageUrls,
-            'updated_at': FieldValue.serverTimestamp(),
-          });
+          .update(updateData);
 
       await const StoryRepository().replaceItemVideos(
         sellerId: sellerUid.toString(),
@@ -262,6 +372,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
       );
 
       await _deleteRemovedStorageFiles();
+      await _deleteRemovedAudioIfNeeded(audioDescriptionUrl != null);
 
       if (!mounted) {
         return;
@@ -279,15 +390,19 @@ class _ItemEditPageState extends State<ItemEditPage> {
     }
   }
 
-  Future<List<MediaItem>> _uploadNewMedia(String sellerUid) async {
-    final uploaded = <MediaItem>[];
-    for (var i = 0; i < _newMedia.length; i++) {
-      final media = _newMedia[i];
-      final compressed = media.isVideo
-          ? await _compressVideo(media.file)
-          : await _compressImage(media.file);
-      final extension = media.isVideo ? 'mp4' : 'jpg';
-      final contentType = media.isVideo ? 'video/mp4' : 'image/jpeg';
+  Future<Map<_EditableMedia, MediaItem>> _uploadNewMedia(
+    String sellerUid,
+    List<_EditableMedia> entries,
+  ) async {
+    final uploaded = <_EditableMedia, MediaItem>{};
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries[i];
+      final selected = entry.selected!;
+      final compressed = selected.isVideo
+          ? await _compressVideo(selected.file)
+          : await _compressImage(selected.file);
+      final extension = selected.isVideo ? 'mp4' : 'jpg';
+      final contentType = selected.isVideo ? 'video/mp4' : 'image/jpeg';
       final fileName = DateTime.now().millisecondsSinceEpoch;
       final ref = FirebaseStorage.instance.ref().child(
         'items/$sellerUid/${fileName}_edit_$i.$extension',
@@ -297,20 +412,23 @@ class _ItemEditPageState extends State<ItemEditPage> {
         compressed,
         SettableMetadata(contentType: contentType),
       );
-      final thumbnailUrl = media.isVideo
+      final thumbnailUrl = selected.isVideo
           ? await _uploadVideoThumbnail(
               videoFile: compressed,
               sellerUid: sellerUid,
               fileName: fileName,
               index: i,
             )
-          : null;
-      uploaded.add(
-        MediaItem(
-          url: await snapshot.ref.getDownloadURL(),
-          type: media.type,
-          thumbnailUrl: thumbnailUrl,
-        ),
+          : await _uploadImageThumbnail(
+              imageFile: compressed,
+              sellerUid: sellerUid,
+              fileName: fileName,
+              index: i,
+            );
+      uploaded[entry] = MediaItem(
+        url: await snapshot.ref.getDownloadURL(),
+        type: selected.type,
+        thumbnailUrl: thumbnailUrl,
       );
     }
     return uploaded;
@@ -339,6 +457,62 @@ class _ItemEditPageState extends State<ItemEditPage> {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<String?> _uploadImageThumbnail({
+    required File imageFile,
+    required String sellerUid,
+    required int fileName,
+    required int index,
+  }) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final targetPath =
+          '${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}_feed.jpg';
+      final result = await FlutterImageCompress.compressAndGetFile(
+        imageFile.absolute.path,
+        targetPath,
+        minWidth: 720,
+        minHeight: 720,
+        quality: 36,
+        format: CompressFormat.jpeg,
+      );
+      if (result == null) {
+        return null;
+      }
+      final ref = FirebaseStorage.instance.ref().child(
+        'items/$sellerUid/${fileName}_edit_${index}_feed.jpg',
+      );
+      final snapshot = await ref.putFile(
+        File(result.path),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      return snapshot.ref.getDownloadURL();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _uploadAudioDescription(String sellerUid) async {
+    final path = _audioDescriptionPath;
+    if (path == null || path.isEmpty) {
+      return null;
+    }
+
+    final audioFile = File(path);
+    if (!await audioFile.exists()) {
+      return null;
+    }
+
+    final fileName = DateTime.now().millisecondsSinceEpoch;
+    final ref = FirebaseStorage.instance.ref().child(
+      'items/$sellerUid/audio_description_edit_$fileName.m4a',
+    );
+    final snapshot = await ref.putFile(
+      audioFile,
+      SettableMetadata(contentType: 'audio/mp4'),
+    );
+    return snapshot.ref.getDownloadURL();
   }
 
   Future<File> _compressImage(File file) async {
@@ -380,6 +554,19 @@ class _ItemEditPageState extends State<ItemEditPage> {
       } catch (_) {
         // The Firestore update is the source of truth; missing old files are safe.
       }
+    }
+  }
+
+  Future<void> _deleteRemovedAudioIfNeeded(bool replacedAudio) async {
+    final audioUrl = _existingAudioUrl;
+    if (audioUrl == null || (!_removeExistingAudio && !replacedAudio)) {
+      return;
+    }
+
+    try {
+      await FirebaseStorage.instance.refFromURL(audioUrl).delete();
+    } catch (_) {
+      // Firestore update already removed/replaced the reference.
     }
   }
 
@@ -502,130 +689,153 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color(0xFFF4FBF7),
-        elevation: 0,
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-        ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.black,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-        children: [
-          _buildMediaEditor(),
-          const SizedBox(height: 20),
-          _field(
-            _nameController,
-            'Item Name',
-            Icons.shopping_bag,
-            hint: 'Fresh Tomatoes',
-            maxLength: 80,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: const Color(0xFFF4FBF7),
+          elevation: 0,
+          leading: IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.arrow_back, color: Colors.black),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: _field(
-                  _priceController,
-                  'Price',
-                  null,
-                  hint: '2.500',
-                  prefixIconWidget: const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: RiyalCurrencyIcon(size: 22),
-                  ),
-                  focusNode: _priceFocusNode,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                  ],
-                  onTap: () {
-                    if (_priceController.text == '0') {
-                      _setPriceText('');
-                    }
-                  },
-                  onEditingComplete: _restoreDefaultPriceIfEmpty,
-                  onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
-                  onChanged: _handlePriceChanged,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: _buildDropdown(
-                  value: _priceUnit,
-                  items: _priceUnits,
-                  onChanged: (value) => setState(() => _priceUnit = value),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _field(
-            _locationController,
-            'Location',
-            null,
-            hint: _showLocationError
-                ? 'Please enter the location'
-                : 'Muscat, Al Seeb',
-            prefixIconWidget: const Center(
-              widthFactor: 1,
-              child: Text('📍', style: TextStyle(fontSize: 20)),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          children: [
+            _buildMediaEditor(),
+            const SizedBox(height: 20),
+            _field(
+              _nameController,
+              'Item Name',
+              Icons.shopping_bag,
+              hint: 'Fresh Tomatoes',
+              maxLength: 80,
             ),
-            maxLength: 30,
-            errorText: _showLocationError ? 'Please enter the location' : null,
-            onChanged: (_) {
-              if (_showLocationError) {
-                setState(() => _showLocationError = false);
-              }
-            },
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _isSaving ? null : _save,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            const SizedBox(height: 14),
+            AudioDescriptionField(
+              isDisabled: _isSaving,
+              resetToken: _audioResetToken,
+              initialUrl: _existingAudioUrl,
+              initialDuration: Duration(
+                seconds:
+                    (widget.itemData['audio_description_duration_seconds'] as num?)
+                            ?.toInt() ??
+                        0,
               ),
+              onChanged: (path, duration, removeExisting) {
+                _audioDescriptionPath = path;
+                _audioDescriptionDuration = duration;
+                _removeExistingAudio = removeExisting;
+              },
             ),
-            child: _isSaving
-                ? const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Flexible(
-                        child: Text(
-                          'Saving...',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _field(
+                    _priceController,
+                    'Price',
+                    null,
+                    hint: '2.500',
+                    prefixIconWidget: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: RiyalCurrencyIcon(size: 22),
+                    ),
+                    focusNode: _priceFocusNode,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                     ],
-                  )
-                : const Text('Save Changes', style: TextStyle(fontSize: 16)),
-          ),
-        ],
+                    onTap: () {
+                      if (_priceController.text == '0') {
+                        _setPriceText('');
+                      }
+                    },
+                    onEditingComplete: _restoreDefaultPriceIfEmpty,
+                    onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
+                    onChanged: _handlePriceChanged,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: _buildDropdown(
+                    value: _priceUnit,
+                    items: _priceUnits,
+                    onChanged: (value) => setState(() => _priceUnit = value),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _field(
+              _locationController,
+              'Location',
+              null,
+              hint: _showLocationError
+                  ? 'Please enter the location'
+                  : 'Muscat, Al Seeb',
+              prefixIconWidget: const Center(
+                widthFactor: 1,
+                child: Text('📍', style: TextStyle(fontSize: 20)),
+              ),
+              maxLength: 30,
+              errorText: _showLocationError ? 'Please enter the location' : null,
+              onChanged: (_) {
+                if (_showLocationError) {
+                  setState(() => _showLocationError = false);
+                }
+              },
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _isSaving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF7801),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _isSaving
+                  ? const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
+                            'Saving...',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    )
+                  : const Text('Save Changes', style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        ),
       ),
     );
   }
-
   Widget _buildMediaEditor() {
-    final totalCount = _existingMedia.length + _newMedia.length;
+    final totalCount = _media.length;
     final canAddMore = totalCount < _maxMediaCount;
 
     return Column(
@@ -644,29 +854,51 @@ class _ItemEditPageState extends State<ItemEditPage> {
               return Center(child: _buildAddMediaCircle());
             }
 
-            if (index < _existingMedia.length) {
-              return _ExistingMediaTile(
-                media: _existingMedia[index],
-                onRemove: () {
-                  setState(() {
-                    if (_canRemoveMedia()) {
-                      _removedMedia.add(_existingMedia[index]);
-                      _existingMedia.removeAt(index);
-                    }
-                  });
-                },
-              );
-            }
-
-            final newMediaIndex = index - _existingMedia.length;
-            return _NewMediaTile(
-              media: _newMedia[newMediaIndex],
-              onRemove: () {
-                if (_canRemoveMedia()) {
-                  setState(() => _newMedia.removeAt(newMediaIndex));
-                }
+            return DragTarget<int>(
+              onWillAcceptWithDetails: (details) =>
+                  !_isSaving && details.data != index,
+              onAcceptWithDetails: (details) {
+                _moveMedia(details.data, index);
               },
-            );
+              builder: (context, candidateData, rejectedData) {
+                final tile = _EditableMediaTile(
+                  media: _media[index],
+                  sequenceNumber: index + 1,
+                  isDropTarget: candidateData.isNotEmpty,
+                  onRemove: _isSaving
+                      ? null
+                      : () {
+                          if (!_canRemoveMedia()) {
+                            return;
+                          }
+                          setState(() {
+                            final removed = _media.removeAt(index);
+                            if (removed.isExisting) {
+                              _removedMedia.add(removed.existing!);
+                            }
+                          });
+                        },
+                );
+
+                if (_isSaving) {
+                  return tile;
+                }
+
+                return LongPressDraggable<int>(
+                  data: index,
+                  feedback: SizedBox(
+                    width: 110,
+                    height: 110,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: Opacity(opacity: 0.88, child: tile),
+                    ),
+                  ),
+                  childWhenDragging: Opacity(opacity: 0.35, child: tile),
+                  child: tile,
+                );
+              },
+              );
           },
         ),
       ],
@@ -763,6 +995,433 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 onChanged(value);
               }
             },
+    );
+  }
+}
+
+class AudioDescriptionField extends StatefulWidget {
+  const AudioDescriptionField({
+    super.key,
+    required this.isDisabled,
+    required this.resetToken,
+    required this.onChanged,
+    this.initialUrl,
+    this.initialDuration = Duration.zero,
+    this.label = 'Voice Note',
+  });
+
+  final bool isDisabled;
+  final int resetToken;
+  final String? initialUrl;
+  final Duration initialDuration;
+  final void Function(String? path, Duration duration, bool removeExisting)
+  onChanged;
+  final String label;
+
+  @override
+  State<AudioDescriptionField> createState() => _AudioDescriptionFieldState();
+}
+
+class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
+  static const _maxDuration = Duration(seconds: 30);
+  static const _cancelSlideDistance = -80.0;
+
+  final AudioRecorder _recorder = AudioRecorder();
+  final AudioPlayer _player = AudioPlayer();
+
+  Timer? _recordTimer;
+  String? _audioPath;
+  String? _existingUrl;
+  late Duration _recordedDuration;
+  Duration _recordElapsed = Duration.zero;
+  bool _isRecording = false;
+  bool _isCancelArmed = false;
+  bool _isPlaying = false;
+  bool _removeExisting = false;
+
+  bool get _hasAudio => _audioPath != null || _existingUrl != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _existingUrl = widget.initialUrl;
+    _recordedDuration = widget.initialDuration;
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant AudioDescriptionField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.resetToken != oldWidget.resetToken) {
+      _discardAudio(notifyParent: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _recordTimer?.cancel();
+    _recorder.dispose();
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _startRecording(PointerDownEvent event) async {
+    if (widget.isDisabled || _isRecording) {
+      return;
+    }
+
+    final permission = await device_permissions.Permission.microphone.request();
+    if (!permission.isGranted || !await _recorder.hasPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone access is needed')),
+        );
+      }
+      return;
+    }
+
+    await _player.stop();
+    final oldPath = _audioPath;
+    if (oldPath != null) {
+      await File(oldPath).delete().catchError((_) {});
+    }
+    final tempDir = await getTemporaryDirectory();
+    final path =
+        '${tempDir.path}/audio_description_edit_${DateTime.now().microsecondsSinceEpoch}.m4a';
+
+    await _recorder.start(
+      const RecordConfig(
+        encoder: AudioEncoder.aacLc,
+        bitRate: 64000,
+        sampleRate: 44100,
+      ),
+      path: path,
+    );
+
+    _recordTimer?.cancel();
+    setState(() {
+      _audioPath = null;
+      _recordElapsed = Duration.zero;
+      _recordedDuration = Duration.zero;
+      _isRecording = true;
+      _isCancelArmed = false;
+      _isPlaying = false;
+      _removeExisting = false;
+    });
+
+    _recordTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) {
+        return;
+      }
+      final nextElapsed = _recordElapsed + const Duration(milliseconds: 200);
+      if (nextElapsed >= _maxDuration) {
+        _finishRecording(cancel: false);
+        return;
+      }
+      setState(() => _recordElapsed = nextElapsed);
+    });
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    if (!_isRecording) {
+      return;
+    }
+    final shouldCancel = event.localPosition.dx <= _cancelSlideDistance;
+    if (shouldCancel != _isCancelArmed) {
+      setState(() => _isCancelArmed = shouldCancel);
+    }
+  }
+
+  Future<void> _handlePointerUp(PointerUpEvent event) async {
+    if (_isRecording) {
+      await _finishRecording(cancel: _isCancelArmed);
+    }
+  }
+
+  Future<void> _finishRecording({required bool cancel}) async {
+    _recordTimer?.cancel();
+    _recordTimer = null;
+    final elapsed = _recordElapsed;
+    final path = await _recorder.stop();
+    if (!mounted) {
+      return;
+    }
+
+    if (cancel || path == null || elapsed < const Duration(milliseconds: 500)) {
+      if (path != null) {
+        await File(path).delete().catchError((_) {});
+      }
+      setState(() {
+        _isRecording = false;
+        _isCancelArmed = false;
+        _recordElapsed = Duration.zero;
+        _recordedDuration = Duration.zero;
+        _audioPath = null;
+      });
+      widget.onChanged(null, Duration.zero, false);
+      return;
+    }
+
+    final shouldRemoveExisting = _existingUrl != null;
+    setState(() {
+      _isRecording = false;
+      _isCancelArmed = false;
+      _recordedDuration = elapsed > _maxDuration ? _maxDuration : elapsed;
+      _recordElapsed = Duration.zero;
+      _audioPath = path;
+      _existingUrl = null;
+      _removeExisting = shouldRemoveExisting;
+    });
+    widget.onChanged(path, _recordedDuration, shouldRemoveExisting);
+  }
+
+  Future<void> _togglePlayback() async {
+    if (widget.isDisabled) {
+      return;
+    }
+    if (_isPlaying) {
+      await _player.pause();
+      if (mounted) {
+        setState(() => _isPlaying = false);
+      }
+      return;
+    }
+    final path = _audioPath;
+    if (path != null) {
+      await _player.play(DeviceFileSource(path));
+    } else {
+      final url = _existingUrl;
+      if (url == null) {
+        return;
+      }
+      await _player.play(UrlSource(url));
+    }
+    if (mounted) {
+      setState(() => _isPlaying = true);
+    }
+  }
+
+  Future<void> _discardAudio({bool notifyParent = true}) async {
+    final path = _audioPath;
+    await _player.stop();
+    if (path != null) {
+      await File(path).delete().catchError((_) {});
+    }
+    final shouldRemoveExisting = _existingUrl != null || _removeExisting;
+    if (mounted) {
+      setState(() {
+        _audioPath = null;
+        _existingUrl = null;
+        _recordedDuration = Duration.zero;
+        _isPlaying = false;
+        _removeExisting = shouldRemoveExisting;
+      });
+    }
+    if (notifyParent) {
+      widget.onChanged(null, Duration.zero, shouldRemoveExisting);
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    final seconds = duration.inSeconds.clamp(0, 30);
+    return '0:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      isFocused: _isRecording,
+      isEmpty: !_hasAudio && !_isRecording,
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: widget.isDisabled ? Colors.grey.shade100 : Colors.white,
+        labelText: widget.label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+      child: SizedBox(
+        height: 40,
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            if (_isRecording)
+              Text(
+                '${_formatDuration(_recordElapsed)} / ${_formatDuration(_maxDuration)}',
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else if (_hasAudio)
+              Container(
+                width: 44,
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  onPressed: _togglePlayback,
+                  icon: Icon(
+                    _isPlaying ? Icons.pause_circle : Icons.play_circle_fill,
+                    color: const Color(0xFFFF7801),
+                    size: 38,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                ),
+              ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _isRecording
+                    ? (_isCancelArmed
+                        ? 'Release to cancel'
+                        : '<<< Slide to Cancel')
+                    : _hasAudio
+                        ? 'Audio description ${_formatDuration(_recordedDuration)}'
+                        : '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: _isRecording ? TextAlign.right : TextAlign.left,
+                style: TextStyle(
+                  color: _isRecording && _isCancelArmed
+                      ? Colors.red
+                      : Colors.grey.shade700,
+                  fontSize: 15,
+                  fontWeight:
+                      _hasAudio || _isRecording ? FontWeight.w700 : null,
+                ),
+              ),
+            ),
+            if (_hasAudio)
+              GestureDetector(
+                onTap: widget.isDisabled ? null : _discardAudio,
+                child: Container(
+                  width: 52,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: const CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.red,
+                    child: Icon(Icons.close, color: Colors.white, size: 22),
+                  ),
+                ),
+              )
+            else
+              Listener(
+                onPointerDown: _startRecording,
+                onPointerMove: _handlePointerMove,
+                onPointerUp: _handlePointerUp,
+                onPointerCancel: (_) {
+                  if (_isRecording) {
+                    _finishRecording(cancel: true);
+                  }
+                },
+                child: Container(
+                  width: _isRecording ? 78 : 52,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: CircleAvatar(
+                    radius: _isRecording ? 37.5 : 18,
+                    backgroundColor:
+                        _isRecording ? Colors.red : const Color(0xFFFF7801),
+                    child: Icon(
+                      Icons.mic,
+                      color: Colors.white,
+                      size: _isRecording ? 42 : 22,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditableMediaTile extends StatelessWidget {
+  const _EditableMediaTile({
+    required this.media,
+    required this.sequenceNumber,
+    required this.isDropTarget,
+    required this.onRemove,
+  });
+
+  final _EditableMedia media;
+  final int sequenceNumber;
+  final bool isDropTarget;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: isDropTarget
+            ? Border.all(color: const Color(0xFF25D366), width: 3)
+            : null,
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: media.isVideo
+                ? const _VideoPlaceholder()
+                : media.isExisting
+                    ? CachedNetworkImage(
+                        imageUrl: media.existing!.url,
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          color: const Color(0xFFEFF4F1),
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          color: const Color(0xFFDCF8C6),
+                          child: const Icon(Icons.broken_image),
+                        ),
+                      )
+                    : Image.file(media.selected!.file, fit: BoxFit.cover),
+          ),
+          Positioned(
+            top: 4,
+            left: 4,
+            child: CircleAvatar(
+              radius: 12,
+              backgroundColor: const Color(0xFF25D366),
+              child: Text(
+                '$sequenceNumber',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: const CircleAvatar(
+                radius: 12,
+                backgroundColor: Colors.red,
+                child: Icon(Icons.close, size: 14, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -888,6 +1547,19 @@ class _MediaSheetButton extends StatelessWidget {
   }
 }
 
+class _EditableMedia {
+  const _EditableMedia.existing(this.existing) : selected = null;
+
+  const _EditableMedia.newMedia(this.selected) : existing = null;
+
+  final MediaItem? existing;
+  final _SelectedMedia? selected;
+
+  bool get isExisting => existing != null;
+
+  bool get isVideo => isExisting ? existing!.isVideo : selected!.isVideo;
+}
+
 class _SelectedMedia {
   const _SelectedMedia({required this.file, required this.type});
 
@@ -914,3 +1586,4 @@ class _SelectedMedia {
         lower.endsWith('.mkv');
   }
 }
+

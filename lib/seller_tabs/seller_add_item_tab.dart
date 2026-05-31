@@ -25,7 +25,6 @@ class SellerAddItemTab extends StatefulWidget {
   const SellerAddItemTab({super.key, this.onItemAddedDone});
 
   final VoidCallback? onItemAddedDone;
-
   @override
   SellerAddItemTabState createState() => SellerAddItemTabState();
 }
@@ -46,7 +45,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   String _lastValidPriceText = '0';
   String _priceUnit = '/ kg';
-  int _timePeriodHours = 18;
+  int _timePeriodHours = 720;
   int _audioResetToken = 0;
   bool _isUploading = false;
   bool _showLocationError = false;
@@ -263,18 +262,25 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'items/$sellerUid/${fileName}_$i.$extension',
       );
 
-      final uploadSnapshot = await ref.putFile(
+      final uploadFuture = ref.putFile(
         compressed,
         SettableMetadata(contentType: contentType),
       );
-      final thumbnailUrl = media.isVideo
-          ? await _uploadVideoThumbnail(
+      final thumbnailFuture = media.isVideo
+          ? _uploadVideoThumbnail(
               videoFile: compressed,
               sellerUid: sellerUid,
               fileName: fileName,
               index: i,
             )
-          : null;
+          : _uploadImageThumbnail(
+              imageFile: compressed,
+              sellerUid: sellerUid,
+              fileName: fileName,
+              index: i,
+            );
+      final uploadSnapshot = await uploadFuture;
+      final thumbnailUrl = await thumbnailFuture;
       uploaded.add(
         _UploadedMedia(
           url: await uploadSnapshot.ref.getDownloadURL(),
@@ -303,6 +309,40 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       );
       final snapshot = await ref.putFile(
         thumbnail,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      return snapshot.ref.getDownloadURL();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _uploadImageThumbnail({
+    required File imageFile,
+    required String sellerUid,
+    required int fileName,
+    required int index,
+  }) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final targetPath =
+          '${tempDir.path}/${DateTime.now().microsecondsSinceEpoch}_feed.jpg';
+      final result = await FlutterImageCompress.compressAndGetFile(
+        imageFile.absolute.path,
+        targetPath,
+        minWidth: 720,
+        minHeight: 720,
+        quality: 36,
+        format: CompressFormat.jpeg,
+      );
+      if (result == null) {
+        return null;
+      }
+      final ref = FirebaseStorage.instance.ref().child(
+        'items/$sellerUid/${fileName}_${index}_feed.jpg',
+      );
+      final snapshot = await ref.putFile(
+        File(result.path),
         SettableMetadata(contentType: 'image/jpeg'),
       );
       return snapshot.ref.getDownloadURL();
@@ -484,7 +524,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     setState(() {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
-      _timePeriodHours = 18;
+      _timePeriodHours = 720;
       _audioDescriptionPath = null;
       _audioDescriptionDuration = Duration.zero;
       _audioResetToken++;
@@ -674,6 +714,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             maxLength: 80,
           ),
           const SizedBox(height: 14),
+          AudioDescriptionField(
+            isDisabled: _isUploading,
+            resetToken: _audioResetToken,
+            onChanged: (path, duration) {
+              _audioDescriptionPath = path;
+              _audioDescriptionDuration = duration;
+            },
+          ),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
@@ -731,15 +780,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               if (_showLocationError) {
                 setState(() => _showLocationError = false);
               }
-            },
-          ),
-          const SizedBox(height: 14),
-          AudioDescriptionField(
-            isDisabled: _isUploading,
-            resetToken: _audioResetToken,
-            onChanged: (path, duration) {
-              _audioDescriptionPath = path;
-              _audioDescriptionDuration = duration;
             },
           ),
           const SizedBox(height: 24),
@@ -967,11 +1007,13 @@ class AudioDescriptionField extends StatefulWidget {
     required this.isDisabled,
     required this.resetToken,
     required this.onChanged,
+    this.label = 'Voice Note',
   });
 
   final bool isDisabled;
   final int resetToken;
   final void Function(String? path, Duration duration) onChanged;
+  final String label;
 
   @override
   State<AudioDescriptionField> createState() => _AudioDescriptionFieldState();
@@ -1169,60 +1211,86 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   Widget build(BuildContext context) {
     final hasAudio = _audioPath != null;
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          height: 58,
-          decoration: BoxDecoration(
-            color: widget.isDisabled ? Colors.grey.shade100 : Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade600),
-          ),
-          child: Row(
-            children: [
-              const SizedBox(width: 14),
-              if (_isRecording)
-                Text(
-                  '${_formatDuration(_recordElapsed)} / ${_formatDuration(_maxDuration)}',
-                  style: const TextStyle(
-                    color: Colors.red,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                )
-              else if (hasAudio)
-                IconButton(
+    return InputDecorator(
+      isFocused: _isRecording,
+      isEmpty: !hasAudio && !_isRecording,
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: widget.isDisabled ? Colors.grey.shade100 : Colors.white,
+        labelText: widget.label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      ),
+      child: SizedBox(
+        height: 40,
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            if (_isRecording)
+              Text(
+                '${_formatDuration(_recordElapsed)} / ${_formatDuration(_maxDuration)}',
+                style: const TextStyle(
+                  color: Colors.red,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              )
+            else if (hasAudio)
+              Container(
+                width: 44,
+                alignment: Alignment.centerLeft,
+                child: IconButton(
                   onPressed: _togglePlayback,
                   icon: Icon(
                     _isPlaying ? Icons.pause_circle : Icons.play_circle_fill,
                     color: const Color(0xFFFF7801),
-                    size: 32,
+                    size: 38,
                   ),
-                )
-              else
-                Icon(Icons.mic_none, color: Colors.grey.shade700),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _isRecording
-                      ? (_isCancelArmed ? 'Release to cancel' : 'Slide to cancel')
-                      : hasAudio
-                          ? 'Audio description ${_formatDuration(_recordedDuration)}'
-                          : 'Audio description',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _isRecording && _isCancelArmed
-                        ? Colors.red
-                        : Colors.grey.shade700,
-                    fontSize: 15,
-                    fontWeight: hasAudio || _isRecording
-                        ? FontWeight.w700
-                        : FontWeight.normal,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
                   ),
                 ),
+              )
+            else
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _isRecording
+                    ? (_isCancelArmed ? 'Release to cancel' : '<<< Slide to Cancel')
+                    : hasAudio
+                        ? 'Audio description ${_formatDuration(_recordedDuration)}'
+                        : '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: _isRecording ? TextAlign.right : TextAlign.left,
+                style: TextStyle(
+                  color: _isRecording && _isCancelArmed
+                      ? Colors.red
+                      : Colors.grey.shade700,
+                  fontSize: 15,
+                  fontWeight: hasAudio || _isRecording
+                      ? FontWeight.w700
+                      : FontWeight.normal,
+                ),
               ),
+            ),
+            if (hasAudio)
+              GestureDetector(
+                onTap: widget.isDisabled ? null : _discardAudio,
+                child: Container(
+                  width: 52,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: const CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Colors.red,
+                    child: Icon(Icons.close, color: Colors.white, size: 22),
+                  ),
+                ),
+              )
+            else
               Listener(
                 onPointerDown: _startRecording,
                 onPointerMove: _handlePointerMove,
@@ -1233,35 +1301,24 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                   }
                 },
                 child: Container(
-                  width: 52,
-                  height: 58,
+                  width: _isRecording ? 78 : 52,
+                  height: 40,
                   alignment: Alignment.center,
                   child: CircleAvatar(
-                    radius: _isRecording ? 21 : 18,
-                    backgroundColor: _isRecording
-                        ? Colors.red
-                        : const Color(0xFFFF7801),
-                    child: const Icon(Icons.mic, color: Colors.white, size: 22),
+                    radius: _isRecording ? 37.5 : 18,
+                    backgroundColor:
+                        _isRecording ? Colors.red : const Color(0xFFFF7801),
+                    child: Icon(
+                      Icons.mic,
+                      color: Colors.white,
+                      size: _isRecording ? 42 : 22,
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
-        if (hasAudio)
-          Positioned(
-            top: -7,
-            right: -7,
-            child: GestureDetector(
-              onTap: widget.isDisabled ? null : () => _discardAudio(),
-              child: const CircleAvatar(
-                radius: 12,
-                backgroundColor: Colors.red,
-                child: Icon(Icons.close, color: Colors.white, size: 14),
-              ),
-            ),
-          ),
-      ],
+      ),
     );
   }
 }

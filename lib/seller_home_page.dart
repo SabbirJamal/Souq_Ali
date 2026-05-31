@@ -262,6 +262,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           }
         },
         child: Scaffold(
+          backgroundColor: const Color(0xFFF4FBF7),
           body: Column(
             children: [
               Container(height: topInset, color: Colors.black),
@@ -414,17 +415,20 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(22),
-                  child: Image.asset(
-                    'assets/branding/logo.png',
-                    width: 240,
-                    height: 100,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const Icon(
-                      Icons.storefront,
-                      size: 82,
-                      color: Color(0xFFFF7801),
+                child: Transform.translate(
+                  offset: const Offset(0, -28),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Image.asset(
+                      'assets/branding/logo.png',
+                      width: 240,
+                      height: 100,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.storefront,
+                        size: 82,
+                        color: Color(0xFFFF7801),
+                      ),
                     ),
                   ),
                 ),
@@ -438,8 +442,6 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   maxLength: 8,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
-                    labelText: 'Phone number',
-                    hintText: '90000000',
                     prefixText: '+968 ',
                     prefixIcon: Icon(Icons.phone),
                     counterText: '',

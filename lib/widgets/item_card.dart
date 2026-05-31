@@ -22,11 +22,19 @@ class ItemCard extends StatefulWidget {
   State<ItemCard> createState() => _ItemCardState();
 }
 
-class _ItemCardState extends State<ItemCard> {
+final ValueNotifier<String?> _activeFeedAudioItemId = ValueNotifier(null);
+
+class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin {
   late final AudioPlayer _audioPlayer;
+  late final TransformationController _mediaZoomController;
+  late final AnimationController _mediaZoomResetController;
+  Animation<Matrix4>? _mediaZoomResetAnimation;
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
   bool _isAudioPlaying = false;
+  bool _showAudioProgress = false;
+  bool _hasLoadedAudioSource = false;
+  int _audioCompletionToken = 0;
 
   String get _audioUrl =>
       widget.item['audio_description_url']?.toString().trim() ?? '';
@@ -35,6 +43,17 @@ class _ItemCardState extends State<ItemCard> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
+    _mediaZoomController = TransformationController();
+    _mediaZoomResetController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+    )..addListener(() {
+        final animation = _mediaZoomResetAnimation;
+        if (animation != null) {
+          _mediaZoomController.value = animation.value;
+        }
+      });
+    _activeFeedAudioItemId.addListener(_pauseIfAnotherAudioStarts);
     _audioPlayer.onDurationChanged.listen((duration) {
       if (mounted) {
         setState(() => _audioDuration = duration);
@@ -47,9 +66,23 @@ class _ItemCardState extends State<ItemCard> {
     });
     _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
+        final completionToken = ++_audioCompletionToken;
         setState(() {
           _isAudioPlaying = false;
-          _audioPosition = Duration.zero;
+          _showAudioProgress = true;
+          _audioPosition = _audioDuration;
+        });
+        Future<void>.delayed(const Duration(milliseconds: 220), () {
+          if (!mounted ||
+              _isAudioPlaying ||
+              completionToken != _audioCompletionToken) {
+            return;
+          }
+          setState(() {
+            _showAudioProgress = false;
+            _audioPosition = Duration.zero;
+            _hasLoadedAudioSource = false;
+          });
         });
       }
     });
@@ -57,8 +90,38 @@ class _ItemCardState extends State<ItemCard> {
 
   @override
   void dispose() {
+    _activeFeedAudioItemId.removeListener(_pauseIfAnotherAudioStarts);
+    _mediaZoomResetController.dispose();
+    _mediaZoomController.dispose();
     _audioPlayer.dispose();
     super.dispose();
+  }
+
+  Future<void> _pauseIfAnotherAudioStarts() async {
+    if (_activeFeedAudioItemId.value == widget.docId || !_isAudioPlaying) {
+      return;
+    }
+    await _audioPlayer.pause();
+    if (mounted) {
+      setState(() {
+        _isAudioPlaying = false;
+        _showAudioProgress = false;
+      });
+    }
+  }
+
+  void _resetMediaZoom() {
+    _mediaZoomResetController.stop();
+    _mediaZoomResetAnimation = Matrix4Tween(
+      begin: _mediaZoomController.value,
+      end: Matrix4.identity(),
+    ).animate(
+      CurvedAnimation(
+        parent: _mediaZoomResetController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+    _mediaZoomResetController.forward(from: 0);
   }
 
   Future<void> _toggleAudio() async {
@@ -68,13 +131,26 @@ class _ItemCardState extends State<ItemCard> {
     if (_isAudioPlaying) {
       await _audioPlayer.pause();
       if (mounted) {
-        setState(() => _isAudioPlaying = false);
+        setState(() {
+          _isAudioPlaying = false;
+          _showAudioProgress = false;
+        });
       }
       return;
     }
-    await _audioPlayer.play(UrlSource(_audioUrl));
+    _audioCompletionToken++;
+    _activeFeedAudioItemId.value = widget.docId;
+    if (_hasLoadedAudioSource && _audioPosition > Duration.zero) {
+      await _audioPlayer.resume();
+    } else {
+      await _audioPlayer.play(UrlSource(_audioUrl));
+      _hasLoadedAudioSource = true;
+    }
     if (mounted) {
-      setState(() => _isAudioPlaying = true);
+      setState(() {
+        _isAudioPlaying = true;
+        _showAudioProgress = true;
+      });
     }
   }
 
@@ -121,10 +197,25 @@ class _ItemCardState extends State<ItemCard> {
                     child: Stack(
                       children: [
                         Positioned.fill(
-                          child: MediaPreview(
-                            media: mediaItems.isEmpty ? null : mediaItems.first,
-                            height: cardHeight,
-                            borderRadius: 0,
+                          child: ClipRect(
+                            child: InteractiveViewer(
+                              transformationController: _mediaZoomController,
+                              minScale: 1,
+                              maxScale: 3,
+                              panEnabled: false,
+                              clipBehavior: Clip.hardEdge,
+                              onInteractionStart: (_) {
+                                _mediaZoomResetController.stop();
+                              },
+                              onInteractionEnd: (_) => _resetMediaZoom(),
+                              child: MediaPreview(
+                                media: mediaItems.isEmpty
+                                    ? null
+                                    : mediaItems.first,
+                                height: cardHeight,
+                                borderRadius: 0,
+                              ),
+                            ),
                           ),
                         ),
                         Positioned(
@@ -153,11 +244,20 @@ class _ItemCardState extends State<ItemCard> {
                             isCompact: widget.isCompact,
                             hasAudio: _audioUrl.isNotEmpty,
                             isAudioPlaying: _isAudioPlaying,
-                            audioPosition: _audioPosition,
-                            audioDuration: _audioDuration,
                             onAudioTap: _toggleAudio,
                           ),
                         ),
+                        if (_showAudioProgress)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: _AudioTimeline(
+                              position: _audioPosition,
+                              duration: _audioDuration,
+                              isCompact: widget.isCompact,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -279,8 +379,6 @@ class _ImageFilledDetails extends StatelessWidget {
     required this.isCompact,
     required this.hasAudio,
     required this.isAudioPlaying,
-    required this.audioPosition,
-    required this.audioDuration,
     required this.onAudioTap,
   });
 
@@ -288,8 +386,6 @@ class _ImageFilledDetails extends StatelessWidget {
   final bool isCompact;
   final bool hasAudio;
   final bool isAudioPlaying;
-  final Duration audioPosition;
-  final Duration audioDuration;
   final VoidCallback onAudioTap;
 
   @override
@@ -312,22 +408,6 @@ class _ImageFilledDetails extends StatelessWidget {
               ),
               SizedBox(height: isCompact ? 5 : 8),
             ],
-            if (itemName.isNotEmpty) ...[
-              _TextChip(
-                child: Text(
-                  itemName,
-                  maxLines: isCompact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: isCompact ? 14 : 23,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                isCompact: isCompact,
-              ),
-              SizedBox(height: isCompact ? 5 : 8),
-            ],
             _TextChip(
               child: _OverlayInfoRow(
                 text: item['location']?.toString() ?? '',
@@ -347,11 +427,19 @@ class _ImageFilledDetails extends StatelessWidget {
               ),
               isCompact: isCompact,
             ),
-            if (isAudioPlaying) ...[
-              SizedBox(height: isCompact ? 6 : 9),
-              _AudioTimeline(
-                position: audioPosition,
-                duration: audioDuration,
+            if (itemName.isNotEmpty) ...[
+              SizedBox(height: isCompact ? 5 : 8),
+              _TextChip(
+                child: Text(
+                  itemName,
+                  maxLines: isCompact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: isCompact ? 14 : 23,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 isCompact: isCompact,
               ),
             ],
@@ -375,14 +463,26 @@ class _AudioIconChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _TextChip(
-      isCompact: isCompact,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Icon(
-          isPlaying ? Icons.pause : Icons.volume_up,
-          color: const Color(0xFFFF7801),
-          size: isCompact ? 18 : 24,
+    final iconSize = isCompact ? 18.0 : 24.0;
+    final touchSize = iconSize * 2.5;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onTap,
+      child: SizedBox(
+      width: touchSize,
+      height: touchSize,
+        child: Align(
+          alignment: Alignment.bottomLeft,
+          child: IgnorePointer(
+            child: _TextChip(
+                isCompact: isCompact,
+                child: Icon(
+                  isPlaying ? Icons.pause : Icons.volume_up,
+                  color: const Color(0xFFFF7801),
+                  size: iconSize,
+                ),
+              ),
+          ),
         ),
       ),
     );
@@ -404,16 +504,13 @@ class _AudioTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
     final progress = (position.inMilliseconds / total).clamp(0.0, 1.0);
-    return Padding(
-      padding: EdgeInsets.only(right: isCompact ? 42 : 84),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(99),
-        child: LinearProgressIndicator(
-          value: progress,
-          minHeight: isCompact ? 3 : 4,
-          backgroundColor: Colors.black.withValues(alpha: 0.16),
-          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
-        ),
+    return SizedBox(
+      width: double.infinity,
+      child: LinearProgressIndicator(
+        value: progress,
+        minHeight: isCompact ? 3 : 4,
+        backgroundColor: Colors.black.withValues(alpha: 0.16),
+        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
       ),
     );
   }

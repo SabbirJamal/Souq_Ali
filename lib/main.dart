@@ -28,6 +28,8 @@ class SouqaliApp extends StatelessWidget {
       title: 'BIZSOOQ',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E7C66)),
+        scaffoldBackgroundColor: const Color(0xFFF4FBF7),
+        canvasColor: const Color(0xFFF4FBF7),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           systemOverlayStyle: SystemUiOverlayStyle(

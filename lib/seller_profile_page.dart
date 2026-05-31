@@ -172,6 +172,7 @@ class SellerProfilePage extends StatelessWidget {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
+        backgroundColor: const Color(0xFFF4FBF7),
         body: _SellerProfileBody(
           sellerId: sellerId,
           sellerPhone: sellerPhone,

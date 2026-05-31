@@ -2,9 +2,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 
 import 'seller_home_page.dart';
 import 'seller_profile_page.dart';
@@ -25,9 +27,16 @@ class ItemDetailPage extends StatefulWidget {
 
 class _ItemDetailPageState extends State<ItemDetailPage> {
   late final AudioPlayer _audioPlayer;
+  final Map<String, VideoPlayerController> _preloadedVideoControllers = {};
+  final Map<String, Future<void>> _preloadedVideoInitializers = {};
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
+  bool _isPreparingDetail = true;
+  bool _didStartPreparingDetail = false;
   bool _isAudioPlaying = false;
+  bool _showAudioProgress = false;
+  bool _isAudioSourcePrepared = false;
+  int _audioCompletionToken = 0;
 
   String get _audioUrl =>
       widget.itemData['audio_description_url']?.toString().trim() ?? '';
@@ -36,6 +45,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
+    _preloadDetailVideos();
     _audioPlayer.onDurationChanged.listen((duration) {
       if (mounted) {
         setState(() => _audioDuration = duration);
@@ -48,18 +58,121 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     });
     _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
+        final completionToken = ++_audioCompletionToken;
         setState(() {
           _isAudioPlaying = false;
-          _audioPosition = Duration.zero;
+          _showAudioProgress = true;
+          _audioPosition = _audioDuration;
+        });
+        Future<void>.delayed(const Duration(milliseconds: 220), () {
+          if (!mounted ||
+              _isAudioPlaying ||
+              completionToken != _audioCompletionToken) {
+            return;
+          }
+          setState(() {
+            _showAudioProgress = false;
+            _audioPosition = Duration.zero;
+          });
         });
       }
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_didStartPreparingDetail) {
+      return;
+    }
+    _didStartPreparingDetail = true;
+    _prepareDetailMedia();
+  }
+
+  @override
   void dispose() {
+    _stopDetailPlayback(updateUi: false);
     _audioPlayer.dispose();
+    for (final controller in _preloadedVideoControllers.values) {
+      controller
+        ..setVolume(0)
+        ..pause()
+        ..dispose();
+    }
     super.dispose();
+  }
+
+  Future<void> _prepareDetailMedia() async {
+    final mediaItems = mediaItemsFromMap(widget.itemData);
+    final imageFutures = mediaItems.map((media) {
+      final url = media.isVideo
+          ? media.thumbnailUrl?.trim() ?? ''
+          : media.thumbnailUrl?.trim().isNotEmpty == true
+              ? media.thumbnailUrl!.trim()
+              : media.url;
+      if (url.isEmpty) {
+        return Future<void>.value();
+      }
+      return precacheImage(CachedNetworkImageProvider(url), context).catchError(
+        (_) {},
+      );
+    });
+    final videoFutures = _preloadedVideoInitializers.values;
+    final audioFuture = _prepareAudioSource();
+    final warmupFuture = Future.wait<void>([
+      ...imageFutures,
+      ...videoFutures,
+      audioFuture,
+    ]);
+
+    await Future.any<void>([
+      warmupFuture,
+      Future<void>.delayed(const Duration(milliseconds: 1600)),
+    ]);
+
+    if (mounted) {
+      setState(() => _isPreparingDetail = false);
+    }
+  }
+
+  Future<void> _prepareAudioSource() async {
+    if (_audioUrl.isEmpty) {
+      return;
+    }
+    try {
+      await _audioPlayer.setSource(UrlSource(_audioUrl));
+      _isAudioSourcePrepared = true;
+    } catch (_) {
+      _isAudioSourcePrepared = false;
+    }
+  }
+
+  void _preloadDetailVideos() {
+    final videos = mediaItemsFromMap(
+      widget.itemData,
+    ).where((media) => media.isVideo);
+    for (final media in videos) {
+      if (_preloadedVideoControllers.containsKey(media.url)) {
+        continue;
+      }
+      final controller = VideoPlayerController.networkUrl(Uri.parse(media.url));
+      _preloadedVideoControllers[media.url] = controller;
+      _preloadedVideoInitializers[media.url] = controller.initialize().catchError(
+        (_) {},
+      );
+    }
+  }
+
+  void _stopDetailPlayback({bool updateUi = true}) {
+    _audioCompletionToken++;
+    _audioPlayer.stop();
+    if (updateUi && mounted) {
+      setState(() {
+        _isAudioPlaying = false;
+        _showAudioProgress = false;
+        _audioPosition = Duration.zero;
+      });
+    }
   }
 
   Future<void> _toggleAudio() async {
@@ -69,13 +182,25 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     if (_isAudioPlaying) {
       await _audioPlayer.pause();
       if (mounted) {
-        setState(() => _isAudioPlaying = false);
+        setState(() {
+          _isAudioPlaying = false;
+          _showAudioProgress = false;
+        });
       }
       return;
     }
-    await _audioPlayer.play(UrlSource(_audioUrl));
+    _audioCompletionToken++;
+    if (_isAudioSourcePrepared || _audioPosition > Duration.zero) {
+      await _audioPlayer.resume();
+    } else {
+      await _audioPlayer.play(UrlSource(_audioUrl));
+      _isAudioSourcePrepared = true;
+    }
     if (mounted) {
-      setState(() => _isAudioPlaying = true);
+      setState(() {
+        _isAudioPlaying = true;
+        _showAudioProgress = true;
+      });
     }
   }
 
@@ -96,18 +221,22 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     int initialIndex,
     String sellerPhone,
   ) {
+    _stopDetailPlayback();
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => _SingleMediaPage(
           mediaItems: mediaItems,
           initialIndex: initialIndex,
           sellerPhone: sellerPhone,
+          preloadedVideoControllers: _preloadedVideoControllers,
+          preloadedVideoInitializers: _preloadedVideoInitializers,
         ),
       ),
     );
   }
 
   Future<void> _goToFeed(BuildContext context) async {
+    _stopDetailPlayback();
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {
       navigator.pop();
@@ -132,6 +261,10 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     final sellerPhone = widget.itemData['seller_phone']?.toString() ?? '';
     final itemName = widget.itemData['item_name']?.toString().trim() ?? '';
 
+    if (_isPreparingDetail) {
+      return const _ItemDetailWarmupSkeleton();
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) {
@@ -155,6 +288,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         location: widget.itemData['location']?.toString() ?? '',
                         audioUrl: _audioUrl,
                         isAudioPlaying: _isAudioPlaying,
+                        showAudioProgress: _showAudioProgress,
                         audioPosition: _audioPosition,
                         audioDuration: _audioDuration,
                         onAudioTap: _toggleAudio,
@@ -175,6 +309,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                               name: widget.itemData['seller_name'],
                               sellerId: widget.itemData['seller_uid'],
                               sellerPhone: widget.itemData['seller_phone'],
+                              onOpenProfile: _stopDetailPlayback,
                             ),
                           ],
                         ),
@@ -188,6 +323,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                   onCall: () => _launchPhone(sellerPhone),
                   onWhatsApp: () => _launchWhatsApp(sellerPhone),
                   onShare: () {
+                    _stopDetailPlayback();
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -267,6 +403,7 @@ class _DetailMediaHeader extends StatelessWidget {
     required this.location,
     required this.audioUrl,
     required this.isAudioPlaying,
+    required this.showAudioProgress,
     required this.audioPosition,
     required this.audioDuration,
     required this.onAudioTap,
@@ -279,6 +416,7 @@ class _DetailMediaHeader extends StatelessWidget {
   final String location;
   final String audioUrl;
   final bool isAudioPlaying;
+  final bool showAudioProgress;
   final Duration audioPosition;
   final Duration audioDuration;
   final VoidCallback onAudioTap;
@@ -373,17 +511,19 @@ class _DetailMediaHeader extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (audioUrl.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  if (isAudioPlaying)
-                    _DetailAudioTimeline(
-                      position: audioPosition,
-                      duration: audioDuration,
-                    ),
-                ],
               ],
             ),
           ),
+          if (showAudioProgress)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _DetailAudioTimeline(
+                position: audioPosition,
+                duration: audioDuration,
+              ),
+            ),
         ],
       ),
     );
@@ -403,16 +543,13 @@ class _DetailAudioTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
     final progress = (position.inMilliseconds / total).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.only(right: 92),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(99),
-        child: LinearProgressIndicator(
-          value: progress,
-          minHeight: 4,
-          backgroundColor: Colors.black.withValues(alpha: 0.16),
-          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
-        ),
+    return SizedBox(
+      width: double.infinity,
+      child: LinearProgressIndicator(
+        value: progress,
+        minHeight: 4,
+        backgroundColor: Colors.black.withValues(alpha: 0.16),
+        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
       ),
     );
   }
@@ -597,11 +734,13 @@ class _SellerAvatarIcon extends StatelessWidget {
     required this.name,
     required this.sellerId,
     required this.sellerPhone,
+    required this.onOpenProfile,
   });
 
   final Object? name;
   final Object? sellerId;
   final Object? sellerPhone;
+  final VoidCallback onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -640,6 +779,7 @@ class _SellerAvatarIcon extends StatelessWidget {
             onTap: sellerDocId.isEmpty
                 ? null
                 : () {
+                    onOpenProfile();
                     Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -791,16 +931,95 @@ class _DetailData {
   final String valueText;
 }
 
+class _ItemDetailWarmupSkeleton extends StatelessWidget {
+  const _ItemDetailWarmupSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaHeight = MediaQuery.sizeOf(context).height * 0.80;
+    final topInset = MediaQuery.paddingOf(context).top;
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4FBF7),
+      body: Column(
+        children: [
+          SizedBox(
+            height: mediaHeight,
+            child: Stack(
+              children: [
+                const Positioned.fill(child: MediaSkeletonPlaceholder()),
+                Positioned(
+                  top: topInset + 12,
+                  left: 14,
+                  child: const CircleAvatar(
+                    radius: 21,
+                    backgroundColor: Colors.white,
+                    child: Icon(Icons.arrow_back, color: Colors.black),
+                  ),
+                ),
+                const Positioned(
+                  left: 14,
+                  right: 110,
+                  bottom: 48,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _WarmupChip(width: 42),
+                      SizedBox(height: 8),
+                      _WarmupChip(width: 150),
+                      SizedBox(height: 8),
+                      _WarmupChip(width: 118),
+                      SizedBox(height: 8),
+                      _WarmupChip(width: 130),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(22, 22, 22, 0),
+            child: _WarmupChip(width: double.infinity, height: 42),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WarmupChip extends StatelessWidget {
+  const _WarmupChip({required this.width, this.height = 30});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: const MediaSkeletonPlaceholder(),
+      ),
+    );
+  }
+}
+
 class _SingleMediaPage extends StatefulWidget {
   const _SingleMediaPage({
     required this.mediaItems,
     required this.initialIndex,
     required this.sellerPhone,
+    required this.preloadedVideoControllers,
+    required this.preloadedVideoInitializers,
   });
 
   final List<MediaItem> mediaItems;
   final int initialIndex;
   final String sellerPhone;
+  final Map<String, VideoPlayerController> preloadedVideoControllers;
+  final Map<String, Future<void>> preloadedVideoInitializers;
 
   @override
   State<_SingleMediaPage> createState() => _SingleMediaPageState();
@@ -808,6 +1027,7 @@ class _SingleMediaPage extends StatefulWidget {
 
 class _SingleMediaPageState extends State<_SingleMediaPage> {
   late final PageController _pageController;
+  final ValueNotifier<int> _pauseSignal = ValueNotifier<int>(0);
   late int _currentIndex;
 
   @override
@@ -823,50 +1043,73 @@ class _SingleMediaPageState extends State<_SingleMediaPage> {
 
   @override
   void dispose() {
+    _pauseActiveVideo();
+    _pauseSignal.dispose();
     _pageController.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
+  void _pauseActiveVideo() {
+    _pauseSignal.value++;
+  }
+
+  void _close() {
+    _pauseActiveVideo();
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaTopPadding = MediaQuery.paddingOf(context).top + 74;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              Expanded(
-                child: ClipRect(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: mediaTopPadding),
-                    child: PageView.builder(
-                      controller: _pageController,
-                      onPageChanged: (index) {
-                        setState(() => _currentIndex = index);
-                      },
-                      itemCount: widget.mediaItems.length,
-                      itemBuilder: (context, index) {
-                        return _FullscreenMediaView(
-                          media: widget.mediaItems[index],
-                          allowZoom: true,
-                          fit: BoxFit.contain,
-                        );
-                      },
+    return PopScope(
+      onPopInvokedWithResult: (_, _) => _pauseActiveVideo(),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                Expanded(
+                  child: ClipRect(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: mediaTopPadding),
+                      child: PageView.builder(
+                        controller: _pageController,
+                        onPageChanged: (index) {
+                          _pauseActiveVideo();
+                          setState(() => _currentIndex = index);
+                        },
+                        itemCount: widget.mediaItems.length,
+                        itemBuilder: (context, index) {
+                          return _FullscreenMediaView(
+                            media: widget.mediaItems[index],
+                            allowZoom: true,
+                            fit: BoxFit.contain,
+                            pauseSignal: _pauseSignal,
+                            preloadedController:
+                                widget.preloadedVideoControllers[
+                                  widget.mediaItems[index].url
+                                ],
+                            preloadFuture: widget.preloadedVideoInitializers[
+                              widget.mediaItems[index].url
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-              ),
-              _FullscreenContactBar(sellerPhone: widget.sellerPhone),
-            ],
-          ),
-          _FullscreenHeader(onBack: () => Navigator.pop(context)),
-          _MediaPositionCounter(
-            currentIndex: _currentIndex,
-            totalCount: widget.mediaItems.length,
-          ),
-        ],
+                _FullscreenContactBar(sellerPhone: widget.sellerPhone),
+              ],
+            ),
+            _FullscreenHeader(onBack: _close),
+            _MediaPositionCounter(
+              currentIndex: _currentIndex,
+              totalCount: widget.mediaItems.length,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -943,17 +1186,32 @@ class _FullscreenMediaView extends StatelessWidget {
   const _FullscreenMediaView({
     required this.media,
     required this.allowZoom,
+    required this.pauseSignal,
+    required this.preloadedController,
+    required this.preloadFuture,
     this.fit = BoxFit.contain,
   });
 
   final MediaItem media;
   final bool allowZoom;
+  final ValueListenable<int> pauseSignal;
+  final VideoPlayerController? preloadedController;
+  final Future<void>? preloadFuture;
   final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
     if (media.isVideo) {
-      return SizedBox.expand(child: VideoPreview(url: media.url, fit: fit));
+      return SizedBox.expand(
+        child: VideoPreview(
+          url: media.url,
+          thumbnailUrl: media.thumbnailUrl,
+          fit: fit,
+          pauseSignal: pauseSignal,
+          controller: preloadedController,
+          initializeFuture: preloadFuture,
+        ),
+      );
     }
 
     return LayoutBuilder(
@@ -965,6 +1223,8 @@ class _FullscreenMediaView extends StatelessWidget {
           memCacheWidth: 1400,
           maxWidthDiskCache: 1800,
           fit: fit,
+          fadeInDuration: const Duration(milliseconds: 1),
+          fadeOutDuration: const Duration(milliseconds: 1),
           placeholder: (context, url) => const MediaSkeletonPlaceholder(
             baseColor: Color(0xFF202421),
             highlightColor: Color(0xFF333A35),

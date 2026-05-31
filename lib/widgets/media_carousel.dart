@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -101,13 +102,16 @@ class MediaPreview extends StatelessWidget {
                 fit: fit,
               )
             : CachedNetworkImage(
-                imageUrl: currentMedia.url,
+                imageUrl: currentMedia.thumbnailUrl?.trim().isNotEmpty == true
+                    ? currentMedia.thumbnailUrl!.trim()
+                    : currentMedia.url,
                 width: double.infinity,
                 height: height,
                 memCacheWidth: 720,
                 maxWidthDiskCache: 1080,
                 fit: fit,
-                fadeInDuration: const Duration(milliseconds: 120),
+                fadeInDuration: const Duration(milliseconds: 1),
+                fadeOutDuration: const Duration(milliseconds: 1),
                 placeholder: (context, url) => const _MediaLoadingPlaceholder(),
                 errorWidget: (context, url, error) =>
                     const _MediaErrorPlaceholder(),
@@ -148,6 +152,7 @@ class _VideoThumbnailPreview extends StatelessWidget {
             maxWidthDiskCache: 1080,
             fit: fit,
             fadeInDuration: const Duration(milliseconds: 120),
+            fadeOutDuration: const Duration(milliseconds: 1),
             placeholder: (context, url) => const _MediaLoadingPlaceholder(),
             errorWidget: (context, url, error) => Container(
               color: Colors.black,
@@ -254,7 +259,11 @@ class _MediaCarouselState extends State<MediaCarousel> {
                               widget.borderRadius,
                             ),
                             child: media.isVideo
-                                ? VideoPreview(url: media.url, fit: widget.fit)
+                                ? _VideoThumbnailPreview(
+                                    thumbnailUrl: media.thumbnailUrl,
+                                    height: widget.height,
+                                    fit: widget.fit,
+                                  )
                                 : CachedNetworkImage(
                                     imageUrl: media.url,
                                     width: double.infinity,
@@ -263,7 +272,10 @@ class _MediaCarouselState extends State<MediaCarousel> {
                                     maxWidthDiskCache: 1600,
                                     fit: widget.fit,
                                     fadeInDuration: const Duration(
-                                      milliseconds: 120,
+                                      milliseconds: 1,
+                                    ),
+                                    fadeOutDuration: const Duration(
+                                      milliseconds: 1,
                                     ),
                                     placeholder: (context, url) =>
                                         const _MediaLoadingPlaceholder(),
@@ -407,10 +419,22 @@ class _MediaErrorPlaceholder extends StatelessWidget {
 }
 
 class VideoPreview extends StatefulWidget {
-  const VideoPreview({super.key, required this.url, this.fit = BoxFit.cover});
+  const VideoPreview({
+    super.key,
+    required this.url,
+    this.fit = BoxFit.cover,
+    this.pauseSignal,
+    this.thumbnailUrl,
+    this.controller,
+    this.initializeFuture,
+  });
 
   final String url;
   final BoxFit fit;
+  final ValueListenable<int>? pauseSignal;
+  final String? thumbnailUrl;
+  final VideoPlayerController? controller;
+  final Future<void>? initializeFuture;
 
   @override
   State<VideoPreview> createState() => _VideoPreviewState();
@@ -418,37 +442,75 @@ class VideoPreview extends StatefulWidget {
 
 class _VideoPreviewState extends State<VideoPreview> {
   late final VideoPlayerController _controller;
+  late final bool _ownsController;
   bool _isReady = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
+    widget.pauseSignal?.addListener(_pauseVideo);
+    _ownsController = widget.controller == null;
+    _controller =
+        widget.controller ?? VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    if (_controller.value.isInitialized) {
+      _isReady = true;
+      return;
+    }
+    (widget.initializeFuture ?? _controller.initialize()).then((_) {
         if (!mounted) {
           return;
         }
         setState(() => _isReady = true);
-      });
+      }).catchError((_) {});
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pauseSignal != widget.pauseSignal) {
+      oldWidget.pauseSignal?.removeListener(_pauseVideo);
+      widget.pauseSignal?.addListener(_pauseVideo);
+    }
+  }
+
+  void _pauseVideo() {
+    if (_controller.value.isInitialized) {
+      _controller.setVolume(0);
+      _controller.pause();
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+      }
+    }
   }
 
   @override
   void deactivate() {
-    _controller.pause();
+    _pauseVideo();
     super.deactivate();
   }
 
   @override
   void dispose() {
+    widget.pauseSignal?.removeListener(_pauseVideo);
+    _controller.setVolume(0);
     _controller.pause();
-    _controller.dispose();
+    if (_ownsController) {
+      _controller.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (!_isReady) {
-      return const MediaSkeletonPlaceholder(baseColor: Color(0xFF202421));
+      return _VideoLoadingPreview(
+        thumbnailUrl: widget.thumbnailUrl,
+        fit: widget.fit,
+      );
     }
 
     return RepaintBoundary(
@@ -471,9 +533,12 @@ class _VideoPreviewState extends State<VideoPreview> {
           IconButton.filled(
             onPressed: () {
               setState(() {
-                _controller.value.isPlaying
-                    ? _controller.pause()
-                    : _controller.play();
+                if (_controller.value.isPlaying) {
+                  _controller.pause();
+                } else {
+                  _controller.setVolume(1);
+                  _controller.play();
+                }
               });
             },
             icon: Icon(
@@ -482,6 +547,51 @@ class _VideoPreviewState extends State<VideoPreview> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _VideoLoadingPreview extends StatelessWidget {
+  const _VideoLoadingPreview({required this.thumbnailUrl, required this.fit});
+
+  final String? thumbnailUrl;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = thumbnailUrl?.trim() ?? '';
+    final placeholder = url.isEmpty
+        ? const MediaSkeletonPlaceholder(baseColor: Color(0xFF202421))
+        : CachedNetworkImage(
+            imageUrl: url,
+            width: double.infinity,
+            height: double.infinity,
+            memCacheWidth: 900,
+            maxWidthDiskCache: 1200,
+            fit: fit,
+            fadeInDuration: const Duration(milliseconds: 90),
+            fadeOutDuration: const Duration(milliseconds: 1),
+            placeholder: (context, url) =>
+                const MediaSkeletonPlaceholder(baseColor: Color(0xFF202421)),
+            errorWidget: (context, url, error) =>
+                const MediaSkeletonPlaceholder(baseColor: Color(0xFF202421)),
+          );
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        placeholder,
+        Center(
+          child: SizedBox(
+            width: 34,
+            height: 34,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: Colors.white.withValues(alpha: 0.92),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

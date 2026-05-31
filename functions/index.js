@@ -82,6 +82,7 @@ async function cleanupItem(itemDoc) {
   const mediaUrls = collectMediaUrls(item);
   await deleteStorageFiles(mediaUrls);
   await removeItemStories(itemId);
+  await removeItemSeenRecords(itemId);
 
   await itemDoc.ref.delete();
   logger.info(`Deleted expired item ${itemId}.`);
@@ -182,4 +183,26 @@ async function removeItemStories(itemId) {
   }
   await batch.commit();
   logger.info(`Deleted ${stories.size} story document(s) for item ${itemId}.`);
+}
+
+async function removeItemSeenRecords(itemId) {
+  const seenDocRef = db.collection("item_seen").doc(itemId);
+  const viewers = await seenDocRef.collection("viewers").get();
+
+  if (!viewers.empty) {
+    let batch = db.batch();
+    let count = 0;
+    for (const viewer of viewers.docs) {
+      batch.delete(viewer.ref);
+      count += 1;
+      if (count % 450 === 0) {
+        await batch.commit();
+        batch = db.batch();
+      }
+    }
+    await batch.commit();
+    logger.info(`Deleted ${viewers.size} seen viewer document(s) for item ${itemId}.`);
+  }
+
+  await seenDocRef.delete();
 }

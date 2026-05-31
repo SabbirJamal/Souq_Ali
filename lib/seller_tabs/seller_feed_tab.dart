@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
 
@@ -25,6 +26,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
+  final Map<String, GlobalKey> _itemKeys = {};
+  final Set<String> _seenItemIds = {};
+  final Set<String> _pendingSeenItemIds = {};
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
       FirebaseFirestore.instance
           .collection('items')
@@ -35,17 +39,70 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   bool _isGridView = true;
   String _query = '';
   Timer? _searchDebounce;
+  Timer? _visibilityDebounce;
+  Timer? _seenFlushTimer;
+  String? _sellerId;
+  bool _isLoadingSeenItems = true;
   final DateTime _openedAt = DateTime.now();
   int _refreshTick = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_scheduleVisibleSeenCheck);
+    _loadSeenItems();
+  }
 
   @override
   void dispose() {
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
+    _visibilityDebounce?.cancel();
+    _seenFlushTimer?.cancel();
+    _flushSeenItems();
     _scrollController.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSeenItems() async {
+    final session = await SellerSession.current();
+    if (!mounted) {
+      return;
+    }
+    _sellerId = session?.sellerId;
+    final sellerId = _sellerId;
+    if (sellerId == null || sellerId.isEmpty) {
+      setState(() => _isLoadingSeenItems = false);
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collectionGroup('viewers')
+          .where('seller_id', isEqualTo: sellerId)
+          .limit(500)
+          .get();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _seenItemIds
+          ..clear()
+          ..addAll(snapshot.docs.map((doc) {
+            final itemId = doc.data()['item_id']?.toString();
+            return itemId?.isNotEmpty == true
+                ? itemId!
+                : doc.reference.parent.parent?.id ?? '';
+          }).where((itemId) => itemId.isNotEmpty));
+        _isLoadingSeenItems = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingSeenItems = false);
+      }
+    }
   }
 
   void _handleSearchChanged(String value) {
@@ -111,6 +168,104 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     }).toList();
   }
 
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _rankDocs(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    if (_query.trim().isNotEmpty) {
+      return docs;
+    }
+
+    final unseenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    final seenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    for (final doc in docs) {
+      (_seenItemIds.contains(doc.id) ? seenDocs : unseenDocs).add(doc);
+    }
+    return [...unseenDocs, ...seenDocs];
+  }
+
+  void _scheduleVisibleSeenCheck() {
+    _visibilityDebounce?.cancel();
+    _visibilityDebounce = Timer(
+      const Duration(milliseconds: 220),
+      _markVisibleItemsSeen,
+    );
+  }
+
+  void _markVisibleItemsSeen() {
+    final sellerId = _sellerId;
+    if (sellerId == null || sellerId.isEmpty || !_scrollController.hasClients) {
+      return;
+    }
+
+    for (final entry in _itemKeys.entries) {
+      final itemId = entry.key;
+      if (_seenItemIds.contains(itemId) || _pendingSeenItemIds.contains(itemId)) {
+        continue;
+      }
+      if (_isItemCardMostlyVisible(entry.value)) {
+        _seenItemIds.add(itemId);
+        _pendingSeenItemIds.add(itemId);
+      }
+    }
+
+    if (_pendingSeenItemIds.isNotEmpty) {
+      _seenFlushTimer ??= Timer(
+        const Duration(milliseconds: 800),
+        _flushSeenItems,
+      );
+    }
+  }
+
+  bool _isItemCardMostlyVisible(GlobalKey key) {
+    final context = key.currentContext;
+    if (context == null) {
+      return false;
+    }
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.attached || !renderBox.hasSize) {
+      return false;
+    }
+    final top = renderBox.localToGlobal(Offset.zero).dy;
+    final height = renderBox.size.height;
+    final bottom = top + height;
+    final viewportTop = MediaQuery.paddingOf(context).top + 56;
+    final viewportBottom = MediaQuery.sizeOf(context).height - 58;
+    final visibleHeight =
+        bottom.clamp(viewportTop, viewportBottom) -
+        top.clamp(viewportTop, viewportBottom);
+    return visibleHeight > 0 && visibleHeight / height >= 0.35;
+  }
+
+  Future<void> _flushSeenItems() async {
+    _seenFlushTimer?.cancel();
+    _seenFlushTimer = null;
+    final sellerId = _sellerId;
+    if (sellerId == null || sellerId.isEmpty || _pendingSeenItemIds.isEmpty) {
+      return;
+    }
+
+    final pending = List<String>.from(_pendingSeenItemIds);
+    _pendingSeenItemIds.clear();
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      for (final itemId in pending) {
+        final ref = FirebaseFirestore.instance
+            .collection('item_seen')
+            .doc(itemId)
+            .collection('viewers')
+            .doc(sellerId);
+        batch.set(ref, {
+          'item_id': itemId,
+          'seller_id': sellerId,
+          'seen_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      await batch.commit();
+    } catch (_) {
+      _pendingSeenItemIds.addAll(pending);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -121,11 +276,15 @@ class SellerFeedTabState extends State<SellerFeedTab> {
             final isLoading =
                 snapshot.connectionState == ConnectionState.waiting;
             final hasError = snapshot.hasError;
-            final docs = _filterDocs(
+            final docs = _rankDocs(_filterDocs(
               (snapshot.data?.docs ?? [])
                   .where((doc) => _isItemActive(doc.data(), _openedAt))
                   .toList(),
-            );
+            ));
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _scheduleVisibleSeenCheck();
+            });
 
             return RefreshIndicator(
               color: const Color(0xFFFF7801),
@@ -143,7 +302,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                       onToggleGrid: _toggleLayoutMode,
                     ),
                   ),
-                  if (isLoading)
+                  if (isLoading || _isLoadingSeenItems)
                     SliverPadding(
                       padding: _isGridView
                           ? const EdgeInsets.symmetric(
@@ -198,15 +357,21 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                             ),
                       sliver: _isGridView
                           ? SliverToBoxAdapter(
-                              child: _MasonryItemGrid(docs: docs),
+                              child: _MasonryItemGrid(
+                                docs: docs,
+                                keyForDoc: _keyForItem,
+                              ),
                             )
                           : SliverList.builder(
                               itemCount: docs.length,
                               itemBuilder: (context, index) {
                                 final doc = docs[index];
-                                return ItemCard(
-                                  docId: doc.id,
-                                  item: doc.data(),
+                                return KeyedSubtree(
+                                  key: _keyForItem(doc.id),
+                                  child: ItemCard(
+                                    docId: doc.id,
+                                    item: doc.data(),
+                                  ),
                                 );
                               },
                             ),
@@ -239,6 +404,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         ),
       ],
     );
+  }
+
+  GlobalKey _keyForItem(String itemId) {
+    return _itemKeys.putIfAbsent(itemId, GlobalKey.new);
   }
 }
 
@@ -356,9 +525,10 @@ class _FeedHeader extends StatelessWidget {
 }
 
 class _MasonryItemGrid extends StatelessWidget {
-  const _MasonryItemGrid({required this.docs});
+  const _MasonryItemGrid({required this.docs, required this.keyForDoc});
 
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+  final GlobalKey Function(String itemId) keyForDoc;
 
   @override
   Widget build(BuildContext context) {
@@ -376,9 +546,9 @@ class _MasonryItemGrid extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _MasonryColumn(docs: leftDocs)),
+        Expanded(child: _MasonryColumn(docs: leftDocs, keyForDoc: keyForDoc)),
         const SizedBox(width: 4),
-        Expanded(child: _MasonryColumn(docs: rightDocs)),
+        Expanded(child: _MasonryColumn(docs: rightDocs, keyForDoc: keyForDoc)),
       ],
     );
   }
@@ -417,15 +587,19 @@ class _FeedSkeletonGrid extends StatelessWidget {
 }
 
 class _MasonryColumn extends StatelessWidget {
-  const _MasonryColumn({required this.docs});
+  const _MasonryColumn({required this.docs, required this.keyForDoc});
 
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+  final GlobalKey Function(String itemId) keyForDoc;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: docs.map((doc) {
-        return ItemCard(docId: doc.id, item: doc.data(), isCompact: true);
+        return KeyedSubtree(
+          key: keyForDoc(doc.id),
+          child: ItemCard(docId: doc.id, item: doc.data(), isCompact: true),
+        );
       }).toList(),
     );
   }
