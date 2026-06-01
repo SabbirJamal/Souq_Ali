@@ -2,7 +2,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -37,6 +36,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   bool _showAudioProgress = false;
   bool _isAudioSourcePrepared = false;
   int _audioCompletionToken = 0;
+  bool _lockDetailScroll = false;
 
   String get _audioUrl =>
       widget.itemData['audio_description_url']?.toString().trim() ?? '';
@@ -117,12 +117,21 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
         (_) {},
       );
     });
-    final videoFutures = _preloadedVideoInitializers.values;
-    final audioFuture = _prepareAudioSource();
+    final firstMedia = mediaItems.isEmpty ? null : mediaItems.first;
+    final firstVideoWarmup = firstMedia?.isVideo == true
+        ? _preloadedVideoInitializers[firstMedia!.url]?.then((_) {
+            final controller = _preloadedVideoControllers[firstMedia.url];
+            if (controller?.value.isInitialized == true) {
+              controller!
+                ..setVolume(1)
+                ..play();
+            }
+          }).catchError((_) {})
+        : null;
+    _prepareAudioSource();
     final warmupFuture = Future.wait<void>([
       ...imageFutures,
-      ...videoFutures,
-      audioFuture,
+      if (firstVideoWarmup != null) firstVideoWarmup,
     ]);
 
     await Future.any<void>([
@@ -148,30 +157,51 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   void _preloadDetailVideos() {
-    final videos = mediaItemsFromMap(
-      widget.itemData,
-    ).where((media) => media.isVideo);
+    final mediaItems = mediaItemsFromMap(widget.itemData);
+    final firstMedia = mediaItems.isEmpty ? null : mediaItems.first;
+    final videos = mediaItems.where((media) => media.isVideo);
     for (final media in videos) {
       if (_preloadedVideoControllers.containsKey(media.url)) {
         continue;
       }
       final controller = VideoPlayerController.networkUrl(Uri.parse(media.url));
       _preloadedVideoControllers[media.url] = controller;
-      _preloadedVideoInitializers[media.url] = controller.initialize().catchError(
-        (_) {},
-      );
+      final initializeNow =
+          firstMedia?.isVideo == true && firstMedia?.url == media.url;
+      final initializer = initializeNow
+          ? controller.initialize()
+          : Future<void>.delayed(const Duration(milliseconds: 300)).then((
+              _,
+            ) async {
+              if (!mounted) {
+                return;
+              }
+              await controller.initialize();
+            });
+      _preloadedVideoInitializers[media.url] = initializer.catchError((_) {});
     }
   }
 
   void _stopDetailPlayback({bool updateUi = true}) {
     _audioCompletionToken++;
     _audioPlayer.stop();
+    _pauseDetailVideos();
     if (updateUi && mounted) {
       setState(() {
         _isAudioPlaying = false;
         _showAudioProgress = false;
         _audioPosition = Duration.zero;
       });
+    }
+  }
+
+  void _pauseDetailVideos() {
+    for (final controller in _preloadedVideoControllers.values) {
+      if (controller.value.isInitialized) {
+        controller
+          ..setVolume(0)
+          ..pause();
+      }
     }
   }
 
@@ -213,26 +243,6 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     final cleanNumber = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
     final uri = Uri.parse('https://wa.me/$cleanNumber');
     await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-
-  void _openFullscreen(
-    BuildContext context,
-    List<MediaItem> mediaItems,
-    int initialIndex,
-    String sellerPhone,
-  ) {
-    _stopDetailPlayback();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => _SingleMediaPage(
-          mediaItems: mediaItems,
-          initialIndex: initialIndex,
-          sellerPhone: sellerPhone,
-          preloadedVideoControllers: _preloadedVideoControllers,
-          preloadedVideoInitializers: _preloadedVideoInitializers,
-        ),
-      ),
-    );
   }
 
   Future<void> _goToFeed(BuildContext context) async {
@@ -280,9 +290,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 Expanded(
                   child: ListView(
                     padding: EdgeInsets.zero,
+                    physics: _lockDetailScroll
+                        ? const NeverScrollableScrollPhysics()
+                        : null,
                     children: [
                       _DetailMediaHeader(
                         mediaItems: mediaItems,
+                        preloadedVideoControllers: _preloadedVideoControllers,
+                        preloadedVideoInitializers: _preloadedVideoInitializers,
                         itemName: itemName,
                         price: _formatPrice(widget.itemData['item_price']),
                         location: widget.itemData['location']?.toString() ?? '',
@@ -292,12 +307,12 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         audioPosition: _audioPosition,
                         audioDuration: _audioDuration,
                         onAudioTap: _toggleAudio,
-                        onMediaTap: (media, index) => _openFullscreen(
-                          context,
-                          mediaItems,
-                          index,
-                          sellerPhone,
-                        ),
+                        onZoomActiveChanged: (active) {
+                          if (_lockDetailScroll == active) {
+                            return;
+                          }
+                          setState(() => _lockDetailScroll = active);
+                        },
                       ),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
@@ -395,9 +410,11 @@ bool _isZeroPrice(String value) {
   return (double.tryParse(match.group(0) ?? '') ?? -1) == 0;
 }
 
-class _DetailMediaHeader extends StatelessWidget {
+class _DetailMediaHeader extends StatefulWidget {
   const _DetailMediaHeader({
     required this.mediaItems,
+    required this.preloadedVideoControllers,
+    required this.preloadedVideoInitializers,
     required this.itemName,
     required this.price,
     required this.location,
@@ -407,10 +424,12 @@ class _DetailMediaHeader extends StatelessWidget {
     required this.audioPosition,
     required this.audioDuration,
     required this.onAudioTap,
-    required this.onMediaTap,
+    this.onZoomActiveChanged,
   });
 
   final List<MediaItem> mediaItems;
+  final Map<String, VideoPlayerController> preloadedVideoControllers;
+  final Map<String, Future<void>> preloadedVideoInitializers;
   final String itemName;
   final String price;
   final String location;
@@ -420,28 +439,264 @@ class _DetailMediaHeader extends StatelessWidget {
   final Duration audioPosition;
   final Duration audioDuration;
   final VoidCallback onAudioTap;
-  final void Function(MediaItem media, int index) onMediaTap;
+  final ValueChanged<bool>? onZoomActiveChanged;
+
+  @override
+  State<_DetailMediaHeader> createState() => _DetailMediaHeaderState();
+}
+
+class _DetailMediaHeaderState extends State<_DetailMediaHeader> {
+  final GlobalKey _mediaKey = GlobalKey();
+  late final PageController _pageController;
+  final ValueNotifier<int> _pauseSignal = ValueNotifier<int>(0);
+  OverlayEntry? _zoomOverlay;
+  Rect? _zoomRect;
+  Offset _zoomStartFocal = Offset.zero;
+  Offset _zoomCurrentFocal = Offset.zero;
+  Offset _zoomLocalFocal = Offset.zero;
+  MediaItem? _zoomReadyMedia;
+  final Set<int> _mediaPointers = <int>{};
+  double _zoomScale = 1;
+  int _currentIndex = 0;
+  bool _isPinchIntent = false;
+  bool _isZooming = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _removeZoomOverlay();
+    _pauseSignal.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _handlePageChanged(int index) {
+    _pauseSignal.value++;
+    if (mounted) {
+      setState(() => _currentIndex = index);
+    } else {
+      _currentIndex = index;
+    }
+  }
+
+  void _handleMediaPointerDown(PointerDownEvent event) {
+    _mediaPointers.add(event.pointer);
+    if (_mediaPointers.length >= 2 && !_isPinchIntent) {
+      setState(() => _isPinchIntent = true);
+    }
+  }
+
+  void _handleMediaPointerUp(PointerEvent event) {
+    _mediaPointers.remove(event.pointer);
+    if (_mediaPointers.length < 2 && _isPinchIntent && !_isZooming) {
+      setState(() => _isPinchIntent = false);
+    }
+  }
+
+  void _handleScaleStart(MediaItem media, ScaleStartDetails details) {
+    if (media.isVideo || _zoomImageUrl(media).isEmpty || _isZooming) {
+      return;
+    }
+    _zoomReadyMedia = media;
+    _startZoom(media, details.focalPoint);
+  }
+
+  void _handleScaleUpdate(MediaItem media, ScaleUpdateDetails details) {
+    if (!_isZooming || _zoomReadyMedia?.url != media.url) {
+      return;
+    }
+    _zoomCurrentFocal = details.focalPoint;
+    _zoomScale = details.scale.clamp(1.0, 4.0);
+    _zoomOverlay?.markNeedsBuild();
+  }
+
+  void _handleScaleEnd(MediaItem media) {
+    if (_zoomReadyMedia?.url != media.url) {
+      return;
+    }
+    _endZoomInteraction();
+  }
+
+  void _startZoom(MediaItem media, Offset focalPoint) {
+    final context = _mediaKey.currentContext;
+    final box = context?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !box.hasSize) {
+      return;
+    }
+    final topLeft = box.localToGlobal(Offset.zero);
+    _zoomRect = topLeft & box.size;
+    _zoomStartFocal = focalPoint;
+    _zoomCurrentFocal = focalPoint;
+    _zoomLocalFocal = focalPoint - topLeft;
+    _zoomScale = 1;
+    _isZooming = true;
+    widget.onZoomActiveChanged?.call(true);
+    setState(() {});
+    _showZoomOverlay(media);
+  }
+
+  void _endZoomInteraction() {
+    _removeZoomOverlay();
+    _mediaPointers.clear();
+    widget.onZoomActiveChanged?.call(false);
+    if (mounted) {
+      setState(() {
+        _isZooming = false;
+        _isPinchIntent = false;
+        _zoomReadyMedia = null;
+      });
+    }
+  }
+
+  void _showZoomOverlay(MediaItem media) {
+    _removeZoomOverlay();
+    final overlay = Overlay.of(context);
+    final imageUrl = _zoomImageUrl(media);
+    if (imageUrl.isEmpty) {
+      return;
+    }
+    _zoomOverlay = OverlayEntry(
+      builder: (context) {
+        final rect = _zoomRect;
+        if (rect == null) {
+          return const SizedBox.shrink();
+        }
+        return Positioned.fill(
+          child: IgnorePointer(
+            child: Stack(
+              children: [
+                Container(color: Colors.black.withValues(alpha: 0.18)),
+                Positioned.fromRect(
+                  rect: rect,
+                  child: Transform(
+                    transform: Matrix4.identity()
+                      ..translate(
+                        _zoomCurrentFocal.dx - _zoomStartFocal.dx,
+                        _zoomCurrentFocal.dy - _zoomStartFocal.dy,
+                      )
+                      ..translate(_zoomLocalFocal.dx, _zoomLocalFocal.dy)
+                      ..scale(_zoomScale)
+                      ..translate(-_zoomLocalFocal.dx, -_zoomLocalFocal.dy),
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      width: rect.width,
+                      height: rect.height,
+                      fit: BoxFit.cover,
+                      fadeInDuration: Duration.zero,
+                      fadeOutDuration: Duration.zero,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    overlay.insert(_zoomOverlay!);
+  }
+
+  String _zoomImageUrl(MediaItem media) {
+    if (media.isVideo) {
+      return media.thumbnailUrl?.trim() ?? '';
+    }
+    final url = media.url.trim();
+    return url.isNotEmpty ? url : media.thumbnailUrl?.trim() ?? '';
+  }
+
+  void _removeZoomOverlay() {
+    _zoomOverlay?.remove();
+    _zoomOverlay = null;
+  }
+
+  Widget _buildDetailMediaPage(int index, double mediaHeight) {
+    final media = widget.mediaItems[index];
+    return _DetailMediaPage(
+      media: media,
+      height: mediaHeight,
+      autoPlay: index == _currentIndex,
+      pauseSignal: _pauseSignal,
+      preloadedController: widget.preloadedVideoControllers[media.url],
+      preloadFuture: widget.preloadedVideoInitializers[media.url],
+      onScaleStart: _handleScaleStart,
+      onScaleUpdate: _handleScaleUpdate,
+      onScaleEnd: _handleScaleEnd,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final trimmedLocation = location.trim();
+    final trimmedLocation = widget.location.trim();
     final mediaHeight = MediaQuery.sizeOf(context).height * 0.80;
+    final imageCount = widget.mediaItems.where((media) => !media.isVideo).length;
+    final videoCount = widget.mediaItems.where((media) => media.isVideo).length;
+    final hideChrome = _isZooming;
+    final lockMediaSwipe = hideChrome || _isPinchIntent;
     return SizedBox(
       height: mediaHeight,
       child: Stack(
         fit: StackFit.expand,
         children: [
-          MediaCarousel(
-            mediaItems: mediaItems,
-            height: mediaHeight,
-            borderRadius: 0,
-            fit: BoxFit.cover,
-            showCountBadge: true,
-            showPageDots: true,
-            playVideosInline: true,
-            onMediaTap: onMediaTap,
+          Listener(
+            key: _mediaKey,
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: _handleMediaPointerDown,
+            onPointerUp: _handleMediaPointerUp,
+            onPointerCancel: _handleMediaPointerUp,
+            child: SizedBox(
+              child: widget.mediaItems.length == 1
+                  ? _buildDetailMediaPage(0, mediaHeight)
+                  : PageView.builder(
+                      controller: _pageController,
+                      clipBehavior: Clip.none,
+                      physics: lockMediaSwipe
+                          ? const NeverScrollableScrollPhysics()
+                          : null,
+                      onPageChanged: _handlePageChanged,
+                      itemCount: widget.mediaItems.length,
+                      itemBuilder: (context, index) =>
+                          _buildDetailMediaPage(index, mediaHeight),
+                    ),
+            ),
           ),
-          Positioned(
+          if (!hideChrome && (imageCount > 0 || videoCount > 0))
+            Positioned(
+              left: 10,
+              top: 10,
+              child: Row(
+                children: [
+                  if (imageCount > 0)
+                    _DetailMediaCountBadge(
+                      icon: Icons.photo_camera,
+                      count: imageCount,
+                    ),
+                  if (imageCount > 0 && videoCount > 0)
+                    const SizedBox(width: 6),
+                  if (videoCount > 0)
+                    _DetailMediaCountBadge(
+                      icon: Icons.videocam,
+                      count: videoCount,
+                    ),
+                ],
+              ),
+            ),
+          if (!hideChrome && widget.mediaItems.length > 1)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 16,
+              child: _DetailMediaDots(
+                count: widget.mediaItems.length,
+                activeIndex: _currentIndex,
+              ),
+            ),
+          if (!hideChrome)
+            Positioned(
             left: 14,
             right: 14,
             bottom: 48,
@@ -449,18 +704,18 @@ class _DetailMediaHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (audioUrl.isNotEmpty) ...[
+                if (widget.audioUrl.isNotEmpty) ...[
                   _DetailAudioIconChip(
-                    isPlaying: isAudioPlaying,
-                    onTap: onAudioTap,
+                    isPlaying: widget.isAudioPlaying,
+                    onTap: widget.onAudioTap,
                   ),
                   const SizedBox(height: 6),
                 ],
-                if (itemName.isNotEmpty) ...[
+                if (widget.itemName.isNotEmpty) ...[
                   IgnorePointer(
                     child: _DetailOverlayChip(
                       child: Text(
-                        itemName,
+                        widget.itemName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -497,12 +752,12 @@ class _DetailMediaHeader extends StatelessWidget {
                       ),
                     ),
                   ),
-                if (price.isNotEmpty) ...[
+                if (widget.price.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   IgnorePointer(
                     child: _DetailOverlayChip(
                       child: PriceWithCurrency(
-                        price: price,
+                        price: widget.price,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -515,18 +770,158 @@ class _DetailMediaHeader extends StatelessWidget {
               ],
             ),
           ),
-          if (showAudioProgress)
+          if (widget.showAudioProgress && !hideChrome)
             Positioned(
               left: 0,
               right: 0,
               bottom: 0,
               child: _DetailAudioTimeline(
-                position: audioPosition,
-                duration: audioDuration,
+                position: widget.audioPosition,
+                duration: widget.audioDuration,
               ),
             ),
         ],
       ),
+    );
+  }
+}
+
+class _DetailMediaPage extends StatelessWidget {
+  const _DetailMediaPage({
+    required this.media,
+    required this.height,
+    required this.autoPlay,
+    required this.pauseSignal,
+    required this.onScaleStart,
+    required this.onScaleUpdate,
+    required this.onScaleEnd,
+    this.preloadedController,
+    this.preloadFuture,
+  });
+
+  final MediaItem media;
+  final double height;
+  final bool autoPlay;
+  final ValueNotifier<int> pauseSignal;
+  final VideoPlayerController? preloadedController;
+  final Future<void>? preloadFuture;
+  final void Function(MediaItem media, ScaleStartDetails details) onScaleStart;
+  final void Function(MediaItem media, ScaleUpdateDetails details) onScaleUpdate;
+  final void Function(MediaItem media) onScaleEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onScaleStart: media.isVideo
+          ? null
+          : (details) => onScaleStart(media, details),
+      onScaleUpdate: media.isVideo
+          ? null
+          : (details) => onScaleUpdate(media, details),
+      onScaleEnd: media.isVideo ? null : (_) => onScaleEnd(media),
+      child: ClipRRect(
+        borderRadius: BorderRadius.zero,
+        child: media.isVideo
+            ? VideoPreview(
+                url: media.url,
+                thumbnailUrl: media.thumbnailUrl,
+                fit: BoxFit.cover,
+                controller: preloadedController,
+                initializeFuture: preloadFuture,
+                autoPlay: autoPlay,
+                pauseSignal: pauseSignal,
+                showPlayButton: false,
+                playIconSize: 72,
+              )
+            : CachedNetworkImage(
+                imageUrl: media.url,
+                width: double.infinity,
+                height: height,
+                memCacheWidth: 1200,
+                maxWidthDiskCache: 1600,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 1),
+                fadeOutDuration: const Duration(milliseconds: 1),
+                placeholder: (context, url) => const MediaSkeletonPlaceholder(),
+                errorWidget: (context, url, error) => Container(
+                  color: const Color(0xFFDCF8C6),
+                  child: const Icon(
+                    Icons.broken_image,
+                    size: 50,
+                    color: Color(0xFF075E54),
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _DetailMediaCountBadge extends StatelessWidget {
+  const _DetailMediaCountBadge({
+    required this.icon,
+    required this.count,
+  });
+
+  final IconData icon;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 14),
+          const SizedBox(width: 3),
+          Text(
+            count.toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailMediaDots extends StatelessWidget {
+  const _DetailMediaDots({
+    required this.count,
+    required this.activeIndex,
+  });
+
+  final int count;
+  final int activeIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(count, (index) {
+        final active = index == activeIndex;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: active ? 18 : 6,
+          height: 6,
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        );
+      }),
     );
   }
 }
@@ -1039,380 +1434,6 @@ class _WarmupChip extends StatelessWidget {
         width: width,
         height: height,
         child: const MediaSkeletonPlaceholder(),
-      ),
-    );
-  }
-}
-
-class _SingleMediaPage extends StatefulWidget {
-  const _SingleMediaPage({
-    required this.mediaItems,
-    required this.initialIndex,
-    required this.sellerPhone,
-    required this.preloadedVideoControllers,
-    required this.preloadedVideoInitializers,
-  });
-
-  final List<MediaItem> mediaItems;
-  final int initialIndex;
-  final String sellerPhone;
-  final Map<String, VideoPlayerController> preloadedVideoControllers;
-  final Map<String, Future<void>> preloadedVideoInitializers;
-
-  @override
-  State<_SingleMediaPage> createState() => _SingleMediaPageState();
-}
-
-class _SingleMediaPageState extends State<_SingleMediaPage> {
-  late final PageController _pageController;
-  final ValueNotifier<int> _pauseSignal = ValueNotifier<int>(0);
-  late int _currentIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-  }
-
-  @override
-  void dispose() {
-    _pauseActiveVideo();
-    _pauseSignal.dispose();
-    _pageController.dispose();
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-    super.dispose();
-  }
-
-  void _pauseActiveVideo() {
-    _pauseSignal.value++;
-  }
-
-  void _close() {
-    _pauseActiveVideo();
-    Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mediaTopPadding = MediaQuery.paddingOf(context).top + 74;
-    return PopScope(
-      onPopInvokedWithResult: (_, _) => _pauseActiveVideo(),
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          children: [
-            Column(
-              children: [
-                Expanded(
-                  child: ClipRect(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: mediaTopPadding),
-                      child: PageView.builder(
-                        controller: _pageController,
-                        onPageChanged: (index) {
-                          _pauseActiveVideo();
-                          setState(() => _currentIndex = index);
-                        },
-                        itemCount: widget.mediaItems.length,
-                        itemBuilder: (context, index) {
-                          return _FullscreenMediaView(
-                            media: widget.mediaItems[index],
-                            allowZoom: true,
-                            fit: BoxFit.contain,
-                            pauseSignal: _pauseSignal,
-                            preloadedController:
-                                widget.preloadedVideoControllers[
-                                  widget.mediaItems[index].url
-                                ],
-                            preloadFuture: widget.preloadedVideoInitializers[
-                              widget.mediaItems[index].url
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                _FullscreenContactBar(sellerPhone: widget.sellerPhone),
-              ],
-            ),
-            _FullscreenHeader(onBack: _close),
-            _MediaPositionCounter(
-              currentIndex: _currentIndex,
-              totalCount: widget.mediaItems.length,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MediaPositionCounter extends StatelessWidget {
-  const _MediaPositionCounter({
-    required this.currentIndex,
-    required this.totalCount,
-  });
-
-  final int currentIndex;
-  final int totalCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-    return Positioned(
-      left: 0,
-      right: 0,
-      top: topInset + 36,
-      child: Center(
-        child: Text(
-          '${currentIndex + 1} / $totalCount',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            shadows: [
-              Shadow(
-                color: Colors.black,
-                blurRadius: 5,
-                offset: Offset(0, 1),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FullscreenHeader extends StatelessWidget {
-  const _FullscreenHeader({required this.onBack});
-
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
-    return Container(
-      height: topInset + 56,
-      padding: EdgeInsets.only(top: topInset, left: 14, right: 14),
-      alignment: Alignment.centerLeft,
-      child: Material(
-        color: Colors.white,
-        shape: const CircleBorder(),
-        elevation: 3,
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onBack,
-          child: const SizedBox(
-            width: 42,
-            height: 42,
-            child: Icon(Icons.arrow_back, color: Colors.black),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FullscreenMediaView extends StatelessWidget {
-  const _FullscreenMediaView({
-    required this.media,
-    required this.allowZoom,
-    required this.pauseSignal,
-    required this.preloadedController,
-    required this.preloadFuture,
-    this.fit = BoxFit.contain,
-  });
-
-  final MediaItem media;
-  final bool allowZoom;
-  final ValueListenable<int> pauseSignal;
-  final VideoPlayerController? preloadedController;
-  final Future<void>? preloadFuture;
-  final BoxFit fit;
-
-  @override
-  Widget build(BuildContext context) {
-    if (media.isVideo) {
-      return SizedBox.expand(
-        child: VideoPreview(
-          url: media.url,
-          thumbnailUrl: media.thumbnailUrl,
-          fit: fit,
-          pauseSignal: pauseSignal,
-          controller: preloadedController,
-          initializeFuture: preloadFuture,
-        ),
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final image = CachedNetworkImage(
-          imageUrl: media.url,
-          width: constraints.maxWidth,
-          height: constraints.maxHeight,
-          memCacheWidth: 1400,
-          maxWidthDiskCache: 1800,
-          fit: fit,
-          fadeInDuration: const Duration(milliseconds: 1),
-          fadeOutDuration: const Duration(milliseconds: 1),
-          placeholder: (context, url) => const MediaSkeletonPlaceholder(
-            baseColor: Color(0xFF202421),
-            highlightColor: Color(0xFF333A35),
-          ),
-          errorWidget: (context, url, error) => const Icon(
-            Icons.broken_image,
-            color: Colors.white,
-            size: 54,
-          ),
-        );
-
-        if (!allowZoom) {
-          return image;
-        }
-
-        return InteractiveViewer(
-          minScale: 1,
-          maxScale: 4,
-          child: SizedBox(
-            width: constraints.maxWidth,
-            height: constraints.maxHeight,
-            child: image,
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _FullscreenContactBar extends StatelessWidget {
-  const _FullscreenContactBar({required this.sellerPhone});
-
-  final String sellerPhone;
-
-  Future<void> _launchPhone(String phoneNumber) async {
-    await launchUrl(Uri(scheme: 'tel', path: phoneNumber));
-  }
-
-  Future<void> _launchWhatsApp(String phoneNumber) async {
-    final cleanNumber = phoneNumber.replaceAll(RegExp(r'[^0-9]'), '');
-    await launchUrl(
-      Uri.parse('https://wa.me/$cleanNumber'),
-      mode: LaunchMode.externalApplication,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 7, 28, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: sellerPhone.isEmpty
-                      ? null
-                      : () => _launchPhone(sellerPhone),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0A84FF),
-                    foregroundColor: Colors.white,
-                    fixedSize: const Size.fromHeight(48),
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const Icon(Icons.phone, size: 27),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: sellerPhone.isEmpty
-                      ? null
-                      : () => _launchWhatsApp(sellerPhone),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF25D366),
-                    foregroundColor: Colors.white,
-                    fixedSize: const Size.fromHeight(48),
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const FaIcon(FontAwesomeIcons.whatsapp, size: 26),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF7801),
-                    foregroundColor: Colors.white,
-                    fixedSize: const Size.fromHeight(48),
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: const Text(
-                    'Share',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FullscreenBackButton extends StatelessWidget {
-  const _FullscreenBackButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      shape: const CircleBorder(),
-      elevation: 4,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: const SizedBox(
-          width: 44,
-          height: 44,
-          child: Icon(Icons.arrow_back, color: Colors.black),
-        ),
       ),
     );
   }

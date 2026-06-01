@@ -601,7 +601,7 @@ class _ListingManageCard extends StatelessWidget {
       children: [
         ItemCard(docId: docId, item: item, isCompact: true),
         Positioned(
-          top: 7,
+          top: 42,
           right: 7,
           child: _ListingQuickActions(
             onEdit: () => onEdit(context, docId, item),

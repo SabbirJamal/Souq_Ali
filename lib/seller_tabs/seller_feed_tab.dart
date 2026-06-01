@@ -28,6 +28,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final Map<String, GlobalKey> _itemKeys = {};
+  final Set<String> _rankedSeenItemIds = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
   late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
@@ -98,14 +99,21 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         return;
       }
       setState(() {
+        final loadedSeenItemIds = [
+          ...snapshot.docs,
+          ...?legacySellerSnapshot?.docs,
+        ].map((doc) {
+          final itemId = doc.data()['item_id']?.toString();
+          return itemId?.isNotEmpty == true
+              ? itemId!
+              : doc.reference.parent.parent?.id ?? '';
+        }).where((itemId) => itemId.isNotEmpty);
+        _rankedSeenItemIds
+          ..clear()
+          ..addAll(loadedSeenItemIds);
         _seenItemIds
           ..clear()
-          ..addAll([...snapshot.docs, ...?legacySellerSnapshot?.docs].map((doc) {
-            final itemId = doc.data()['item_id']?.toString();
-            return itemId?.isNotEmpty == true
-                ? itemId!
-                : doc.reference.parent.parent?.id ?? '';
-          }).where((itemId) => itemId.isNotEmpty));
+          ..addAll(_rankedSeenItemIds);
         _isLoadingSeenItems = false;
       });
     } catch (_) {
@@ -156,7 +164,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   Future<void> _refreshFeed() async {
-    setState(() => _refreshTick++);
+    setState(() {
+      _rankedSeenItemIds.addAll(_seenItemIds);
+      _refreshTick++;
+    });
     await Future<void>.delayed(const Duration(milliseconds: 350));
   }
 
@@ -208,7 +219,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final unseenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     final seenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     for (final doc in docs) {
-      (_seenItemIds.contains(doc.id) ? seenDocs : unseenDocs).add(doc);
+      (_rankedSeenItemIds.contains(doc.id) ? seenDocs : unseenDocs).add(doc);
     }
     return [...unseenDocs, ...seenDocs];
   }

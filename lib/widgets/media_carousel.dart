@@ -48,6 +48,11 @@ class MediaCarousel extends StatefulWidget {
     this.showPageDots = false,
     this.peekSideItems = false,
     this.playVideosInline = false,
+    this.autoPlayActiveVideo = false,
+    this.preloadedVideoControllers,
+    this.preloadedVideoInitializers,
+    this.physics,
+    this.onPageChanged,
     this.onMediaTap,
   });
 
@@ -59,6 +64,11 @@ class MediaCarousel extends StatefulWidget {
   final bool showPageDots;
   final bool peekSideItems;
   final bool playVideosInline;
+  final bool autoPlayActiveVideo;
+  final Map<String, VideoPlayerController>? preloadedVideoControllers;
+  final Map<String, Future<void>>? preloadedVideoInitializers;
+  final ScrollPhysics? physics;
+  final ValueChanged<int>? onPageChanged;
   final void Function(MediaItem media, int index)? onMediaTap;
 
   @override
@@ -190,6 +200,7 @@ class _VideoThumbnailPreview extends StatelessWidget {
 
 class _MediaCarouselState extends State<MediaCarousel> {
   late final PageController _pageController;
+  final ValueNotifier<int> _pauseSignal = ValueNotifier<int>(0);
   int _currentIndex = 0;
 
   @override
@@ -202,6 +213,7 @@ class _MediaCarouselState extends State<MediaCarousel> {
 
   @override
   void dispose() {
+    _pauseSignal.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -234,9 +246,12 @@ class _MediaCarouselState extends State<MediaCarousel> {
                 child: PageView.builder(
                   controller: _pageController,
                   clipBehavior: widget.peekSideItems ? Clip.none : Clip.hardEdge,
+                  physics: widget.physics,
                   padEnds: false,
                   onPageChanged: (index) {
+                    _pauseSignal.value++;
                     setState(() => _currentIndex = index);
+                    widget.onPageChanged?.call(index);
                   },
                   itemCount: widget.mediaItems.length,
                   itemBuilder: (context, index) {
@@ -253,6 +268,7 @@ class _MediaCarouselState extends State<MediaCarousel> {
                       child: Padding(
                         padding: edgePadding,
                         child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
                           onTap: widget.onMediaTap == null
                               ? null
                               : () => widget.onMediaTap!(media, index),
@@ -266,6 +282,20 @@ class _MediaCarouselState extends State<MediaCarousel> {
                                         url: media.url,
                                         thumbnailUrl: media.thumbnailUrl,
                                         fit: widget.fit,
+                                        pauseSignal: _pauseSignal,
+                                        controller:
+                                            widget.preloadedVideoControllers?[
+                                              media.url
+                                            ],
+                                        initializeFuture:
+                                            widget.preloadedVideoInitializers?[
+                                              media.url
+                                            ],
+                                        autoPlay:
+                                            widget.autoPlayActiveVideo &&
+                                            index == _currentIndex,
+                                        showPlayButton:
+                                            !widget.autoPlayActiveVideo,
                                         playIconSize: 72,
                                       )
                                     : _VideoThumbnailPreview(
@@ -437,6 +467,8 @@ class VideoPreview extends StatefulWidget {
     this.controller,
     this.initializeFuture,
     this.playIconSize = 24,
+    this.autoPlay = false,
+    this.showPlayButton = true,
   });
 
   final String url;
@@ -446,6 +478,8 @@ class VideoPreview extends StatefulWidget {
   final VideoPlayerController? controller;
   final Future<void>? initializeFuture;
   final double playIconSize;
+  final bool autoPlay;
+  final bool showPlayButton;
 
   @override
   State<VideoPreview> createState() => _VideoPreviewState();
@@ -462,17 +496,21 @@ class _VideoPreviewState extends State<VideoPreview> {
     widget.pauseSignal?.addListener(_pauseVideo);
     _ownsController = widget.controller == null;
     _controller =
-        widget.controller ?? VideoPlayerController.networkUrl(Uri.parse(widget.url));
+        widget.controller ??
+        VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller.setLooping(true);
     if (_controller.value.isInitialized) {
       _isReady = true;
+      _playIfNeeded();
       return;
     }
     (widget.initializeFuture ?? _controller.initialize()).then((_) {
-        if (!mounted) {
-          return;
-        }
-        setState(() => _isReady = true);
-      }).catchError((_) {});
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isReady = true);
+      _playIfNeeded();
+    }).catchError((_) {});
   }
 
   @override
@@ -481,6 +519,28 @@ class _VideoPreviewState extends State<VideoPreview> {
     if (oldWidget.pauseSignal != widget.pauseSignal) {
       oldWidget.pauseSignal?.removeListener(_pauseVideo);
       widget.pauseSignal?.addListener(_pauseVideo);
+    }
+    if (oldWidget.autoPlay != widget.autoPlay) {
+      if (widget.autoPlay) {
+        _playIfNeeded();
+      } else {
+        _pauseVideo();
+      }
+    }
+  }
+
+  void _playIfNeeded() {
+    if (!widget.autoPlay || !_controller.value.isInitialized) {
+      return;
+    }
+    _controller.setVolume(1);
+    _controller.play();
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
     }
   }
 
@@ -541,25 +601,26 @@ class _VideoPreviewState extends State<VideoPreview> {
               ),
             ),
           ),
-          IconButton.filled(
-            style: IconButton.styleFrom(
-              fixedSize: Size.square(widget.playIconSize + 20),
+          if (widget.showPlayButton)
+            IconButton.filled(
+              style: IconButton.styleFrom(
+                fixedSize: Size.square(widget.playIconSize + 20),
+              ),
+              onPressed: () {
+                setState(() {
+                  if (_controller.value.isPlaying) {
+                    _controller.pause();
+                  } else {
+                    _controller.setVolume(1);
+                    _controller.play();
+                  }
+                });
+              },
+              icon: Icon(
+                _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                size: widget.playIconSize,
+              ),
             ),
-            onPressed: () {
-              setState(() {
-                if (_controller.value.isPlaying) {
-                  _controller.pause();
-                } else {
-                  _controller.setVolume(1);
-                  _controller.play();
-                }
-              });
-            },
-            icon: Icon(
-              _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-              size: widget.playIconSize,
-            ),
-          ),
         ],
       ),
     );
