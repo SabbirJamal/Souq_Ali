@@ -17,14 +17,14 @@ import 'package:video_compress/video_compress.dart';
 
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
-import '../story_repository.dart';
 import '../upload_status_manager.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerAddItemTab extends StatefulWidget {
-  const SellerAddItemTab({super.key, this.onItemAddedDone});
+  const SellerAddItemTab({super.key, this.onItemAddedDone, this.isLive = false});
 
   final VoidCallback? onItemAddedDone;
+  final bool isLive;
   @override
   SellerAddItemTabState createState() => SellerAddItemTabState();
 }
@@ -49,13 +49,23 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   int _audioResetToken = 0;
   bool _isUploading = false;
   bool _showLocationError = false;
+  bool _isLiveItem = false;
 
-  int get _totalTimePeriodHours => _timePeriodHours;
+  int get _totalTimePeriodHours => _isLiveItem ? 2 : _timePeriodHours;
 
   @override
   void initState() {
     super.initState();
+    _isLiveItem = widget.isLive;
     _loadDefaultSellerLocation();
+  }
+
+  @override
+  void didUpdateWidget(covariant SellerAddItemTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isLive != widget.isLive) {
+      _isLiveItem = widget.isLive;
+    }
   }
 
   Future<void> _loadDefaultSellerLocation() async {
@@ -426,6 +436,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _showMessage('Invalid price');
       return;
     }
+    if (_isLiveItem && double.parse(normalizedPrice) <= 0) {
+      _showMessage('Price is required for live items');
+      _priceFocusNode.requestFocus();
+      return;
+    }
     setState(() => _isUploading = true);
 
     try {
@@ -444,9 +459,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       widget.onItemAddedDone?.call();
 
       final uploadedMedia = await _uploadMedia(session.sellerId, mediaToUpload);
-      final audioDescriptionUrl = await _uploadAudioDescription(
-        session.sellerId,
-      );
+      final audioDescriptionUrl = _isLiveItem
+          ? null
+          : await _uploadAudioDescription(session.sellerId);
       final imageUrls = uploadedMedia
           .where((media) => media.type == 'image')
           .map((media) => media.url)
@@ -463,6 +478,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'seller_uid': session.sellerId,
         'seller_name': session.name,
         'seller_phone': session.phoneNumber,
+        'status': _isLiveItem ? 'live' : 'post',
         'item_name': name,
         'item_price': price,
         'price_number': normalizedPrice,
@@ -482,22 +498,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       });
-
-      await const StoryRepository().replaceItemVideos(
-        itemId: itemRef.id,
-        itemName: name,
-        sellerId: session.sellerId,
-        sellerName: session.name,
-        sellerPhone: session.phoneNumber,
-        itemPrice: price,
-        location: location,
-        expiresAt: expiresAt,
-        mediaFiles: mediaFileMaps,
-        videoUrls: uploadedMedia
-            .where((media) => media.type == 'video')
-            .map((media) => media.url)
-            .toList(),
-      );
 
       UploadStatusManager.success();
       if (mounted) {
@@ -525,9 +525,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
       _timePeriodHours = 720;
-      _audioDescriptionPath = null;
-      _audioDescriptionDuration = Duration.zero;
-      _audioResetToken++;
+      if (!_isLiveItem) {
+        _audioDescriptionPath = null;
+        _audioDescriptionDuration = Duration.zero;
+        _audioResetToken++;
+      }
       _showLocationError = false;
     });
     _loadDefaultSellerLocation();
@@ -705,6 +707,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _buildLiveSwitch(),
+          const SizedBox(height: 12),
           _buildMediaPicker(),
           const SizedBox(height: 20),
           _buildTextField(
@@ -714,15 +718,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             maxLength: 80,
           ),
           const SizedBox(height: 14),
-          AudioDescriptionField(
-            isDisabled: _isUploading,
-            resetToken: _audioResetToken,
-            onChanged: (path, duration) {
-              _audioDescriptionPath = path;
-              _audioDescriptionDuration = duration;
-            },
-          ),
-          const SizedBox(height: 8),
+          if (!_isLiveItem) ...[
+            AudioDescriptionField(
+              isDisabled: _isUploading,
+              resetToken: _audioResetToken,
+              onChanged: (path, duration) {
+                _audioDescriptionPath = path;
+                _audioDescriptionDuration = duration;
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             children: [
               Expanded(
@@ -814,10 +820,67 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                       ),
                     ],
                   )
-                : const Text('Add Item', style: TextStyle(fontSize: 16)),
+                : Text(
+                    _isLiveItem ? 'Add Live' : 'Add Item',
+                    style: const TextStyle(fontSize: 16),
+                  ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLiveSwitch() {
+    final badgeColor = _isLiveItem ? const Color(0xFFE92808) : Colors.grey;
+    final badgeScale = _isLiveItem ? 1.08 : 1.0;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Switch(
+          value: _isLiveItem,
+          onChanged: _isUploading
+              ? null
+              : (value) {
+                  setState(() => _isLiveItem = value);
+                },
+          activeColor: Colors.white,
+          activeTrackColor: const Color(0xFFE92808),
+          inactiveThumbColor: Colors.white,
+          inactiveTrackColor: const Color(0xFFFF7801),
+        ),
+        const SizedBox(width: 8),
+        AnimatedScale(
+          scale: badgeScale,
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: badgeColor,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.sensors, color: Colors.white, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'LIVE',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

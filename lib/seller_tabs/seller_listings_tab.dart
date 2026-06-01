@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
 import '../seller_session.dart';
-import '../story_repository.dart';
 import '../widgets/media_carousel.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
@@ -140,13 +139,6 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     String docId,
     Map<String, dynamic> item,
   ) async {
-    final sellerId = item['seller_uid']?.toString() ?? '';
-    if (sellerId.isNotEmpty) {
-      await const StoryRepository().removeItemVideos(
-        sellerId: sellerId,
-        itemId: docId,
-      );
-    }
     await FirebaseFirestore.instance.collection('items').doc(docId).delete();
     if (!context.mounted) {
       return;

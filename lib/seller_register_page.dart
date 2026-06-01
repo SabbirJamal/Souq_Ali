@@ -121,8 +121,8 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.play_circle_fill),
-            label: 'Stories',
+            icon: Icon(Icons.wifi_tethering),
+            label: 'Live',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.add_circle_outline),

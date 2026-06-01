@@ -16,7 +16,6 @@ import 'package:record/record.dart';
 import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
-import 'story_repository.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
 
@@ -310,10 +309,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
           .where((media) => !media.isVideo)
           .map((media) => media.url)
           .toList();
-      final videoUrls = allMedia
-          .where((media) => media.isVideo)
-          .map((media) => media.url)
-          .toList();
       final mediaFileMaps = allMedia
           .map(
             (media) => {
@@ -324,9 +319,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
             },
           )
           .toList();
-      final expiresAt = widget.itemData['expires_at'] is Timestamp
-          ? widget.itemData['expires_at'] as Timestamp
-          : Timestamp.fromDate(DateTime.now().add(const Duration(days: 30)));
       final audioDescriptionUrl = await _uploadAudioDescription(
         sellerUid.toString(),
       );
@@ -358,19 +350,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
           .collection('items')
           .doc(widget.docId)
           .update(updateData);
-
-      await const StoryRepository().replaceItemVideos(
-        sellerId: sellerUid.toString(),
-        sellerName: widget.itemData['seller_name']?.toString() ?? 'Seller',
-        sellerPhone: widget.itemData['seller_phone']?.toString() ?? '',
-        itemId: widget.docId,
-        itemName: name,
-        itemPrice: 'OMR $formattedPrice $_priceUnit',
-        location: location,
-        expiresAt: expiresAt,
-        mediaFiles: mediaFileMaps,
-        videoUrls: videoUrls,
-      );
 
       await _deleteRemovedStorageFiles();
       await _deleteRemovedAudioIfNeeded(audioDescriptionUrl != null);

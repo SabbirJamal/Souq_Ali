@@ -203,8 +203,8 @@ class SellerProfilePage extends StatelessWidget {
                 label: 'Home',
               ),
               BottomNavigationBarItem(
-                icon: Icon(Icons.play_circle_fill),
-                label: 'Stories',
+                icon: Icon(Icons.wifi_tethering),
+                label: 'Live',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.add_circle_outline),

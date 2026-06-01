@@ -81,7 +81,6 @@ async function cleanupItem(itemDoc) {
 
   const mediaUrls = collectMediaUrls(item);
   await deleteStorageFiles(mediaUrls);
-  await removeItemStories(itemId);
   await removeItemSeenRecords(itemId);
 
   await itemDoc.ref.delete();
@@ -165,24 +164,6 @@ function storagePathFromUrl(url) {
   }
 
   return "";
-}
-
-async function removeItemStories(itemId) {
-  const stories = await db
-    .collection("stories")
-    .where("item_id", "==", itemId)
-    .get();
-
-  if (stories.empty) {
-    return;
-  }
-
-  const batch = db.batch();
-  for (const story of stories.docs) {
-    batch.delete(story.ref);
-  }
-  await batch.commit();
-  logger.info(`Deleted ${stories.size} story document(s) for item ${itemId}.`);
 }
 
 async function removeItemSeenRecords(itemId) {

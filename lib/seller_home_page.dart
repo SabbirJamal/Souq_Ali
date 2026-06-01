@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:lottie/lottie.dart';
 
 import 'seller_tabs/seller_add_item_tab.dart';
 import 'seller_tabs/seller_feed_tab.dart';
 import 'seller_tabs/seller_listings_tab.dart';
+import 'seller_tabs/seller_live_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
-import 'seller_tabs/seller_stories_tab.dart';
 import 'seller_session.dart';
 
 class SellerHomePage extends StatefulWidget {
@@ -219,7 +220,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           }
         },
       ),
-      1 => _currentIndex == 1 ? const SellerStoriesTab() : const SizedBox.shrink(),
+      1 => const SellerLiveTab(),
       2 => widget.isSellerMode
           ? SellerAddItemTab(key: _addItemKey, onItemAddedDone: _showFeedTab)
           : const _SellerAccessPrompt(),
@@ -294,30 +295,54 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 showSelectedLabels: false,
                 showUnselectedLabels: false,
                 iconSize: 24,
-                items: const [
-                  BottomNavigationBarItem(
+                items: [
+                  const BottomNavigationBarItem(
                     icon: Icon(Icons.home),
                     label: 'Home',
                   ),
-                  BottomNavigationBarItem(
-                    icon: Icon(Icons.play_circle_fill),
-                    label: 'Stories',
+                  const BottomNavigationBarItem(
+                    icon: _LiveNavIcon(isActive: false),
+                    activeIcon: _LiveNavIcon(isActive: true),
+                    label: 'Live',
                   ),
-                  BottomNavigationBarItem(
+                  const BottomNavigationBarItem(
                     icon: Icon(Icons.add_circle_outline),
                     label: 'Add',
                   ),
-                  BottomNavigationBarItem(
+                  const BottomNavigationBarItem(
                     icon: Icon(Icons.person),
                     label: 'Listings',
                   ),
-                  BottomNavigationBarItem(
+                  const BottomNavigationBarItem(
                     icon: Icon(Icons.settings),
                     label: 'Settings',
                   ),
                 ],
               ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LiveNavIcon extends StatelessWidget {
+  const _LiveNavIcon({required this.isActive});
+
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 38,
+      height: 38,
+      child: Transform.translate(
+        offset: const Offset(0, -4),
+        child: Lottie.asset(
+          'assets/lottie/live.json',
+          fit: BoxFit.contain,
+          repeat: isActive,
+          animate: true,
         ),
       ),
     );

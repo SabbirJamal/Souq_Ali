@@ -24,11 +24,8 @@ class ItemCard extends StatefulWidget {
 
 final ValueNotifier<String?> _activeFeedAudioItemId = ValueNotifier(null);
 
-class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin {
+class _ItemCardState extends State<ItemCard> {
   late final AudioPlayer _audioPlayer;
-  late final TransformationController _mediaZoomController;
-  late final AnimationController _mediaZoomResetController;
-  Animation<Matrix4>? _mediaZoomResetAnimation;
   Duration _audioDuration = Duration.zero;
   Duration _audioPosition = Duration.zero;
   bool _isAudioPlaying = false;
@@ -44,16 +41,6 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _audioPlayer = AudioPlayer();
-    _mediaZoomController = TransformationController();
-    _mediaZoomResetController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 180),
-    )..addListener(() {
-        final animation = _mediaZoomResetAnimation;
-        if (animation != null) {
-          _mediaZoomController.value = animation.value;
-        }
-      });
     _activeFeedAudioItemId.addListener(_pauseIfAnotherAudioStarts);
     _audioPlayer.onDurationChanged.listen((duration) {
       if (mounted) {
@@ -93,8 +80,6 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
   @override
   void dispose() {
     _activeFeedAudioItemId.removeListener(_pauseIfAnotherAudioStarts);
-    _mediaZoomResetController.dispose();
-    _mediaZoomController.dispose();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -125,20 +110,6 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
         _showAudioProgress = false;
       });
     }
-  }
-
-  void _resetMediaZoom() {
-    _mediaZoomResetController.stop();
-    _mediaZoomResetAnimation = Matrix4Tween(
-      begin: _mediaZoomController.value,
-      end: Matrix4.identity(),
-    ).animate(
-      CurvedAnimation(
-        parent: _mediaZoomResetController,
-        curve: Curves.easeOutCubic,
-      ),
-    );
-    _mediaZoomResetController.forward(from: 0);
   }
 
   Future<void> _toggleAudio() async {
@@ -177,6 +148,7 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
     final uploadedAgo = _uploadedAgo(widget.item['created_at']);
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
     final videoCount = mediaItems.where((media) => media.isVideo).length;
+    final isLiveItem = widget.item['status']?.toString() == 'live';
 
     return RepaintBoundary(
       child: Column(
@@ -214,34 +186,30 @@ class _ItemCardState extends State<ItemCard> with SingleTickerProviderStateMixin
                     child: Stack(
                       children: [
                         Positioned.fill(
-                          child: ClipRect(
-                            child: InteractiveViewer(
-                              transformationController: _mediaZoomController,
-                              minScale: 1,
-                              maxScale: 3,
-                              panEnabled: false,
-                              clipBehavior: Clip.hardEdge,
-                              onInteractionStart: (_) {
-                                _mediaZoomResetController.stop();
-                              },
-                              onInteractionEnd: (_) => _resetMediaZoom(),
-                              child: MediaPreview(
-                                media: mediaItems.isEmpty
-                                    ? null
-                                    : mediaItems.first,
-                                height: cardHeight,
-                                borderRadius: 0,
-                              ),
-                            ),
+                          child: MediaPreview(
+                            media: mediaItems.isEmpty
+                                ? null
+                                : mediaItems.first,
+                            height: cardHeight,
+                            borderRadius: 0,
                           ),
                         ),
                         Positioned(
                           top: widget.isCompact ? 7 : 10,
                           left: widget.isCompact ? 7 : 10,
-                          child: _MediaCountBadges(
-                            imageCount: imageCount,
-                            videoCount: videoCount,
-                            isCompact: widget.isCompact,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _MediaCountBadges(
+                                imageCount: imageCount,
+                                videoCount: videoCount,
+                                isCompact: widget.isCompact,
+                              ),
+                              if (isLiveItem) ...[
+                                SizedBox(height: widget.isCompact ? 4 : 7),
+                                _LiveBadge(isCompact: widget.isCompact),
+                              ],
+                            ],
                           ),
                         ),
                         Positioned(
@@ -674,6 +642,40 @@ class _TopMediaBadge extends StatelessWidget {
               color: Colors.white,
               fontSize: isCompact ? 12 : 17,
               fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveBadge extends StatelessWidget {
+  const _LiveBadge({required this.isCompact});
+
+  final bool isCompact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: isCompact ? 22 : 34,
+      padding: EdgeInsets.symmetric(horizontal: isCompact ? 7 : 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE92808),
+        borderRadius: BorderRadius.circular(isCompact ? 7 : 11),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.sensors, color: Colors.white, size: isCompact ? 13 : 21),
+          SizedBox(width: isCompact ? 4 : 7),
+          Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: isCompact ? 12 : 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
             ),
           ),
         ],

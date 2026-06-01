@@ -12,12 +12,16 @@ import '../widgets/item_card.dart';
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
     super.key,
-    required this.chromeVisibleListenable,
+    this.chromeVisibleListenable,
     required this.onSearchActiveChanged,
+    this.itemStatus = 'post',
+    this.emptyMessage = 'No items available',
   });
 
-  final ValueListenable<bool> chromeVisibleListenable;
+  final ValueListenable<bool>? chromeVisibleListenable;
   final ValueChanged<bool> onSearchActiveChanged;
+  final String itemStatus;
+  final String emptyMessage;
 
   @override
   SellerFeedTabState createState() => SellerFeedTabState();
@@ -52,7 +56,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_scheduleVisibleSeenCheck);
     _loadSeenItems();
   }
 
@@ -194,11 +197,18 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
     final query = _query.trim().toLowerCase();
+    final statusDocs = docs.where((doc) {
+      final status = doc.data()['status']?.toString();
+      if (widget.itemStatus == 'post') {
+        return status == null || status.isEmpty || status == 'post';
+      }
+      return status == widget.itemStatus;
+    }).toList();
     if (query.isEmpty) {
-      return docs;
+      return statusDocs;
     }
 
-    return docs.where((doc) {
+    return statusDocs.where((doc) {
       final item = doc.data();
       final searchableText =
           [item['item_name'], item['item_price'], item['location']]
@@ -333,95 +343,101 @@ class SellerFeedTabState extends State<SellerFeedTab> {
             return RefreshIndicator(
               color: const Color(0xFFFF7801),
               onRefresh: _refreshFeed,
-              child: CustomScrollView(
-                key: PageStorageKey(
-                  'seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick',
-                ),
-                controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _FeedHeader(
-                      isGridView: _isGridView,
-                      isSearchOpen: _isSearchOpen,
-                      onToggleGrid: _toggleLayoutMode,
-                    ),
+              child: NotificationListener<ScrollEndNotification>(
+                onNotification: (_) {
+                  _scheduleVisibleSeenCheck();
+                  return false;
+                },
+                child: CustomScrollView(
+                  key: PageStorageKey(
+                    'seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick',
                   ),
-                  if (isLoading || _isLoadingSeenItems)
-                    SliverPadding(
-                      padding: _isGridView
-                          ? const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 8,
-                            )
-                          : const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 12,
-                            ),
-                      sliver: _isGridView
-                          ? const SliverToBoxAdapter(
-                              child: _FeedSkeletonGrid(),
-                            )
-                          : SliverList.builder(
-                              itemCount: 3,
-                              itemBuilder: (context, index) {
-                                return const ItemCardSkeleton();
-                              },
-                            ),
-                    )
-                  else if (hasError)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Text('Error: ${snapshot.error}'),
+                  controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _FeedHeader(
+                        isGridView: _isGridView,
+                        isSearchOpen: _isSearchOpen,
+                        onToggleGrid: _toggleLayoutMode,
                       ),
-                    )
-                  else if (docs.isEmpty)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Text(
-                          'No items available',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
+                    ),
+                    if (isLoading || _isLoadingSeenItems)
+                      SliverPadding(
+                        padding: _isGridView
+                            ? const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 8,
+                              )
+                            : const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 12,
+                              ),
+                        sliver: _isGridView
+                            ? const SliverToBoxAdapter(
+                                child: _FeedSkeletonGrid(),
+                              )
+                            : SliverList.builder(
+                                itemCount: 3,
+                                itemBuilder: (context, index) {
+                                  return const ItemCardSkeleton();
+                                },
+                              ),
+                      )
+                    else if (hasError)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text('Error: ${snapshot.error}'),
+                        ),
+                      )
+                    else if (docs.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text(
+                            widget.emptyMessage,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: _isGridView
-                          ? const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 8,
-                            )
-                          : const EdgeInsets.symmetric(
-                              horizontal: 2,
-                              vertical: 12,
-                            ),
-                      sliver: _isGridView
-                          ? SliverToBoxAdapter(
-                              child: _MasonryItemGrid(
-                                docs: docs,
-                                keyForDoc: _keyForItem,
+                      )
+                    else
+                      SliverPadding(
+                        padding: _isGridView
+                            ? const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 8,
+                              )
+                            : const EdgeInsets.symmetric(
+                                horizontal: 2,
+                                vertical: 12,
                               ),
-                            )
-                          : SliverList.builder(
-                              itemCount: docs.length,
-                              itemBuilder: (context, index) {
-                                final doc = docs[index];
-                                return KeyedSubtree(
-                                  key: _keyForItem(doc.id),
-                                  child: ItemCard(
-                                    docId: doc.id,
-                                    item: doc.data(),
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                ],
+                        sliver: _isGridView
+                            ? SliverToBoxAdapter(
+                                child: _MasonryItemGrid(
+                                  docs: docs,
+                                  keyForDoc: _keyForItem,
+                                ),
+                              )
+                            : SliverList.builder(
+                                itemCount: docs.length,
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+                                  return KeyedSubtree(
+                                    key: _keyForItem(doc.id),
+                                    child: ItemCard(
+                                      docId: doc.id,
+                                      item: doc.data(),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                  ],
+                ),
               ),
             );
           },
