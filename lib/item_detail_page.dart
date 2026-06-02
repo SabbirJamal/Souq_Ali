@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
@@ -270,6 +271,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     final mediaItems = mediaItemsFromMap(widget.itemData);
     final sellerPhone = widget.itemData['seller_phone']?.toString() ?? '';
     final itemName = widget.itemData['item_name']?.toString().trim() ?? '';
+    final isLiveItem = widget.itemData['status']?.toString() == 'live';
 
     if (_isPreparingDetail) {
       return const _ItemDetailWarmupSkeleton();
@@ -301,6 +303,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                         itemName: itemName,
                         price: _formatPrice(widget.itemData['item_price']),
                         location: widget.itemData['location']?.toString() ?? '',
+                        isLiveItem: isLiveItem,
                         audioUrl: _audioUrl,
                         isAudioPlaying: _isAudioPlaying,
                         showAudioProgress: _showAudioProgress,
@@ -418,6 +421,7 @@ class _DetailMediaHeader extends StatefulWidget {
     required this.itemName,
     required this.price,
     required this.location,
+    required this.isLiveItem,
     required this.audioUrl,
     required this.isAudioPlaying,
     required this.showAudioProgress,
@@ -433,6 +437,7 @@ class _DetailMediaHeader extends StatefulWidget {
   final String itemName;
   final String price;
   final String location;
+  final bool isLiveItem;
   final String audioUrl;
   final bool isAudioPlaying;
   final bool showAudioProgress;
@@ -679,7 +684,7 @@ class _DetailMediaHeaderState extends State<_DetailMediaHeader> {
           if (!hideChrome && (imageCount > 0 || videoCount > 0))
             Positioned(
               left: 10,
-              top: 10,
+              bottom: 16,
               child: Row(
                 children: [
                   if (imageCount > 0)
@@ -695,6 +700,14 @@ class _DetailMediaHeaderState extends State<_DetailMediaHeader> {
                       count: videoCount,
                     ),
                 ],
+              ),
+            ),
+          if (!hideChrome && widget.isLiveItem)
+            const Positioned(
+              top: 12,
+              right: -72,
+              child: IgnorePointer(
+                child: _DetailLiveAnimation(),
               ),
             ),
           if (!hideChrome && widget.mediaItems.length > 1)
@@ -901,6 +914,24 @@ class _DetailMediaCountBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DetailLiveAnimation extends StatelessWidget {
+  const _DetailLiveAnimation();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 225,
+      height: 108,
+      child: Lottie.asset(
+        'assets/lottie/live2.json',
+        fit: BoxFit.contain,
+        repeat: true,
+        animate: true,
       ),
     );
   }

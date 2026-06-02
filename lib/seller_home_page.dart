@@ -33,6 +33,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   int _feedRefreshTick = 0;
   DateTime? _lastFeedBackPress;
   bool _isFeedSearchActive = false;
+  bool _isAddLiveMode = false;
 
   @override
   void dispose() {
@@ -56,6 +57,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
       }
     });
     _setChromeVisible(true);
+  }
+
+  void _handleAddLiveModeChanged(bool isLive) {
+    if (_isAddLiveMode == isLive) {
+      return;
+    }
+    setState(() => _isAddLiveMode = isLive);
   }
 
   void _showSettingsTab() {
@@ -235,6 +243,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           ? SellerAddItemTab(
               key: _addItemKey,
               onItemAddedDone: _showItemAddedTab,
+              onLiveModeChanged: _handleAddLiveModeChanged,
             )
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
@@ -261,6 +270,9 @@ class _SellerHomePageState extends State<SellerHomePage> {
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
+    final bottomBarColor = _currentIndex == 2 && _isAddLiveMode
+        ? const Color(0xFFFFE9EC)
+        : Colors.white;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -295,62 +307,62 @@ class _SellerHomePageState extends State<SellerHomePage> {
               ),
             ],
           ),
-          bottomNavigationBar: SizedBox(
-            height: 58,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final tabWidth = constraints.maxWidth / 5;
-                const liveIconWidth = 225.0;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    BottomNavigationBar(
-                      currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
-                      onTap: _onTabTapped,
-                      type: BottomNavigationBarType.fixed,
-                      selectedItemColor: const Color(0xFFFF7801),
-                      unselectedItemColor: Colors.grey,
-                      selectedFontSize: 0,
-                      unselectedFontSize: 0,
-                      showSelectedLabels: false,
-                      showUnselectedLabels: false,
-                      iconSize: 24,
-                      items: const [
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.home, size: 28),
-                          label: 'Home',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: SizedBox(width: 24, height: 24),
-                          activeIcon: SizedBox(width: 24, height: 24),
-                          label: 'Live',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.add_circle_outline),
-                          label: 'Add',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.person),
-                          label: 'Listings',
-                        ),
-                        BottomNavigationBarItem(
-                          icon: Icon(Icons.settings),
-                          label: 'Settings',
-                        ),
-                      ],
-                    ),
-                    Positioned(
-                      left: tabWidth + (tabWidth - liveIconWidth) / 2,
-                      top: -37,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: () => _onTabTapped(1),
-                        child: const _LiveNavIcon(),
+          bottomNavigationBar: ColoredBox(
+            color: bottomBarColor,
+            child: SizedBox(
+              height: 58,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final tabWidth = constraints.maxWidth / 5;
+                  const liveIconWidth = 225.0;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      BottomNavigationBar(
+                        currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
+                        onTap: _onTabTapped,
+                        type: BottomNavigationBarType.fixed,
+                        selectedItemColor: const Color(0xFFFF7801),
+                        unselectedItemColor: Colors.grey,
+                        backgroundColor: bottomBarColor,
+                        selectedFontSize: 0,
+                        unselectedFontSize: 0,
+                        showSelectedLabels: false,
+                        showUnselectedLabels: false,
+                        iconSize: 24,
+                        items: const [
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.home, size: 28),
+                            label: 'Home',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: SizedBox(width: 24, height: 24),
+                            activeIcon: SizedBox(width: 24, height: 24),
+                            label: 'Live',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.add_circle_outline),
+                            label: 'Add',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.person),
+                            label: 'Listings',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.settings),
+                            label: 'Settings',
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                );
-              },
+                      Positioned(
+                        left: tabWidth + (tabWidth - liveIconWidth) / 2,
+                        top: -25,
+                        child: const IgnorePointer(child: _LiveNavIcon()),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         ),

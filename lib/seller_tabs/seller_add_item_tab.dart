@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,9 +22,15 @@ import '../upload_status_manager.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerAddItemTab extends StatefulWidget {
-  const SellerAddItemTab({super.key, this.onItemAddedDone, this.isLive = false});
+  const SellerAddItemTab({
+    super.key,
+    this.onItemAddedDone,
+    this.onLiveModeChanged,
+    this.isLive = false,
+  });
 
   final ValueChanged<bool>? onItemAddedDone;
+  final ValueChanged<bool>? onLiveModeChanged;
   final bool isLive;
   @override
   SellerAddItemTabState createState() => SellerAddItemTabState();
@@ -713,7 +720,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildLiveSwitch(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _buildMediaPicker(),
           const SizedBox(height: 20),
           _buildTextField(
@@ -826,7 +833,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                     ],
                   )
                 : Text(
-                    _isLiveItem ? 'Go Live' : 'Post',
+                    _isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs',
                     style: const TextStyle(fontSize: 16),
                   ),
           ),
@@ -846,7 +853,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         onTap: _isUploading
             ? null
             : () {
-                setState(() => _isLiveItem = !_isLiveItem);
+                final nextIsLive = !_isLiveItem;
+                setState(() => _isLiveItem = nextIsLive);
+                widget.onLiveModeChanged?.call(nextIsLive);
               },
         child: AnimatedScale(
           scale: badgeScale,
@@ -887,6 +896,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       children: [
         GridView.builder(
           shrinkWrap: true,
+          padding: EdgeInsets.zero,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
@@ -896,7 +906,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           itemCount: _selectedMedia.length + 1,
           itemBuilder: (context, index) {
             if (index == _selectedMedia.length) {
-              return Center(
+              return Align(
+                alignment: Alignment.topCenter,
                 child: _buildMediaActionCircle(
                   onTap: _openCamera,
                 ),
@@ -1094,6 +1105,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
 
   Timer? _recordTimer;
   String? _audioPath;
+  List<double> _waveSamples = const [];
   Duration _recordElapsed = Duration.zero;
   Duration _recordedDuration = Duration.zero;
   bool _isRecording = false;
@@ -1165,6 +1177,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     _recordTimer?.cancel();
     setState(() {
       _audioPath = null;
+      _waveSamples = const [];
       _recordElapsed = Duration.zero;
       _recordedDuration = Duration.zero;
       _isRecording = true;
@@ -1174,17 +1187,38 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
       _recordDragOffset = 0;
     });
 
-    _recordTimer = Timer.periodic(const Duration(milliseconds: 200), (_) {
+    _recordTimer = Timer.periodic(const Duration(milliseconds: 200), (
+      _,
+    ) async {
       if (!mounted) {
         return;
+      }
+      final waveSamples = List<double>.from(_waveSamples);
+      waveSamples.add(await _readWaveSample(waveSamples.length));
+      if (waveSamples.length > 42) {
+        waveSamples.removeAt(0);
       }
       final nextElapsed = _recordElapsed + const Duration(milliseconds: 200);
       if (nextElapsed >= _maxDuration) {
         _finishRecording(cancel: false);
         return;
       }
-      setState(() => _recordElapsed = nextElapsed);
+      setState(() {
+        _recordElapsed = nextElapsed;
+        _waveSamples = waveSamples;
+      });
     });
+  }
+
+  Future<double> _readWaveSample(int index) async {
+    try {
+      final amplitude = await _recorder.getAmplitude();
+      final current = amplitude.current;
+      if (current.isFinite) {
+        return ((current + 45) / 45).clamp(0.08, 1.0);
+      }
+    } catch (_) {}
+    return (0.25 + (math.sin(index * 1.7).abs() * 0.75)).clamp(0.08, 1.0);
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
@@ -1225,6 +1259,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
         _recordElapsed = Duration.zero;
         _recordedDuration = Duration.zero;
         _audioPath = null;
+        _waveSamples = const [];
         _recordDragOffset = 0;
       });
       Future<void>.delayed(const Duration(milliseconds: 820), () {
@@ -1242,9 +1277,17 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
       _recordedDuration = elapsed > _maxDuration ? _maxDuration : elapsed;
       _recordElapsed = Duration.zero;
       _audioPath = path;
+      _waveSamples = _waveSamples.isEmpty ? _fallbackWaveSamples() : _waveSamples;
       _recordDragOffset = 0;
     });
     widget.onChanged(path, _recordedDuration);
+  }
+
+  List<double> _fallbackWaveSamples() {
+    return List<double>.generate(
+      34,
+      (index) => (0.22 + math.sin(index * 0.82).abs() * 0.78).clamp(0.08, 1.0),
+    );
   }
 
   Future<void> _togglePlayback() async {
@@ -1274,6 +1317,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     if (mounted) {
       setState(() {
         _audioPath = null;
+        _waveSamples = const [];
         _recordedDuration = Duration.zero;
         _isPlaying = false;
       });
@@ -1330,17 +1374,16 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                 width: 52,
                 height: 40,
                 alignment: Alignment.center,
-                child: IconButton(
-                  onPressed: _togglePlayback,
-                  icon: Icon(
-                    _isPlaying ? Icons.pause_circle : Icons.play_circle_fill,
-                    color: const Color(0xFFFF7801),
-                    size: 36,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 40,
-                    minHeight: 40,
+                child: GestureDetector(
+                  onTap: _togglePlayback,
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: const Color(0xFFFF7801),
+                    child: Icon(
+                      _isPlaying ? Icons.pause : Icons.play_arrow,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                   ),
                 ),
               )
@@ -1421,6 +1464,29 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                             );
                           },
                         )
+                      : hasAudio
+                          ? Row(
+                              key: const ValueKey('waveform'),
+                              children: [
+                                Expanded(
+                                  child: SizedBox(
+                                    height: 34,
+                                    child: _AudioWaveform(
+                                      samples: _waveSamples,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _formatDuration(_recordedDuration),
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            )
                       : AnimatedSlide(
                         key: ValueKey(_isRecording ? 'recording' : 'idle'),
                         offset: Offset(cancelHintOffset, 0),
@@ -1434,9 +1500,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                                 ? (_isCancelArmed
                                     ? 'Release to cancel'
                                     : '<<< Slide to Cancel')
-                                : hasAudio
-                                    ? 'Audio description ${_formatDuration(_recordedDuration)}'
-                                    : '',
+                                : '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: _isRecording
@@ -1509,6 +1573,60 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
         ),
       ),
     );
+  }
+}
+
+class _AudioWaveform extends StatelessWidget {
+  const _AudioWaveform({required this.samples});
+
+  final List<double> samples;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _AudioWaveformPainter(samples),
+      size: Size.infinite,
+    );
+  }
+}
+
+class _AudioWaveformPainter extends CustomPainter {
+  const _AudioWaveformPainter(this.samples);
+
+  final List<double> samples;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) {
+      return;
+    }
+    final paint = Paint()
+      ..color = const Color(0xFF111820)
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    final barCount = (size.width / 4).floor().clamp(22, 44).toInt();
+    final centerY = size.height / 2;
+    final usableHeight = size.height - 4;
+
+    for (var index = 0; index < barCount; index++) {
+      final sample = samples.isEmpty
+          ? (0.25 + math.sin(index * 0.82).abs() * 0.75)
+          : samples[(index * samples.length / barCount).floor()];
+      final barHeight = (4 + (usableHeight * sample))
+          .clamp(5.0, usableHeight)
+          .toDouble();
+      final x = (index / (barCount - 1)) * size.width;
+      canvas.drawLine(
+        Offset(x, centerY - barHeight / 2),
+        Offset(x, centerY + barHeight / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AudioWaveformPainter oldDelegate) {
+    return oldDelegate.samples != samples;
   }
 }
 

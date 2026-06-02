@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 
 import '../item_detail_page.dart';
 import 'media_carousel.dart';
@@ -12,11 +13,13 @@ class ItemCard extends StatefulWidget {
     required this.docId,
     required this.item,
     this.isCompact = false,
+    this.isLivePage = false,
   });
 
   final String docId;
   final Map<String, dynamic> item;
   final bool isCompact;
+  final bool isLivePage;
 
   @override
   State<ItemCard> createState() => _ItemCardState();
@@ -149,6 +152,7 @@ class _ItemCardState extends State<ItemCard> {
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
     final videoCount = mediaItems.where((media) => media.isVideo).length;
     final isLiveItem = widget.item['status']?.toString() == 'live';
+    final showLivePageMarker = widget.isLivePage && isLiveItem;
 
     return RepaintBoundary(
       child: Column(
@@ -205,7 +209,7 @@ class _ItemCardState extends State<ItemCard> {
                                 videoCount: videoCount,
                                 isCompact: widget.isCompact,
                               ),
-                              if (isLiveItem) ...[
+                              if (isLiveItem && !showLivePageMarker) ...[
                                 SizedBox(height: widget.isCompact ? 4 : 7),
                                 _LiveBadge(isCompact: widget.isCompact),
                               ],
@@ -213,12 +217,24 @@ class _ItemCardState extends State<ItemCard> {
                           ),
                         ),
                         Positioned(
-                          top: widget.isCompact ? 7 : 10,
-                          right: widget.isCompact ? 7 : 10,
-                          child: _UploadedAgoBadge(
-                            uploadedAgo: uploadedAgo,
-                            isCompact: widget.isCompact,
-                          ),
+                          top: showLivePageMarker
+                              ? -29
+                              : widget.isCompact
+                                  ? 7
+                                  : 10,
+                          right: showLivePageMarker
+                              ? -82
+                              : widget.isCompact
+                                  ? 7
+                                  : 10,
+                          child: showLivePageMarker
+                              ? const IgnorePointer(
+                                  child: _LiveCardAnimation(),
+                                )
+                              : _UploadedAgoBadge(
+                                  uploadedAgo: uploadedAgo,
+                                  isCompact: widget.isCompact,
+                                ),
                         ),
                         Positioned(
                           left: widget.isCompact ? 8 : 14,
@@ -679,6 +695,24 @@ class _LiveBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LiveCardAnimation extends StatelessWidget {
+  const _LiveCardAnimation();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 225,
+      height: 108,
+      child: Lottie.asset(
+        'assets/lottie/live2.json',
+        fit: BoxFit.contain,
+        repeat: true,
+        animate: true,
       ),
     );
   }

@@ -335,6 +335,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                   .where((doc) => _isItemActive(doc.data(), _openedAt))
                   .toList(),
             ));
+            final isLivePage = widget.itemStatus == 'live';
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _scheduleVisibleSeenCheck();
@@ -420,6 +421,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                 child: _MasonryItemGrid(
                                   docs: docs,
                                   keyForDoc: _keyForItem,
+                                  isLivePage: isLivePage,
                                 ),
                               )
                             : SliverList.builder(
@@ -431,6 +433,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                     child: ItemCard(
                                       docId: doc.id,
                                       item: doc.data(),
+                                      isLivePage: isLivePage,
                                     ),
                                   );
                                 },
@@ -590,10 +593,15 @@ class _FeedHeader extends StatelessWidget {
 }
 
 class _MasonryItemGrid extends StatelessWidget {
-  const _MasonryItemGrid({required this.docs, required this.keyForDoc});
+  const _MasonryItemGrid({
+    required this.docs,
+    required this.keyForDoc,
+    required this.isLivePage,
+  });
 
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
   final GlobalKey Function(String itemId) keyForDoc;
+  final bool isLivePage;
 
   @override
   Widget build(BuildContext context) {
@@ -611,9 +619,21 @@ class _MasonryItemGrid extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: _MasonryColumn(docs: leftDocs, keyForDoc: keyForDoc)),
+        Expanded(
+          child: _MasonryColumn(
+            docs: leftDocs,
+            keyForDoc: keyForDoc,
+            isLivePage: isLivePage,
+          ),
+        ),
         const SizedBox(width: 4),
-        Expanded(child: _MasonryColumn(docs: rightDocs, keyForDoc: keyForDoc)),
+        Expanded(
+          child: _MasonryColumn(
+            docs: rightDocs,
+            keyForDoc: keyForDoc,
+            isLivePage: isLivePage,
+          ),
+        ),
       ],
     );
   }
@@ -652,10 +672,15 @@ class _FeedSkeletonGrid extends StatelessWidget {
 }
 
 class _MasonryColumn extends StatelessWidget {
-  const _MasonryColumn({required this.docs, required this.keyForDoc});
+  const _MasonryColumn({
+    required this.docs,
+    required this.keyForDoc,
+    required this.isLivePage,
+  });
 
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
   final GlobalKey Function(String itemId) keyForDoc;
+  final bool isLivePage;
 
   @override
   Widget build(BuildContext context) {
@@ -663,7 +688,12 @@ class _MasonryColumn extends StatelessWidget {
       children: docs.map((doc) {
         return KeyedSubtree(
           key: keyForDoc(doc.id),
-          child: ItemCard(docId: doc.id, item: doc.data(), isCompact: true),
+          child: ItemCard(
+            docId: doc.id,
+            item: doc.data(),
+            isCompact: true,
+            isLivePage: isLivePage,
+          ),
         );
       }).toList(),
     );
