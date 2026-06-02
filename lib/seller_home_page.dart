@@ -48,6 +48,16 @@ class _SellerHomePageState extends State<SellerHomePage> {
     _setChromeVisible(true);
   }
 
+  void _showItemAddedTab(bool isLiveItem) {
+    setState(() {
+      _currentIndex = isLiveItem ? 1 : 0;
+      if (!isLiveItem) {
+        _feedRefreshTick++;
+      }
+    });
+    _setChromeVisible(true);
+  }
+
   void _showSettingsTab() {
     setState(() => _currentIndex = 4);
   }
@@ -222,7 +232,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
       ),
       1 => const SellerLiveTab(),
       2 => widget.isSellerMode
-          ? SellerAddItemTab(key: _addItemKey, onItemAddedDone: _showFeedTab)
+          ? SellerAddItemTab(
+              key: _addItemKey,
+              onItemAddedDone: _showItemAddedTab,
+            )
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
           ? const SellerListingsTab()
@@ -283,42 +296,62 @@ class _SellerHomePageState extends State<SellerHomePage> {
             ],
           ),
           bottomNavigationBar: SizedBox(
-              height: 58,
-              child: BottomNavigationBar(
-                currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
-                onTap: _onTabTapped,
-                type: BottomNavigationBarType.fixed,
-                selectedItemColor: const Color(0xFFFF7801),
-                unselectedItemColor: Colors.grey,
-                selectedFontSize: 0,
-                unselectedFontSize: 0,
-                showSelectedLabels: false,
-                showUnselectedLabels: false,
-                iconSize: 24,
-                items: [
-                  const BottomNavigationBarItem(
-                    icon: Icon(Icons.home),
-                    label: 'Home',
-                  ),
-                  const BottomNavigationBarItem(
-                    icon: _LiveNavIcon(isActive: false),
-                    activeIcon: _LiveNavIcon(isActive: true),
-                    label: 'Live',
-                  ),
-                  const BottomNavigationBarItem(
-                    icon: Icon(Icons.add_circle_outline),
-                    label: 'Add',
-                  ),
-                  const BottomNavigationBarItem(
-                    icon: Icon(Icons.person),
-                    label: 'Listings',
-                  ),
-                  const BottomNavigationBarItem(
-                    icon: Icon(Icons.settings),
-                    label: 'Settings',
-                  ),
-                ],
-              ),
+            height: 58,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final tabWidth = constraints.maxWidth / 5;
+                const liveIconWidth = 225.0;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    BottomNavigationBar(
+                      currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
+                      onTap: _onTabTapped,
+                      type: BottomNavigationBarType.fixed,
+                      selectedItemColor: const Color(0xFFFF7801),
+                      unselectedItemColor: Colors.grey,
+                      selectedFontSize: 0,
+                      unselectedFontSize: 0,
+                      showSelectedLabels: false,
+                      showUnselectedLabels: false,
+                      iconSize: 24,
+                      items: const [
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.home, size: 28),
+                          label: 'Home',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: SizedBox(width: 24, height: 24),
+                          activeIcon: SizedBox(width: 24, height: 24),
+                          label: 'Live',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.add_circle_outline),
+                          label: 'Add',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.person),
+                          label: 'Listings',
+                        ),
+                        BottomNavigationBarItem(
+                          icon: Icon(Icons.settings),
+                          label: 'Settings',
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      left: tabWidth + (tabWidth - liveIconWidth) / 2,
+                      top: -37,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () => _onTabTapped(1),
+                        child: const _LiveNavIcon(),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -327,23 +360,18 @@ class _SellerHomePageState extends State<SellerHomePage> {
 }
 
 class _LiveNavIcon extends StatelessWidget {
-  const _LiveNavIcon({required this.isActive});
-
-  final bool isActive;
+  const _LiveNavIcon();
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 38,
-      height: 38,
-      child: Transform.translate(
-        offset: const Offset(0, -4),
-        child: Lottie.asset(
-          'assets/lottie/live.json',
-          fit: BoxFit.contain,
-          repeat: isActive,
-          animate: true,
-        ),
+      width: 225,
+      height: 108,
+      child: Lottie.asset(
+        'assets/lottie/live2.json',
+        fit: BoxFit.contain,
+        repeat: true,
+        animate: true,
       ),
     );
   }

@@ -23,7 +23,7 @@ import '../widgets/price_with_currency.dart';
 class SellerAddItemTab extends StatefulWidget {
   const SellerAddItemTab({super.key, this.onItemAddedDone, this.isLive = false});
 
-  final VoidCallback? onItemAddedDone;
+  final ValueChanged<bool>? onItemAddedDone;
   final bool isLive;
   @override
   SellerAddItemTabState createState() => SellerAddItemTabState();
@@ -417,6 +417,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> _addItem() async {
+    final isLiveItem = _isLiveItem;
     final name = _nameController.text.trim();
     final priceNumber = _priceController.text.trim().isEmpty
         ? '0'
@@ -436,7 +437,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _showMessage('Invalid price');
       return;
     }
-    if (_isLiveItem && double.parse(normalizedPrice) <= 0) {
+    if (isLiveItem && double.parse(normalizedPrice) <= 0) {
       _showMessage('Price is required for live items');
       _priceFocusNode.requestFocus();
       return;
@@ -456,10 +457,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final selectedTimePeriodHours = _timePeriodHours;
 
       UploadStatusManager.uploading();
-      widget.onItemAddedDone?.call();
+      widget.onItemAddedDone?.call(isLiveItem);
 
       final uploadedMedia = await _uploadMedia(session.sellerId, mediaToUpload);
-      final audioDescriptionUrl = _isLiveItem
+      final audioDescriptionUrl = isLiveItem
           ? null
           : await _uploadAudioDescription(session.sellerId);
       final imageUrls = uploadedMedia
@@ -478,7 +479,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'seller_uid': session.sellerId,
         'seller_name': session.name,
         'seller_phone': session.phoneNumber,
-        'status': _isLiveItem ? 'live' : 'post',
+        'status': isLiveItem ? 'live' : 'post',
         'item_name': name,
         'item_price': price,
         'price_number': normalizedPrice,
@@ -576,7 +577,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if (navigator.canPop()) {
       navigator.pop();
     }
-    widget.onItemAddedDone?.call();
+    widget.onItemAddedDone?.call(_isLiveItem);
   }
 
   void _showMessage(String message) {
@@ -702,9 +703,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-      child: Column(
+    return SizedBox.expand(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        color: _isLiveItem ? const Color(0xFFFFE9EC) : const Color(0xFFF4FBF7),
+        child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildLiveSwitch(),
@@ -821,36 +826,29 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                     ],
                   )
                 : Text(
-                    _isLiveItem ? 'Add Live' : 'Add Item',
+                    _isLiveItem ? 'Go Live' : 'Post',
                     style: const TextStyle(fontSize: 16),
                   ),
           ),
         ],
+        ),
+        ),
       ),
     );
   }
 
   Widget _buildLiveSwitch() {
     final badgeColor = _isLiveItem ? const Color(0xFFE92808) : Colors.grey;
-    final badgeScale = _isLiveItem ? 1.08 : 1.0;
+    final badgeScale = _isLiveItem ? 1.16 : 1.0;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Switch(
-          value: _isLiveItem,
-          onChanged: _isUploading
-              ? null
-              : (value) {
-                  setState(() => _isLiveItem = value);
-                },
-          activeColor: Colors.white,
-          activeTrackColor: const Color(0xFFE92808),
-          inactiveThumbColor: Colors.white,
-          inactiveTrackColor: const Color(0xFFFF7801),
-        ),
-        const SizedBox(width: 8),
-        AnimatedScale(
+    return Center(
+      child: GestureDetector(
+        onTap: _isUploading
+            ? null
+            : () {
+                setState(() => _isLiveItem = !_isLiveItem);
+              },
+        child: AnimatedScale(
           scale: badgeScale,
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
@@ -880,7 +878,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 

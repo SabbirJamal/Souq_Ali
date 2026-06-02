@@ -502,16 +502,21 @@ class _DetailMediaHeaderState extends State<_DetailMediaHeader> {
     if (media.isVideo || _zoomImageUrl(media).isEmpty || _isZooming) {
       return;
     }
-    _zoomReadyMedia = media;
-    _startZoom(media, details.focalPoint);
+    _prepareZoom(media, details.focalPoint);
   }
 
   void _handleScaleUpdate(MediaItem media, ScaleUpdateDetails details) {
-    if (!_isZooming || _zoomReadyMedia?.url != media.url) {
+    if (_zoomReadyMedia?.url != media.url) {
       return;
     }
     _zoomCurrentFocal = details.focalPoint;
     _zoomScale = details.scale.clamp(1.0, 4.0);
+    if (!_isZooming) {
+      if (details.scale <= 1.01) {
+        return;
+      }
+      _startZoom(media);
+    }
     _zoomOverlay?.markNeedsBuild();
   }
 
@@ -522,7 +527,7 @@ class _DetailMediaHeaderState extends State<_DetailMediaHeader> {
     _endZoomInteraction();
   }
 
-  void _startZoom(MediaItem media, Offset focalPoint) {
+  void _prepareZoom(MediaItem media, Offset focalPoint) {
     final context = _mediaKey.currentContext;
     final box = context?.findRenderObject() as RenderBox?;
     if (box == null || !box.attached || !box.hasSize) {
@@ -534,6 +539,13 @@ class _DetailMediaHeaderState extends State<_DetailMediaHeader> {
     _zoomCurrentFocal = focalPoint;
     _zoomLocalFocal = focalPoint - topLeft;
     _zoomScale = 1;
+    _zoomReadyMedia = media;
+  }
+
+  void _startZoom(MediaItem media) {
+    if (_zoomRect == null) {
+      return;
+    }
     _isZooming = true;
     widget.onZoomActiveChanged?.call(true);
     setState(() {});

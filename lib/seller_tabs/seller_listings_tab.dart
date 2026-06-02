@@ -20,6 +20,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   late final Future<SellerSession?> _sessionFuture;
   late DateTime _now;
   Timer? _expiryTimer;
+  String _selectedStatus = 'post';
 
   @override
   void initState() {
@@ -70,6 +71,14 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   bool _isItemActive(Map<String, dynamic> item) {
     final expiryAt = _expiryAt(item);
     return expiryAt == null || expiryAt.isAfter(_now);
+  }
+
+  bool _matchesSelectedStatus(Map<String, dynamic> item) {
+    final status = item['status']?.toString();
+    if (_selectedStatus == 'post') {
+      return status == null || status.isEmpty || status == 'post';
+    }
+    return status == _selectedStatus;
   }
 
   String _uploadedAgo(Object? value) {
@@ -255,6 +264,16 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
               slivers: [
                 const SliverToBoxAdapter(child: _ListingsScrollableHeader()),
                 SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
+                SliverToBoxAdapter(
+                  child: _ListingsStatusTabs(
+                    selectedStatus: _selectedStatus,
+                    onChanged: (status) {
+                      if (status != _selectedStatus) {
+                        setState(() => _selectedStatus = status);
+                      }
+                    },
+                  ),
+                ),
                 StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: FirebaseFirestore.instance
                       .collection('items')
@@ -279,6 +298,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
 
                     final docs = (itemsSnapshot.data?.docs ?? [])
                         .where((doc) => _isItemActive(doc.data()))
+                        .where((doc) => _matchesSelectedStatus(doc.data()))
                         .toList()
                       ..sort((a, b) {
                         final aDate =
@@ -291,12 +311,17 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                       });
 
                     if (docs.isEmpty) {
-                      return const SliverFillRemaining(
+                      return SliverFillRemaining(
                         hasScrollBody: false,
                         child: Center(
                           child: Text(
-                            'No items listed yet',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                            _selectedStatus == 'live'
+                                ? 'No live items listed yet'
+                                : 'No items listed yet',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
                       );
@@ -439,6 +464,82 @@ class _SellerInfoHeader extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _ListingsStatusTabs extends StatelessWidget {
+  const _ListingsStatusTabs({
+    required this.selectedStatus,
+    required this.onChanged,
+  });
+
+  final String selectedStatus;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFF4FBF7),
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: _ListingsStatusTabButton(
+                text: 'POSTINGS',
+                isSelected: selectedStatus == 'post',
+                onTap: () => onChanged('post'),
+              ),
+            ),
+            Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+            Expanded(
+              child: _ListingsStatusTabButton(
+                text: 'LIVE',
+                isSelected: selectedStatus == 'live',
+                onTap: () => onChanged('live'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ListingsStatusTabButton extends StatelessWidget {
+  const _ListingsStatusTabButton({
+    required this.text,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Center(
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isSelected ? Colors.red : Colors.black,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
     );
   }
 }
