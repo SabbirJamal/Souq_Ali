@@ -288,147 +288,17 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     String docId,
     Map<String, dynamic> item,
   ) async {
-    final priceController = TextEditingController(text: _renewPriceText(item));
-    var selectedUnit = _renewPriceUnit(item);
-    String? priceError;
-
     final result = await showDialog<_RenewDialogResult>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 36),
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 22),
-                child: Text(
-                  'RENEW',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
-                ),
-              ),
-              const Divider(height: 1),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: priceController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          labelText: 'Price',
-                          errorText: priceError,
-                          prefixIcon: const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: RiyalCurrencyIcon(size: 22),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: selectedUnit,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        items: _priceUnits
-                            .map(
-                              (unit) => DropdownMenuItem(
-                                value: unit,
-                                child: Text(unit.replaceFirst('/ ', '')),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setDialogState(() => selectedUnit = value);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              SizedBox(
-                height: 58,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.black,
-                          shape: const RoundedRectangleBorder(),
-                        ),
-                        child: const Text(
-                          'No',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () {
-                          final normalized = _normalizeRenewPrice(
-                            priceController.text,
-                          );
-                          if (normalized == null) {
-                            setDialogState(() => priceError = 'Invalid price');
-                            return;
-                          }
-                          Navigator.pop(
-                            context,
-                            _RenewDialogResult(
-                              priceNumber: normalized,
-                              priceUnit: selectedUnit,
-                            ),
-                          );
-                        },
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          shape: const RoundedRectangleBorder(),
-                        ),
-                        child: const Text(
-                          'Yes',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+      builder: (_) => _RenewDialog(
+        initialPrice: _renewPriceText(item),
+        initialUnit: _renewPriceUnit(item),
+        priceUnits: _priceUnits,
+        normalizePrice: _normalizeRenewPrice,
       ),
     );
-    priceController.dispose();
 
-    if (result == null || !context.mounted) {
+    if (result == null || !mounted) {
       return;
     }
 
@@ -446,10 +316,10 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
       'updated_at': FieldValue.serverTimestamp(),
     });
 
-    if (!context.mounted) {
+    if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(this.context).showSnackBar(
       const SnackBar(
         content: Text('Live item renewed'),
         backgroundColor: Color(0xFFFF7801),
@@ -779,6 +649,179 @@ class _RenewDialogResult {
 
   final String priceNumber;
   final String priceUnit;
+}
+
+class _RenewDialog extends StatefulWidget {
+  const _RenewDialog({
+    required this.initialPrice,
+    required this.initialUnit,
+    required this.priceUnits,
+    required this.normalizePrice,
+  });
+
+  final String initialPrice;
+  final String initialUnit;
+  final List<String> priceUnits;
+  final String? Function(String value) normalizePrice;
+
+  @override
+  State<_RenewDialog> createState() => _RenewDialogState();
+}
+
+class _RenewDialogState extends State<_RenewDialog> {
+  late final TextEditingController _priceController;
+  late String _selectedUnit;
+  String? _priceError;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceController = TextEditingController(text: widget.initialPrice);
+    _selectedUnit = widget.initialUnit;
+  }
+
+  @override
+  void dispose() {
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final normalized = widget.normalizePrice(_priceController.text);
+    if (normalized == null) {
+      setState(() => _priceError = 'Price Required');
+      return;
+    }
+    Navigator.pop(
+      context,
+      _RenewDialogResult(priceNumber: normalized, priceUnit: _selectedUnit),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 22),
+            child: Text(
+              'RENEW',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _priceController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    onChanged: (_) {
+                      if (_priceError != null) {
+                        setState(() => _priceError = null);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: _priceError == null
+                          ? 'Price'
+                          : 'Price Required',
+                      errorText: _priceError,
+                      prefixIcon: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: RiyalCurrencyIcon(size: 22),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selectedUnit,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    items: widget.priceUnits
+                        .map(
+                          (unit) => DropdownMenuItem(
+                            value: unit,
+                            child: Text(unit.replaceFirst('/ ', '')),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _selectedUnit = value);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          SizedBox(
+            height: 58,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.black,
+                      shape: const RoundedRectangleBorder(),
+                    ),
+                    child: const Text(
+                      'No',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(
+                  child: TextButton(
+                    onPressed: _submit,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      shape: const RoundedRectangleBorder(),
+                    ),
+                    child: const Text(
+                      'Yes',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ListingsGrid extends StatelessWidget {

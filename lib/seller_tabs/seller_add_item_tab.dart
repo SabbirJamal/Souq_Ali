@@ -42,7 +42,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   static const _maxPriceValue = 1000000.0;
 
   final _nameController = TextEditingController();
-  final _priceController = TextEditingController(text: '0');
+  final _priceController = TextEditingController();
   final _locationController = TextEditingController();
   final _priceFocusNode = FocusNode();
 
@@ -51,12 +51,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   String? _audioDescriptionPath;
   Duration _audioDescriptionDuration = Duration.zero;
 
-  String _lastValidPriceText = '0';
+  String _lastValidPriceText = '';
   String _priceUnit = '/ kg';
   int _timePeriodHours = 720;
   int _audioResetToken = 0;
   bool _isUploading = false;
   bool _showLocationError = false;
+  bool _showPriceError = false;
   bool _isLiveItem = false;
   bool _isTransitPost = false;
 
@@ -451,7 +452,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         return;
       }
       if (double.parse(normalizedPrice) <= 0) {
-        _showMessage('Price is required for live items');
+        setState(() => _showPriceError = true);
         _priceFocusNode.requestFocus();
         return;
       }
@@ -536,8 +537,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   void _clearForm() {
     _nameController.clear();
-    _priceController.text = '0';
-    _lastValidPriceText = '0';
+    _priceController.clear();
+    _lastValidPriceText = '';
     setState(() {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
@@ -549,6 +550,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         _audioResetToken++;
       }
       _showLocationError = false;
+      _showPriceError = false;
     });
     _loadDefaultSellerLocation();
   }
@@ -607,6 +609,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   void _handlePriceChanged(String value) {
+    if (_showPriceError) {
+      setState(() => _showPriceError = false);
+    }
     final rawValue = value.trim().replaceAll(',', '');
     final dotCount = '.'.allMatches(rawValue).length;
     if (dotCount > 1) {
@@ -656,9 +661,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   void _restoreDefaultPriceIfEmpty() {
-    if (_priceController.text.trim().isEmpty) {
-      _lastValidPriceText = '0';
-      _setPriceText('0');
+    final cleanValue = _priceController.text.trim().replaceAll(',', '');
+    if (cleanValue.isEmpty || double.tryParse(cleanValue) == 0) {
+      _lastValidPriceText = '';
+      _setPriceText('');
     }
   }
 
@@ -762,8 +768,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                   flex: 3,
                   child: _buildTextField(
                     controller: _priceController,
-                    label: 'Price',
-                    hint: '',
+                    label: _showPriceError ? 'PRICE REQUIRED' : 'Price',
+                    hint: 'Price',
                     icon: null,
                     prefixIconWidget: const Padding(
                       padding: EdgeInsets.all(12),
@@ -780,10 +786,14 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                       if (_priceController.text == '0') {
                         _setPriceText('');
                       }
+                      if (_showPriceError) {
+                        setState(() => _showPriceError = false);
+                      }
                     },
                     onEditingComplete: _restoreDefaultPriceIfEmpty,
                     onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
                     onChanged: _handlePriceChanged,
+                    errorText: _showPriceError ? '' : null,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -928,6 +938,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       if (isLive) {
         _isTransitPost = false;
         _showLocationError = false;
+      } else {
+        _showPriceError = false;
       }
     });
     widget.onLiveModeChanged?.call(isLive);
