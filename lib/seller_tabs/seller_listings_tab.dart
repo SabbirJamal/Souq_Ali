@@ -118,15 +118,15 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
 
     final minutes = (remaining.inSeconds / 60).ceil();
     if (minutes < 60) {
-      return 'Exp in $minutes ${minutes == 1 ? 'Min' : 'Mins'}';
+      return 'Exp. $minutes ${minutes == 1 ? 'Min' : 'Mins'}';
     }
 
     final hours = minutes ~/ 60;
     final extraMinutes = minutes % 60;
     if (extraMinutes == 0) {
-      return 'Exp in $hours ${hours == 1 ? 'Hr' : 'Hrs'}';
+      return 'Exp. $hours ${hours == 1 ? 'Hr' : 'Hrs'}';
     }
-    return 'Exp in $hours ${hours == 1 ? 'Hr' : 'Hrs'} $extraMinutes Mins';
+    return 'Exp. $hours ${hours == 1 ? 'Hr' : 'Hrs'} $extraMinutes Mins';
   }
 
   String _formatPrice(Object? value) {
@@ -1010,8 +1010,14 @@ class _ListingManageCard extends StatelessWidget {
             right: 7,
             child: _LiveExpiryBadge(text: expiryText),
           ),
+        if (!isLiveItem)
+          Positioned(
+            top: 30,
+            right: 7,
+            child: _LiveExpiryBadge(text: expiryText),
+          ),
         Positioned(
-          top: isLiveItem ? 70 : 42,
+          top: isLiveItem ? 70 : 58,
           right: 7,
           child: _ListingQuickActions(
             isLiveItem: isLiveItem,
