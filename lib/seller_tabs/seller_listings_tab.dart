@@ -1054,7 +1054,7 @@ class _ListingQuickActions extends StatelessWidget {
           const SizedBox(height: 12),
           _ActionPill(
             text: 'Renew',
-            color: const Color(0xFFFF7801),
+            color: const Color(0xFF25D366),
             onTap: onRenew,
           ),
         ],
