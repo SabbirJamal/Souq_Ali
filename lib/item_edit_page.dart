@@ -1177,6 +1177,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   final AudioPlayer _player = AudioPlayer();
 
   Timer? _recordTimer;
+  StreamSubscription<void>? _completeSubscription;
   String? _audioPath;
   String? _existingUrl;
   late Duration _recordedDuration;
@@ -1195,7 +1196,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     super.initState();
     _existingUrl = widget.initialUrl;
     _recordedDuration = widget.initialDuration;
-    _player.onPlayerComplete.listen((_) {
+    _completeSubscription = _player.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() => _isPlaying = false);
       }
@@ -1213,9 +1214,21 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   @override
   void dispose() {
     _recordTimer?.cancel();
+    _completeSubscription?.cancel();
+    if (_isRecording) {
+      unawaited(_recorder.stop().catchError((_) => null));
+    }
     _recorder.dispose();
     _player.dispose();
     super.dispose();
+  }
+
+  Future<void> _deleteLocalFile(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {
+      // The temp file may already be gone.
+    }
   }
 
   Future<void> _startRecording(PointerDownEvent event) async {
@@ -1236,7 +1249,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     await _player.stop();
     final oldPath = _audioPath;
     if (oldPath != null) {
-      await File(oldPath).delete().catchError((_) {});
+      await _deleteLocalFile(oldPath);
     }
     final tempDir = await getTemporaryDirectory();
     final path =
@@ -1306,7 +1319,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
 
     if (cancel || path == null || elapsed < const Duration(milliseconds: 500)) {
       if (path != null) {
-        await File(path).delete().catchError((_) {});
+        await _deleteLocalFile(path);
       }
       setState(() {
         _isRecording = false;
@@ -1371,7 +1384,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     final path = _audioPath;
     await _player.stop();
     if (path != null) {
-      await File(path).delete().catchError((_) {});
+      await _deleteLocalFile(path);
     }
     final shouldRemoveExisting = _existingUrl != null || _removeExisting;
     if (mounted) {

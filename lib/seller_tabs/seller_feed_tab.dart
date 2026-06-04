@@ -417,12 +417,27 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                 vertical: 12,
                               ),
                         sliver: _isGridView
-                            ? SliverToBoxAdapter(
-                                child: _MasonryItemGrid(
-                                  docs: docs,
-                                  keyForDoc: _keyForItem,
-                                  isLivePage: isLivePage,
-                                ),
+                            ? SliverGrid.builder(
+                                itemCount: docs.length,
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      crossAxisSpacing: 4,
+                                      mainAxisSpacing: 4,
+                                      childAspectRatio: 0.66,
+                                    ),
+                                itemBuilder: (context, index) {
+                                  final doc = docs[index];
+                                  return KeyedSubtree(
+                                    key: _keyForItem(doc.id),
+                                    child: ItemCard(
+                                      docId: doc.id,
+                                      item: doc.data(),
+                                      isCompact: true,
+                                      isLivePage: isLivePage,
+                                    ),
+                                  );
+                                },
                               )
                             : SliverList.builder(
                                 itemCount: docs.length,
@@ -592,53 +607,6 @@ class _FeedHeader extends StatelessWidget {
   }
 }
 
-class _MasonryItemGrid extends StatelessWidget {
-  const _MasonryItemGrid({
-    required this.docs,
-    required this.keyForDoc,
-    required this.isLivePage,
-  });
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-  final GlobalKey Function(String itemId) keyForDoc;
-  final bool isLivePage;
-
-  @override
-  Widget build(BuildContext context) {
-    final leftDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    final rightDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-
-    for (var i = 0; i < docs.length; i++) {
-      if (i.isEven) {
-        leftDocs.add(docs[i]);
-      } else {
-        rightDocs.add(docs[i]);
-      }
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _MasonryColumn(
-            docs: leftDocs,
-            keyForDoc: keyForDoc,
-            isLivePage: isLivePage,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: _MasonryColumn(
-            docs: rightDocs,
-            keyForDoc: keyForDoc,
-            isLivePage: isLivePage,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _FeedSkeletonGrid extends StatelessWidget {
   const _FeedSkeletonGrid();
 
@@ -667,35 +635,6 @@ class _FeedSkeletonGrid extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _MasonryColumn extends StatelessWidget {
-  const _MasonryColumn({
-    required this.docs,
-    required this.keyForDoc,
-    required this.isLivePage,
-  });
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-  final GlobalKey Function(String itemId) keyForDoc;
-  final bool isLivePage;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: docs.map((doc) {
-        return KeyedSubtree(
-          key: keyForDoc(doc.id),
-          child: ItemCard(
-            docId: doc.id,
-            item: doc.data(),
-            isCompact: true,
-            isLivePage: isLivePage,
-          ),
-        );
-      }).toList(),
     );
   }
 }

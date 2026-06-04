@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
 import '../seller_session.dart';
-import '../widgets/media_carousel.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
@@ -364,7 +363,11 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                     selectedStatus: _selectedStatus,
                     onChanged: (status) {
                       if (status != _selectedStatus) {
-                        setState(() => _selectedStatus = status);
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        setState(() {
+                          _selectedStatus = status;
+                          _now = DateTime.now();
+                        });
                       }
                     },
                   ),
@@ -424,16 +427,29 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
 
                     return SliverPadding(
                       padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-                      sliver: SliverToBoxAdapter(
-                        child: _ListingsGrid(
-                          docs: docs,
-                          uploadedAgo: _uploadedAgo,
-                          expiryText: _expiryText,
-                          formatPrice: _formatPrice,
-                          onEdit: _openEdit,
-                          onRenew: _confirmRenew,
-                          onDelete: _confirmDelete,
-                        ),
+                      sliver: SliverGrid.builder(
+                        key: ValueKey(_selectedStatus),
+                        itemCount: docs.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 4,
+                              mainAxisSpacing: 4,
+                              childAspectRatio: 0.66,
+                            ),
+                        itemBuilder: (context, index) {
+                          final doc = docs[index];
+                          return _ListingManageCard(
+                            docId: doc.id,
+                            item: doc.data(),
+                            uploadedAgo: _uploadedAgo(doc.data()['created_at']),
+                            expiryText: _expiryText(doc.data()),
+                            formatPrice: _formatPrice,
+                            onEdit: _openEdit,
+                            onRenew: _confirmRenew,
+                            onDelete: _confirmDelete,
+                          );
+                        },
                       ),
                     );
                   },
@@ -824,138 +840,6 @@ class _RenewDialogState extends State<_RenewDialog> {
   }
 }
 
-class _ListingsGrid extends StatelessWidget {
-  const _ListingsGrid({
-    required this.docs,
-    required this.uploadedAgo,
-    required this.expiryText,
-    required this.formatPrice,
-    required this.onEdit,
-    required this.onRenew,
-    required this.onDelete,
-  });
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-  final String Function(Object? value) uploadedAgo;
-  final String Function(Map<String, dynamic> item) expiryText;
-  final String Function(Object? value) formatPrice;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onEdit;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onRenew;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    final leftDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    final rightDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    for (var i = 0; i < docs.length; i++) {
-      if (i.isEven) {
-        leftDocs.add(docs[i]);
-      } else {
-        rightDocs.add(docs[i]);
-      }
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _ListingsColumn(
-            docs: leftDocs,
-            uploadedAgo: uploadedAgo,
-            expiryText: expiryText,
-            formatPrice: formatPrice,
-            onEdit: onEdit,
-            onRenew: onRenew,
-            onDelete: onDelete,
-          ),
-        ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: _ListingsColumn(
-            docs: rightDocs,
-            uploadedAgo: uploadedAgo,
-            expiryText: expiryText,
-            formatPrice: formatPrice,
-            onEdit: onEdit,
-            onRenew: onRenew,
-            onDelete: onDelete,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ListingsColumn extends StatelessWidget {
-  const _ListingsColumn({
-    required this.docs,
-    required this.uploadedAgo,
-    required this.expiryText,
-    required this.formatPrice,
-    required this.onEdit,
-    required this.onRenew,
-    required this.onDelete,
-  });
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-  final String Function(Object? value) uploadedAgo;
-  final String Function(Map<String, dynamic> item) expiryText;
-  final String Function(Object? value) formatPrice;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onEdit;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onRenew;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: docs
-          .map(
-            (doc) => _ListingManageCard(
-              docId: doc.id,
-              item: doc.data(),
-              uploadedAgo: uploadedAgo(doc.data()['created_at']),
-              expiryText: expiryText(doc.data()),
-              formatPrice: formatPrice,
-              onEdit: onEdit,
-              onRenew: onRenew,
-              onDelete: onDelete,
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
 class _ListingManageCard extends StatelessWidget {
   const _ListingManageCard({
     required this.docId,
@@ -1092,36 +976,6 @@ class _LiveExpiryBadge extends StatelessWidget {
   }
 }
 
-class _ManageActions extends StatelessWidget {
-  const _ManageActions({
-    required this.uploadedAgo,
-    required this.expiryText,
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final String uploadedAgo;
-  final String expiryText;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        _DarkBadge(text: uploadedAgo),
-        const SizedBox(height: 4),
-        _DarkBadge(text: expiryText),
-        const SizedBox(height: 7),
-        _ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit),
-        const SizedBox(height: 12),
-        _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete),
-      ],
-    );
-  }
-}
-
 class _ActionPill extends StatelessWidget {
   const _ActionPill({
     required this.text,
@@ -1162,186 +1016,6 @@ class _ActionPill extends StatelessWidget {
   }
 }
 
-class _DarkBadge extends StatelessWidget {
-  const _DarkBadge({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-}
-
-class _ImageFilledDetails extends StatelessWidget {
-  const _ImageFilledDetails({
-    required this.item,
-    required this.formatPrice,
-  });
-
-  final Map<String, dynamic> item;
-  final String Function(Object? value) formatPrice;
-
-  @override
-  Widget build(BuildContext context) {
-    final itemName = item['item_name']?.toString().trim() ?? '';
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _TextChip(
-          child: _OverlayInfoRow(text: item['location']?.toString() ?? ''),
-        ),
-        const SizedBox(height: 5),
-        _TextChip(
-          child: PriceWithCurrency(
-            price: formatPrice(item['item_price']),
-            style: const TextStyle(
-              color: Color(0xFFD00000),
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-        if (itemName.isNotEmpty) ...[
-          const SizedBox(height: 7),
-          _TextChip(
-            child: Text(
-              itemName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.black,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _TextChip extends StatelessWidget {
-  const _TextChip({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: child,
-    );
-  }
-}
-
-class _OverlayInfoRow extends StatelessWidget {
-  const _OverlayInfoRow({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text('📍', style: TextStyle(fontSize: 13)),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.black,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _MediaCountBadges extends StatelessWidget {
-  const _MediaCountBadges({
-    required this.imageCount,
-    required this.videoCount,
-  });
-
-  final int imageCount;
-  final int videoCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (imageCount > 0)
-          _TopMediaBadge(icon: Icons.photo_camera, count: imageCount),
-        if (imageCount > 0 && videoCount > 0) const SizedBox(width: 4),
-        if (videoCount > 0)
-          _TopMediaBadge(icon: Icons.videocam, count: videoCount),
-      ],
-    );
-  }
-}
-
-class _TopMediaBadge extends StatelessWidget {
-  const _TopMediaBadge({required this.icon, required this.count});
-
-  final IconData icon;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 13),
-          const SizedBox(width: 3),
-          Text(
-            '$count',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 String _formatSellerPhone(Object? value) {
   final digits = value?.toString().replaceAll(RegExp(r'[^0-9]'), '') ?? '';
   if (digits.isEmpty) {
@@ -1352,3 +1026,4 @@ String _formatSellerPhone(Object? value) {
   }
   return '+968 $digits';
 }
+

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -555,50 +554,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     _loadDefaultSellerLocation();
   }
 
-  Future<void> _showItemAddedDialog() async {
-    if (!mounted) {
-      return;
-    }
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 96),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 26),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle, color: Colors.teal, size: 56),
-                SizedBox(height: 14),
-                Text(
-                  'Item added successfully',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-
-    await Future<void>.delayed(const Duration(seconds: 2));
-    if (!mounted) {
-      return;
-    }
-    final navigator = Navigator.of(context);
-    if (navigator.canPop()) {
-      navigator.pop();
-    }
-    widget.onItemAddedDone?.call(_isLiveItem);
-  }
-
   void _showMessage(String message) {
     if (!mounted) {
       return;
@@ -933,13 +888,19 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if (_isLiveItem == isLive) {
       return;
     }
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _isLiveItem = isLive;
       if (isLive) {
         _isTransitPost = false;
         _showLocationError = false;
+        _audioDescriptionPath = null;
+        _audioDescriptionDuration = Duration.zero;
+        _audioResetToken++;
       } else {
         _showPriceError = false;
+        _priceController.clear();
+        _lastValidPriceText = '';
       }
     });
     widget.onLiveModeChanged?.call(isLive);
@@ -1235,6 +1196,8 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   final AudioPlayer _player = AudioPlayer();
 
   Timer? _recordTimer;
+  StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<void>? _completeSubscription;
   String? _audioPath;
   List<double> _waveSamples = const [];
   Duration _recordElapsed = Duration.zero;
@@ -1249,12 +1212,12 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   @override
   void initState() {
     super.initState();
-    _player.onPositionChanged.listen((position) {
+    _positionSubscription = _player.onPositionChanged.listen((position) {
       if (mounted) {
         setState(() => _playbackPosition = position);
       }
     });
-    _player.onPlayerComplete.listen((_) {
+    _completeSubscription = _player.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() {
           _isPlaying = false;
@@ -1275,9 +1238,22 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   @override
   void dispose() {
     _recordTimer?.cancel();
+    _positionSubscription?.cancel();
+    _completeSubscription?.cancel();
+    if (_isRecording) {
+      unawaited(_recorder.stop().catchError((_) => null));
+    }
     _recorder.dispose();
     _player.dispose();
     super.dispose();
+  }
+
+  Future<void> _deleteLocalFile(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {
+      // The temp file may already be gone.
+    }
   }
 
   Future<void> _startRecording(PointerDownEvent event) async {
@@ -1298,7 +1274,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     await _player.stop();
     final oldPath = _audioPath;
     if (oldPath != null) {
-      await File(oldPath).delete().catchError((_) {});
+      await _deleteLocalFile(oldPath);
     }
     widget.onChanged(null, Duration.zero);
     final tempDir = await getTemporaryDirectory();
@@ -1391,7 +1367,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
 
     if (cancel || path == null || elapsed < const Duration(milliseconds: 500)) {
       if (path != null) {
-        await File(path).delete().catchError((_) {});
+        await _deleteLocalFile(path);
       }
       setState(() {
         _isRecording = false;
@@ -1458,7 +1434,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     final path = _audioPath;
     await _player.stop();
     if (path != null) {
-      await File(path).delete().catchError((_) {});
+      await _deleteLocalFile(path);
     }
     if (mounted) {
       setState(() {
@@ -2377,40 +2353,6 @@ class _MediaPickerSheetState extends State<_MediaPickerSheet> {
   }
 }
 
-class _CameraTile extends StatelessWidget {
-  const _CameraTile({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 70,
-            height: 70,
-            decoration: const BoxDecoration(
-              color: Color(0xFF242928),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 34),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: const TextStyle(color: Colors.white)),
-        ],
-      ),
-    );
-  }
-}
 
 class _AssetTile extends StatelessWidget {
   const _AssetTile({

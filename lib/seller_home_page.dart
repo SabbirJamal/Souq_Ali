@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:lottie/lottie.dart';
@@ -33,7 +32,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
   int _feedRefreshTick = 0;
   int _listingsRefreshTick = 0;
   DateTime? _lastFeedBackPress;
-  bool _isFeedSearchActive = false;
   bool _isAddLiveMode = false;
 
   @override
@@ -236,7 +234,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
         key: _feedKey,
         chromeVisibleListenable: _chromeVisible,
         onSearchActiveChanged: (isActive) {
-          _isFeedSearchActive = isActive;
           if (isActive) {
             _setChromeVisible(true);
           }
@@ -305,7 +302,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
                   onNotification: _onScrollNotification,
                   child: IndexedStack(
                     index: _currentIndex,
-                    children: List.generate(5, _buildPageAt),
+                    children: List.generate(
+                      5,
+                      (index) => TickerMode(
+                        enabled: index == _currentIndex,
+                        child: _buildPageAt(index),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -360,7 +363,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                       ),
                       Positioned(
                         left: tabWidth + (tabWidth - liveIconWidth) / 2,
-                        top: -31,
+                        top: -38,
                         child: const IgnorePointer(child: _LiveNavIcon()),
                       ),
                     ],

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -38,6 +40,9 @@ class _ItemCardState extends State<ItemCard> {
   bool _hasLoadedAudioSource = false;
   bool _isPreloadingAudio = false;
   int _audioCompletionToken = 0;
+  StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<void>? _completeSubscription;
 
   String get _audioUrl =>
       widget.item['audio_description_url']?.toString().trim() ?? '';
@@ -47,17 +52,17 @@ class _ItemCardState extends State<ItemCard> {
     super.initState();
     _audioPlayer = AudioPlayer();
     _activeFeedAudioItemId.addListener(_pauseIfAnotherAudioStarts);
-    _audioPlayer.onDurationChanged.listen((duration) {
+    _durationSubscription = _audioPlayer.onDurationChanged.listen((duration) {
       if (mounted) {
         setState(() => _audioDuration = duration);
       }
     });
-    _audioPlayer.onPositionChanged.listen((position) {
+    _positionSubscription = _audioPlayer.onPositionChanged.listen((position) {
       if (mounted) {
         setState(() => _audioPosition = position);
       }
     });
-    _audioPlayer.onPlayerComplete.listen((_) {
+    _completeSubscription = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
         final completionToken = ++_audioCompletionToken;
         setState(() {
@@ -85,6 +90,9 @@ class _ItemCardState extends State<ItemCard> {
   @override
   void dispose() {
     _activeFeedAudioItemId.removeListener(_pauseIfAnotherAudioStarts);
+    _durationSubscription?.cancel();
+    _positionSubscription?.cancel();
+    _completeSubscription?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }
