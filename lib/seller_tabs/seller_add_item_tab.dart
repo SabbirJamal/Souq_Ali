@@ -434,7 +434,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               ? '0'
               : _priceController.text.trim())
         : '';
-    final location = isTransitPost ? '' : _locationController.text.trim();
+    final location = isTransitPost ? 'TRANSIT' : _locationController.text.trim();
 
     if (_selectedMedia.isEmpty) {
       _showMessage('Please add atleast 1 image or video');
@@ -864,32 +864,54 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Widget _buildLiveSwitch() {
+    final liveAnimation = Transform.scale(
+      scale: 2.6,
+      child: Lottie.asset(
+        'assets/lottie/live2.json',
+        fit: BoxFit.contain,
+        repeat: true,
+        animate: true,
+      ),
+    );
+
     return Center(
       child: GestureDetector(
         onTap: _isUploading ? null : () => _setLiveMode(!_isLiveItem),
         child: AnimatedScale(
-          scale: _isLiveItem ? 1.14 : 1.0,
+          scale: _isLiveItem ? 1.12 : 1.0,
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          child: AnimatedOpacity(
-            opacity: _isLiveItem ? 1 : 0.55,
-            duration: const Duration(milliseconds: 160),
-            child: SizedBox(
-              width: 110,
-              height: 44,
-              child: FittedBox(
-                fit: BoxFit.contain,
-                child: SizedBox(
-                  width: 225,
-                  height: 108,
-                  child: Lottie.asset(
-                    'assets/lottie/live2.json',
-                    fit: BoxFit.contain,
-                    repeat: true,
-                    animate: true,
-                  ),
-                ),
-              ),
+          child: SizedBox(
+            width: 150,
+            height: 60,
+            child: ClipRect(
+              child: _isLiveItem
+                  ? liveAnimation
+                  : ColorFiltered(
+                      colorFilter: const ColorFilter.matrix([
+                        0.2126,
+                        0.7152,
+                        0.0722,
+                        0,
+                        0,
+                        0.2126,
+                        0.7152,
+                        0.0722,
+                        0,
+                        0,
+                        0.2126,
+                        0.7152,
+                        0.0722,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                      ]),
+                      child: liveAnimation,
+                    ),
             ),
           ),
         ),

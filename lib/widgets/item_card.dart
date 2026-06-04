@@ -395,7 +395,7 @@ class _ImageFilledDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final itemName = item['item_name']?.toString().trim() ?? '';
     final isTransit = item['is_transit'] == true;
-    final location = isTransit ? '' : item['location']?.toString().trim() ?? '';
+    final location = item['location']?.toString().trim() ?? '';
     final price = isTransit ? '' : _formatPrice(item['item_price']);
 
     return IntrinsicWidth(
