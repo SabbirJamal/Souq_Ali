@@ -279,7 +279,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     final price = isLiveItem && _priceController.text.trim().isEmpty
         ? '0'
         : _priceController.text.trim();
-    final location = isTransitPost ? '' : _locationController.text.trim();
+    final location = isTransitPost ? 'TRANSIT' : _locationController.text.trim();
 
     if (!isTransitPost && location.isEmpty) {
       setState(() => _showLocationError = true);
@@ -699,6 +699,18 @@ class _ItemEditPageState extends State<ItemEditPage> {
     return double.tryParse(cleanValue) == 0;
   }
 
+  Future<String> _sellerDefaultLocation() async {
+    final sellerUid = widget.itemData['seller_uid']?.toString();
+    if (sellerUid == null || sellerUid.isEmpty) {
+      return '';
+    }
+    final sellerDoc = await FirebaseFirestore.instance
+        .collection('sellers')
+        .doc(sellerUid)
+        .get();
+    return sellerDoc.data()?['location']?.toString().trim() ?? '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final pageColor = _isLiveItem
@@ -729,11 +741,12 @@ class _ItemEditPageState extends State<ItemEditPage> {
               ),
             ),
             Expanded(
-              child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           children: [
-            _buildModeBadge(),
-            const SizedBox(height: 16),
             _buildMediaEditor(),
             const SizedBox(height: 20),
             if (!_isLiveItem) ...[
@@ -865,88 +878,65 @@ class _ItemEditPageState extends State<ItemEditPage> {
                       ],
                     )
                   : Text(
-                      _isLiveItem ? 'Save Live' : 'Save Post',
+                      _isLiveItem ? 'Update' : 'Update',
                       style: const TextStyle(fontSize: 16),
                     ),
             ),
           ],
+                ),
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModeBadge() {
-    final badgeColor = _isLiveItem ? const Color(0xFFE92808) : Colors.grey;
-    final badgeScale = _isLiveItem ? 1.16 : 1.0;
-
-    return Center(
-      child: AnimatedScale(
-        scale: badgeScale,
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: badgeColor,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.sensors, color: Colors.white, size: 24),
-              SizedBox(width: 8),
-              Text(
-                'LIVE',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 
   Widget _buildTransitToggle() {
-    return GestureDetector(
-      onTap: _isSaving
-          ? null
-          : () {
-              setState(() {
-                _isTransitPost = !_isTransitPost;
-                if (_isTransitPost) {
-                  _showLocationError = false;
-                }
-              });
-            },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        height: 58,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: _isTransitPost ? const Color(0xFFFF7801) : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: _isTransitPost ? const Color(0xFFFF7801) : Colors.black26,
+    Future<void> setTransitMode(bool isTransit) async {
+      if (_isTransitPost == isTransit || _isSaving) {
+        return;
+      }
+      final defaultLocation = isTransit ? '' : await _sellerDefaultLocation();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isTransitPost = isTransit;
+        if (isTransit) {
+          _showLocationError = false;
+          _locationController.text = 'TRANSIT';
+        } else {
+          _locationController.text = defaultLocation;
+        }
+      });
+    }
+
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _TransitStatusButton(
+              text: 'IN STOCK',
+              isSelected: !_isTransitPost,
+              onTap: () => setTransitMode(false),
+            ),
           ),
-        ),
-        child: Text(
-          '\u{1F69A} Transit',
-          style: TextStyle(
-            color: _isTransitPost ? Colors.white : Colors.black,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
+          Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+          Expanded(
+            child: _TransitStatusButton(
+              text: 'TRANSIT',
+              isSelected: _isTransitPost,
+              onTap: () => setTransitMode(true),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1117,6 +1107,41 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 onChanged(value);
               }
             },
+    );
+  }
+}
+
+class _TransitStatusButton extends StatelessWidget {
+  const _TransitStatusButton({
+    required this.text,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1832,4 +1857,3 @@ class _SelectedMedia {
         lower.endsWith('.mkv');
   }
 }
-

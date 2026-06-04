@@ -276,7 +276,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
     final bottomBarColor = _currentIndex == 2 && _isAddLiveMode
         ? const Color(0xFFFFE9EC)
-        : Colors.white;
+        : const Color(0xFFF4FBF7);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(

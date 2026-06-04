@@ -1227,6 +1227,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   List<double> _waveSamples = const [];
   Duration _recordElapsed = Duration.zero;
   Duration _recordedDuration = Duration.zero;
+  Duration _playbackPosition = Duration.zero;
   bool _isRecording = false;
   bool _isCancelArmed = false;
   bool _showCancelFeedback = false;
@@ -1236,9 +1237,17 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
   @override
   void initState() {
     super.initState();
+    _player.onPositionChanged.listen((position) {
+      if (mounted) {
+        setState(() => _playbackPosition = position);
+      }
+    });
     _player.onPlayerComplete.listen((_) {
       if (mounted) {
-        setState(() => _isPlaying = false);
+        setState(() {
+          _isPlaying = false;
+          _playbackPosition = Duration.zero;
+        });
       }
     });
   }
@@ -1299,6 +1308,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
       _waveSamples = const [];
       _recordElapsed = Duration.zero;
       _recordedDuration = Duration.zero;
+      _playbackPosition = Duration.zero;
       _isRecording = true;
       _isCancelArmed = false;
       _showCancelFeedback = false;
@@ -1377,6 +1387,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
         _showCancelFeedback = true;
         _recordElapsed = Duration.zero;
         _recordedDuration = Duration.zero;
+        _playbackPosition = Duration.zero;
         _audioPath = null;
         _waveSamples = const [];
         _recordDragOffset = 0;
@@ -1394,6 +1405,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
       _isCancelArmed = false;
       _showCancelFeedback = false;
       _recordedDuration = elapsed > _maxDuration ? _maxDuration : elapsed;
+      _playbackPosition = Duration.zero;
       _recordElapsed = Duration.zero;
       _audioPath = path;
       _waveSamples = _waveSamples.isEmpty ? _fallbackWaveSamples() : _waveSamples;
@@ -1423,7 +1435,10 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
     }
     await _player.play(DeviceFileSource(path));
     if (mounted) {
-      setState(() => _isPlaying = true);
+      setState(() {
+        _isPlaying = true;
+        _playbackPosition = Duration.zero;
+      });
     }
   }
 
@@ -1438,6 +1453,7 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
         _audioPath = null;
         _waveSamples = const [];
         _recordedDuration = Duration.zero;
+        _playbackPosition = Duration.zero;
         _isPlaying = false;
       });
     }
@@ -1592,6 +1608,12 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
                                     height: 34,
                                     child: _AudioWaveform(
                                       samples: _waveSamples,
+                                      progress: _recordedDuration.inMilliseconds ==
+                                              0
+                                          ? 0
+                                          : (_playbackPosition.inMilliseconds /
+                                                _recordedDuration.inMilliseconds)
+                                              .clamp(0.0, 1.0),
                                     ),
                                   ),
                                 ),
@@ -1696,23 +1718,25 @@ class _AudioDescriptionFieldState extends State<AudioDescriptionField> {
 }
 
 class _AudioWaveform extends StatelessWidget {
-  const _AudioWaveform({required this.samples});
+  const _AudioWaveform({required this.samples, required this.progress});
 
   final List<double> samples;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _AudioWaveformPainter(samples),
+      painter: _AudioWaveformPainter(samples, progress),
       size: Size.infinite,
     );
   }
 }
 
 class _AudioWaveformPainter extends CustomPainter {
-  const _AudioWaveformPainter(this.samples);
+  const _AudioWaveformPainter(this.samples, this.progress);
 
   final List<double> samples;
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1720,14 +1744,17 @@ class _AudioWaveformPainter extends CustomPainter {
       return;
     }
     final paint = Paint()
-      ..color = const Color(0xFF111820)
       ..strokeWidth = 2.4
       ..strokeCap = StrokeCap.round;
     final barCount = (size.width / 4).floor().clamp(22, 44).toInt();
     final centerY = size.height / 2;
     final usableHeight = size.height - 4;
+    final playedBars = (barCount * progress.clamp(0.0, 1.0)).round();
 
     for (var index = 0; index < barCount; index++) {
+      paint.color = index < playedBars
+          ? const Color(0xFFFF7801)
+          : const Color(0xFF111820);
       final sample = samples.isEmpty
           ? (0.25 + math.sin(index * 0.82).abs() * 0.75)
           : samples[(index * samples.length / barCount).floor()];
@@ -1745,7 +1772,7 @@ class _AudioWaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _AudioWaveformPainter oldDelegate) {
-    return oldDelegate.samples != samples;
+    return oldDelegate.samples != samples || oldDelegate.progress != progress;
   }
 }
 
