@@ -14,12 +14,14 @@ class ItemCard extends StatefulWidget {
     required this.item,
     this.isCompact = false,
     this.isLivePage = false,
+    this.liveMarkerTop = -29,
   });
 
   final String docId;
   final Map<String, dynamic> item;
   final bool isCompact;
   final bool isLivePage;
+  final double liveMarkerTop;
 
   @override
   State<ItemCard> createState() => _ItemCardState();
@@ -218,7 +220,7 @@ class _ItemCardState extends State<ItemCard> {
                         ),
                         Positioned(
                           top: showLivePageMarker
-                              ? -29
+                              ? widget.liveMarkerTop
                               : widget.isCompact
                                   ? 7
                                   : 10,
@@ -392,7 +394,9 @@ class _ImageFilledDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final itemName = item['item_name']?.toString().trim() ?? '';
-    final price = _formatPrice(item['item_price']);
+    final isTransit = item['is_transit'] == true;
+    final location = isTransit ? '' : item['location']?.toString().trim() ?? '';
+    final price = isTransit ? '' : _formatPrice(item['item_price']);
 
     return IntrinsicWidth(
       stepWidth: 1,
@@ -410,13 +414,15 @@ class _ImageFilledDetails extends StatelessWidget {
               ),
               SizedBox(height: isCompact ? 5 : 8),
             ],
-            _TextChip(
-              child: _OverlayInfoRow(
-                text: item['location']?.toString() ?? '',
+            if (location.isNotEmpty) ...[
+              _TextChip(
+                child: _OverlayInfoRow(
+                  text: location,
+                  isCompact: isCompact,
+                ),
                 isCompact: isCompact,
               ),
-              isCompact: isCompact,
-            ),
+            ],
             if (price.isNotEmpty) ...[
               SizedBox(height: isCompact ? 5 : 8),
               _TextChip(

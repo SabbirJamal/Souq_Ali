@@ -52,10 +52,15 @@ class _ItemEditPageState extends State<ItemEditPage> {
   bool _removeExistingAudio = false;
   bool _isSaving = false;
   bool _showLocationError = false;
+  late final bool _isLiveItem;
+  bool _isTransitPost = false;
 
   @override
   void initState() {
     super.initState();
+    _isLiveItem =
+        widget.itemData['status']?.toString().toLowerCase() == 'live';
+    _isTransitPost = !_isLiveItem && widget.itemData['is_transit'] == true;
     _nameController = TextEditingController(
       text: widget.itemData['item_name'] ?? '',
     );
@@ -268,26 +273,34 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _save() async {
+    final isLiveItem = _isLiveItem;
+    final isTransitPost = !isLiveItem && _isTransitPost;
     final name = _nameController.text.trim();
-    final price = _priceController.text.trim().isEmpty
+    final price = isLiveItem && _priceController.text.trim().isEmpty
         ? '0'
         : _priceController.text.trim();
-    final location = _locationController.text.trim();
+    final location = isTransitPost ? '' : _locationController.text.trim();
 
-    if (location.isEmpty) {
+    if (!isTransitPost && location.isEmpty) {
       setState(() => _showLocationError = true);
       return;
     }
-    final normalizedPrice = _normalizePrice(price);
-    if (normalizedPrice == null) {
-      _showMessage('Maximum price is 1,000,000.000');
-      return;
+    final normalizedPrice = isLiveItem ? _normalizePrice(price) : '';
+    if (isLiveItem) {
+      if (normalizedPrice == null) {
+        _showMessage('Invalid price');
+        return;
+      }
+      if (double.parse(normalizedPrice) <= 0) {
+        _showMessage('Price is required for live items');
+        _priceFocusNode.requestFocus();
+        return;
+      }
     }
 
     setState(() => _isSaving = true);
 
     try {
-      final formattedPrice = _formatPriceWithCommas(normalizedPrice);
       final sellerUid = widget.itemData['seller_uid'];
       if (sellerUid == null || sellerUid.toString().isEmpty) {
         _showMessage('Please login again');
@@ -319,25 +332,34 @@ class _ItemEditPageState extends State<ItemEditPage> {
             },
           )
           .toList();
-      final audioDescriptionUrl = await _uploadAudioDescription(
-        sellerUid.toString(),
-      );
+      final audioDescriptionUrl = isLiveItem
+          ? null
+          : await _uploadAudioDescription(sellerUid.toString());
+      final priceUnit = isLiveItem ? _priceUnit : '';
+      final itemPrice = isLiveItem
+          ? 'OMR ${_formatPriceWithCommas(normalizedPrice!)} $priceUnit'
+          : '';
       final updateData = <String, dynamic>{
+        'status': isLiveItem ? 'live' : 'post',
+        'is_transit': isTransitPost,
         'item_name': name,
         'origin': FieldValue.delete(),
         'quantity_number': FieldValue.delete(),
         'item_quantity': FieldValue.delete(),
         'weight_unit': FieldValue.delete(),
         'price_number': normalizedPrice,
-        'price_unit': _priceUnit,
-        'item_price': 'OMR $formattedPrice $_priceUnit',
+        'price_unit': priceUnit,
+        'item_price': itemPrice,
         'location': location,
         'media_files': mediaFileMaps,
         'image_urls': imageUrls,
         'updated_at': FieldValue.serverTimestamp(),
       };
 
-      if (audioDescriptionUrl != null) {
+      if (isLiveItem) {
+        updateData['audio_description_url'] = FieldValue.delete();
+        updateData['audio_description_duration_seconds'] = FieldValue.delete();
+      } else if (audioDescriptionUrl != null) {
         updateData['audio_description_url'] = audioDescriptionUrl;
         updateData['audio_description_duration_seconds'] =
             _audioDescriptionDuration.inSeconds;
@@ -352,7 +374,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
           .update(updateData);
 
       await _deleteRemovedStorageFiles();
-      await _deleteRemovedAudioIfNeeded(audioDescriptionUrl != null);
+      await _deleteRemovedAudioIfNeeded(
+        audioDescriptionUrl != null || isLiveItem,
+      );
 
       if (!mounted) {
         return;
@@ -677,6 +701,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final pageColor = _isLiveItem
+        ? const Color(0xFFFFE9EC)
+        : const Color(0xFFF4FBF7);
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.black,
@@ -684,7 +712,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4FBF7),
+        backgroundColor: pageColor,
         body: Column(
           children: [
             Container(
@@ -693,7 +721,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
             ),
             Container(
               height: kToolbarHeight,
-              color: const Color(0xFFF4FBF7),
+              color: pageColor,
               alignment: Alignment.centerLeft,
               child: IconButton(
                 onPressed: () => Navigator.pop(context),
@@ -704,33 +732,43 @@ class _ItemEditPageState extends State<ItemEditPage> {
               child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
           children: [
+            _buildModeBadge(),
+            const SizedBox(height: 16),
             _buildMediaEditor(),
             const SizedBox(height: 20),
+            if (!_isLiveItem) ...[
+              _buildTransitToggle(),
+              const SizedBox(height: 14),
+            ],
             _field(
               _nameController,
               'Item Name',
               null,
-              hint: 'Fresh Tomatoes',
+              hint: '',
               maxLength: 80,
             ),
             const SizedBox(height: 14),
-            AudioDescriptionField(
-              isDisabled: _isSaving,
-              resetToken: _audioResetToken,
-              initialUrl: _existingAudioUrl,
-              initialDuration: Duration(
-                seconds:
-                    (widget.itemData['audio_description_duration_seconds'] as num?)
-                            ?.toInt() ??
-                        0,
+            if (!_isLiveItem) ...[
+              AudioDescriptionField(
+                isDisabled: _isSaving,
+                resetToken: _audioResetToken,
+                initialUrl: _existingAudioUrl,
+                initialDuration: Duration(
+                  seconds:
+                      (widget.itemData['audio_description_duration_seconds']
+                                  as num?)
+                              ?.toInt() ??
+                          0,
+                ),
+                onChanged: (path, duration, removeExisting) {
+                  _audioDescriptionPath = path;
+                  _audioDescriptionDuration = duration;
+                  _removeExistingAudio = removeExisting;
+                },
               ),
-              onChanged: (path, duration, removeExisting) {
-                _audioDescriptionPath = path;
-                _audioDescriptionDuration = duration;
-                _removeExistingAudio = removeExisting;
-              },
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 8),
+            ],
+            if (_isLiveItem) ...[
             Row(
               children: [
                 Expanded(
@@ -739,7 +777,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                     _priceController,
                     'Price',
                     null,
-                    hint: '2.500',
+                    hint: '',
                     prefixIconWidget: const Padding(
                       padding: EdgeInsets.all(12),
                       child: RiyalCurrencyIcon(size: 22),
@@ -773,6 +811,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
               ],
             ),
             const SizedBox(height: 14),
+            ],
+            if (_isLiveItem || !_isTransitPost)
             _field(
               _locationController,
               'Location',
@@ -824,7 +864,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
                         ),
                       ],
                     )
-                  : const Text('Save Changes', style: TextStyle(fontSize: 16)),
+                  : Text(
+                      _isLiveItem ? 'Save Live' : 'Save Post',
+                      style: const TextStyle(fontSize: 16),
+                    ),
             ),
           ],
               ),
@@ -834,6 +877,80 @@ class _ItemEditPageState extends State<ItemEditPage> {
       ),
     );
   }
+
+  Widget _buildModeBadge() {
+    final badgeColor = _isLiveItem ? const Color(0xFFE92808) : Colors.grey;
+    final badgeScale = _isLiveItem ? 1.16 : 1.0;
+
+    return Center(
+      child: AnimatedScale(
+        scale: badgeScale,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: badgeColor,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sensors, color: Colors.white, size: 24),
+              SizedBox(width: 8),
+              Text(
+                'LIVE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTransitToggle() {
+    return GestureDetector(
+      onTap: _isSaving
+          ? null
+          : () {
+              setState(() {
+                _isTransitPost = !_isTransitPost;
+                if (_isTransitPost) {
+                  _showLocationError = false;
+                }
+              });
+            },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 58,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _isTransitPost ? const Color(0xFFFF7801) : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _isTransitPost ? const Color(0xFFFF7801) : Colors.black26,
+          ),
+        ),
+        child: Text(
+          '\u{1F69A} Transit',
+          style: TextStyle(
+            color: _isTransitPost ? Colors.white : Colors.black,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMediaEditor() {
     final totalCount = _media.length;
     final canAddMore = totalCount < _maxMediaCount;

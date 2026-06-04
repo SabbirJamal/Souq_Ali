@@ -9,6 +9,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:lottie/lottie.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart'
     as device_permissions;
@@ -57,6 +58,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   bool _isUploading = false;
   bool _showLocationError = false;
   bool _isLiveItem = false;
+  bool _isTransitPost = false;
 
   int get _totalTimePeriodHours => _isLiveItem ? 2 : _timePeriodHours;
 
@@ -425,29 +427,34 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Future<void> _addItem() async {
     final isLiveItem = _isLiveItem;
+    final isTransitPost = !isLiveItem && _isTransitPost;
     final name = _nameController.text.trim();
-    final priceNumber = _priceController.text.trim().isEmpty
-        ? '0'
-        : _priceController.text.trim();
-    final location = _locationController.text.trim();
+    final priceNumber = isLiveItem
+        ? (_priceController.text.trim().isEmpty
+              ? '0'
+              : _priceController.text.trim())
+        : '';
+    final location = isTransitPost ? '' : _locationController.text.trim();
 
     if (_selectedMedia.isEmpty) {
       _showMessage('Please add atleast 1 image or video');
       return;
     }
-    if (location.isEmpty) {
+    if (!isTransitPost && location.isEmpty) {
       setState(() => _showLocationError = true);
       return;
     }
-    final normalizedPrice = _normalizePrice(priceNumber);
-    if (normalizedPrice == null) {
-      _showMessage('Invalid price');
-      return;
-    }
-    if (isLiveItem && double.parse(normalizedPrice) <= 0) {
-      _showMessage('Price is required for live items');
-      _priceFocusNode.requestFocus();
-      return;
+    final normalizedPrice = isLiveItem ? _normalizePrice(priceNumber) : '';
+    if (isLiveItem) {
+      if (normalizedPrice == null) {
+        _showMessage('Invalid price');
+        return;
+      }
+      if (double.parse(normalizedPrice) <= 0) {
+        _showMessage('Price is required for live items');
+        _priceFocusNode.requestFocus();
+        return;
+      }
     }
     setState(() => _isUploading = true);
 
@@ -459,7 +466,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       }
 
       final mediaToUpload = List<_SelectedMedia>.from(_selectedMedia);
-      final priceUnit = _priceUnit;
+      final priceUnit = isLiveItem ? _priceUnit : '';
       final timePeriodHours = _totalTimePeriodHours;
       final selectedTimePeriodHours = _timePeriodHours;
 
@@ -474,8 +481,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           .where((media) => media.type == 'image')
           .map((media) => media.url)
           .toList();
-      final formattedPrice = _formatPriceWithCommas(normalizedPrice);
-      final price = 'OMR $formattedPrice $priceUnit';
+      final price = isLiveItem
+          ? 'OMR ${_formatPriceWithCommas(normalizedPrice!)} $priceUnit'
+          : '';
       final itemRef = FirebaseFirestore.instance.collection('items').doc();
       final mediaFileMaps = uploadedMedia.map((media) => media.toMap()).toList();
       final expiresAt = Timestamp.fromDate(
@@ -487,6 +495,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'seller_name': session.name,
         'seller_phone': session.phoneNumber,
         'status': isLiveItem ? 'live' : 'post',
+        'is_transit': isTransitPost,
         'item_name': name,
         'item_price': price,
         'price_number': normalizedPrice,
@@ -533,6 +542,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _selectedMedia.clear();
       _priceUnit = '/ kg';
       _timePeriodHours = 720;
+      _isTransitPost = false;
       if (!_isLiveItem) {
         _audioDescriptionPath = null;
         _audioDescriptionDuration = Duration.zero;
@@ -723,6 +733,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           const SizedBox(height: 16),
           _buildMediaPicker(),
           const SizedBox(height: 20),
+          if (!_isLiveItem) ...[
+            _buildTransitToggle(),
+            const SizedBox(height: 14),
+          ],
           _buildTextField(
             controller: _nameController,
             label: 'Item Name',
@@ -741,49 +755,52 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             ),
             const SizedBox(height: 8),
           ],
-          Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: _buildTextField(
-                  controller: _priceController,
-                  label: 'Price',
-                  hint: '',
-                  icon: null,
-                  prefixIconWidget: const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: RiyalCurrencyIcon(size: 22),
+          if (_isLiveItem) ...[
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: _buildTextField(
+                    controller: _priceController,
+                    label: 'Price',
+                    hint: '',
+                    icon: null,
+                    prefixIconWidget: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: RiyalCurrencyIcon(size: 22),
+                    ),
+                    focusNode: _priceFocusNode,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                    ],
+                    onTap: () {
+                      if (_priceController.text == '0') {
+                        _setPriceText('');
+                      }
+                    },
+                    onEditingComplete: _restoreDefaultPriceIfEmpty,
+                    onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
+                    onChanged: _handlePriceChanged,
                   ),
-                  focusNode: _priceFocusNode,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: _buildDropdown(
+                    value: _priceUnit,
+                    items: _priceUnits,
+                    onChanged: (value) => setState(() => _priceUnit = value),
                   ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-                  ],
-                  onTap: () {
-                    if (_priceController.text == '0') {
-                      _setPriceText('');
-                    }
-                  },
-                  onEditingComplete: _restoreDefaultPriceIfEmpty,
-                  onTapOutside: (_) => _restoreDefaultPriceIfEmpty(),
-                  onChanged: _handlePriceChanged,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: _buildDropdown(
-                  value: _priceUnit,
-                  items: _priceUnits,
-                  onChanged: (value) => setState(() => _priceUnit = value),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _buildTextField(
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
+          if (_isLiveItem || !_isTransitPost)
+            _buildTextField(
             controller: _locationController,
             label: 'Location',
             hint: _showLocationError ? 'Please enter the location' : 'Muscat, Al Seeb',
@@ -804,7 +821,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           ElevatedButton(
             onPressed: _isUploading ? null : _addItem,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFF7801),
+              backgroundColor: _isLiveItem
+                  ? const Color(0xFF25D366)
+                  : const Color(0xFFFF7801),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(
@@ -834,7 +853,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                   )
                 : Text(
                     _isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs',
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(fontSize: 20),
                   ),
           ),
         ],
@@ -845,48 +864,91 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Widget _buildLiveSwitch() {
-    final badgeColor = _isLiveItem ? const Color(0xFFE92808) : Colors.grey;
-    final badgeScale = _isLiveItem ? 1.16 : 1.0;
-
     return Center(
       child: GestureDetector(
-        onTap: _isUploading
-            ? null
-            : () {
-                final nextIsLive = !_isLiveItem;
-                setState(() => _isLiveItem = nextIsLive);
-                widget.onLiveModeChanged?.call(nextIsLive);
-              },
+        onTap: _isUploading ? null : () => _setLiveMode(!_isLiveItem),
         child: AnimatedScale(
-          scale: badgeScale,
+          scale: _isLiveItem ? 1.14 : 1.0,
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          child: AnimatedContainer(
+          child: AnimatedOpacity(
+            opacity: _isLiveItem ? 1 : 0.55,
             duration: const Duration(milliseconds: 160),
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: badgeColor,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.sensors, color: Colors.white, size: 24),
-                SizedBox(width: 8),
-                Text(
-                  'LIVE',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0,
+            child: SizedBox(
+              width: 110,
+              height: 44,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: 225,
+                  height: 108,
+                  child: Lottie.asset(
+                    'assets/lottie/live2.json',
+                    fit: BoxFit.contain,
+                    repeat: true,
+                    animate: true,
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _setLiveMode(bool isLive) {
+    if (_isLiveItem == isLive) {
+      return;
+    }
+    setState(() {
+      _isLiveItem = isLive;
+      if (isLive) {
+        _isTransitPost = false;
+        _showLocationError = false;
+      }
+    });
+    widget.onLiveModeChanged?.call(isLive);
+  }
+
+  Widget _buildTransitToggle() {
+    void setTransitMode(bool isTransit) {
+      if (_isTransitPost == isTransit || _isUploading) {
+        return;
+      }
+      setState(() {
+        _isTransitPost = isTransit;
+        if (isTransit) {
+          _showLocationError = false;
+        }
+      });
+    }
+
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _TransitStatusButton(
+              text: 'IN STOCK',
+              isSelected: !_isTransitPost,
+              onTap: () => setTransitMode(false),
+            ),
+          ),
+          Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+          Expanded(
+            child: _TransitStatusButton(
+              text: 'TRANSIT',
+              isSelected: _isTransitPost,
+              onTap: () => setTransitMode(true),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1074,6 +1136,41 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                 onChanged(value);
               }
             },
+    );
+  }
+}
+
+class _TransitStatusButton extends StatelessWidget {
+  const _TransitStatusButton({
+    required this.text,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

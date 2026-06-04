@@ -31,6 +31,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   final _chromeVisible = ValueNotifier<bool>(true);
   late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
+  int _listingsRefreshTick = 0;
   DateTime? _lastFeedBackPress;
   bool _isFeedSearchActive = false;
   bool _isAddLiveMode = false;
@@ -96,6 +97,9 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
     setState(() {
       _currentIndex = index;
+      if (index == 3 && widget.isSellerMode) {
+        _listingsRefreshTick++;
+      }
     });
     _setChromeVisible(true);
 
@@ -247,7 +251,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
             )
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
-          ? const SellerListingsTab()
+          ? SellerListingsTab(refreshTick: _listingsRefreshTick)
           : const _SellerAccessPrompt(),
       4 => widget.isSellerMode
           ? SellerSettingsTab(onLogout: _confirmLogout)
@@ -356,7 +360,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                       ),
                       Positioned(
                         left: tabWidth + (tabWidth - liveIconWidth) / 2,
-                        top: -25,
+                        top: -31,
                         child: const IgnorePointer(child: _LiveNavIcon()),
                       ),
                     ],

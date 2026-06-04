@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -10,16 +8,19 @@ import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerListingsTab extends StatefulWidget {
-  const SellerListingsTab({super.key});
+  const SellerListingsTab({super.key, this.refreshTick = 0});
+
+  final int refreshTick;
 
   @override
   State<SellerListingsTab> createState() => _SellerListingsTabState();
 }
 
 class _SellerListingsTabState extends State<SellerListingsTab> {
+  static const _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
+
   late final Future<SellerSession?> _sessionFuture;
   late DateTime _now;
-  Timer? _expiryTimer;
   String _selectedStatus = 'post';
 
   @override
@@ -27,17 +28,14 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     super.initState();
     _sessionFuture = SellerSession.current();
     _now = DateTime.now();
-    _expiryTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) {
-        setState(() => _now = DateTime.now());
-      }
-    });
   }
 
   @override
-  void dispose() {
-    _expiryTimer?.cancel();
-    super.dispose();
+  void didUpdateWidget(covariant SellerListingsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.refreshTick != oldWidget.refreshTick) {
+      setState(() => _now = DateTime.now());
+    }
   }
 
   DateTime? _createdAt(Map<String, dynamic> item) {
@@ -111,24 +109,24 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   String _expiryText(Map<String, dynamic> item) {
     final expiryAt = _expiryAt(item);
     if (expiryAt == null) {
-      return 'Exp. not set';
+      return 'Exp not set';
     }
     final remaining = expiryAt.difference(_now);
     if (remaining <= Duration.zero) {
-      return 'Exp. expired';
+      return 'Expired';
     }
 
     final minutes = (remaining.inSeconds / 60).ceil();
     if (minutes < 60) {
-      return 'Exp. $minutes ${minutes == 1 ? 'min' : 'mins'}';
+      return 'Exp in $minutes ${minutes == 1 ? 'Min' : 'Mins'}';
     }
 
     final hours = minutes ~/ 60;
     final extraMinutes = minutes % 60;
     if (extraMinutes == 0) {
-      return 'Exp. $hours ${hours == 1 ? 'hr' : 'hrs'}';
+      return 'Exp in $hours ${hours == 1 ? 'Hr' : 'Hrs'}';
     }
-    return 'Exp. $hours ${hours == 1 ? 'hr' : 'hrs'} $extraMinutes mins';
+    return 'Exp in $hours ${hours == 1 ? 'Hr' : 'Hrs'} $extraMinutes Mins';
   }
 
   String _formatPrice(Object? value) {
@@ -141,6 +139,59 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
         .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  String _renewPriceText(Map<String, dynamic> item) {
+    final priceNumber = item['price_number']?.toString().trim() ?? '';
+    if (priceNumber.isNotEmpty) {
+      return priceNumber.replaceAll(',', '');
+    }
+    final priceText = item['item_price']?.toString() ?? '';
+    return RegExp(r'\d+(?:[\.,]\d+)?')
+            .firstMatch(priceText)
+            ?.group(0)
+            ?.replaceAll(',', '') ??
+        '';
+  }
+
+  String _renewPriceUnit(Map<String, dynamic> item) {
+    final unit = item['price_unit']?.toString().trim() ?? '';
+    if (_priceUnits.contains(unit)) {
+      return unit;
+    }
+    final priceText = item['item_price']?.toString() ?? '';
+    for (final option in _priceUnits) {
+      if (priceText.contains(option)) {
+        return option;
+      }
+    }
+    return _priceUnits.first;
+  }
+
+  String? _normalizeRenewPrice(String value) {
+    final cleanValue = value.replaceAll(',', '').trim();
+    if (!RegExp(r'^\d+(\.\d{0,3})?$').hasMatch(cleanValue)) {
+      return null;
+    }
+    final parsed = double.tryParse(cleanValue);
+    if (parsed == null || parsed <= 0) {
+      return null;
+    }
+    return parsed.toStringAsFixed(3);
+  }
+
+  String _formatRenewPrice(String value) {
+    final parts = value.split('.');
+    final whole = parts.first;
+    final buffer = StringBuffer();
+    for (var i = 0; i < whole.length; i++) {
+      final remaining = whole.length - i;
+      buffer.write(whole[i]);
+      if (remaining > 1 && remaining % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+    return '${buffer.toString()}.${parts.length > 1 ? parts.last : '000'}';
   }
 
   Future<void> _deleteItem(
@@ -230,6 +281,180 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     if (confirm == true && context.mounted) {
       await _deleteItem(context, docId, item);
     }
+  }
+
+  Future<void> _confirmRenew(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> item,
+  ) async {
+    final priceController = TextEditingController(text: _renewPriceText(item));
+    var selectedUnit = _renewPriceUnit(item);
+    String? priceError;
+
+    final result = await showDialog<_RenewDialogResult>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 22),
+                child: Text(
+                  'RENEW',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: priceController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          labelText: 'Price',
+                          errorText: priceError,
+                          prefixIcon: const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: RiyalCurrencyIcon(size: 22),
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: selectedUnit,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        items: _priceUnits
+                            .map(
+                              (unit) => DropdownMenuItem(
+                                value: unit,
+                                child: Text(unit.replaceFirst('/ ', '')),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setDialogState(() => selectedUnit = value);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              SizedBox(
+                height: 58,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          shape: const RoundedRectangleBorder(),
+                        ),
+                        child: const Text(
+                          'No',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () {
+                          final normalized = _normalizeRenewPrice(
+                            priceController.text,
+                          );
+                          if (normalized == null) {
+                            setDialogState(() => priceError = 'Invalid price');
+                            return;
+                          }
+                          Navigator.pop(
+                            context,
+                            _RenewDialogResult(
+                              priceNumber: normalized,
+                              priceUnit: selectedUnit,
+                            ),
+                          );
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          shape: const RoundedRectangleBorder(),
+                        ),
+                        child: const Text(
+                          'Yes',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    priceController.dispose();
+
+    if (result == null || !context.mounted) {
+      return;
+    }
+
+    final formattedPrice = _formatRenewPrice(result.priceNumber);
+    await FirebaseFirestore.instance.collection('items').doc(docId).update({
+      'item_price': 'OMR $formattedPrice ${result.priceUnit}',
+      'price_number': result.priceNumber,
+      'price_unit': result.priceUnit,
+      'time_period_days': 0,
+      'time_period_extra_hours': 2,
+      'time_period_hours': 2,
+      'expires_at': Timestamp.fromDate(
+        DateTime.now().add(const Duration(hours: 2)),
+      ),
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Live item renewed'),
+        backgroundColor: Color(0xFFFF7801),
+      ),
+    );
   }
 
   void _openEdit(
@@ -336,6 +561,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                           expiryText: _expiryText,
                           formatPrice: _formatPrice,
                           onEdit: _openEdit,
+                          onRenew: _confirmRenew,
                           onDelete: _confirmDelete,
                         ),
                       ),
@@ -526,22 +752,33 @@ class _ListingsStatusTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
+    return Material(
+      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
-      child: Center(
-        child: Text(
-          text,
-          style: TextStyle(
-            color: isSelected ? Colors.red : Colors.black,
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+class _RenewDialogResult {
+  const _RenewDialogResult({required this.priceNumber, required this.priceUnit});
+
+  final String priceNumber;
+  final String priceUnit;
 }
 
 class _ListingsGrid extends StatelessWidget {
@@ -551,6 +788,7 @@ class _ListingsGrid extends StatelessWidget {
     required this.expiryText,
     required this.formatPrice,
     required this.onEdit,
+    required this.onRenew,
     required this.onDelete,
   });
 
@@ -564,6 +802,12 @@ class _ListingsGrid extends StatelessWidget {
     Map<String, dynamic> item,
   )
   onEdit;
+  final void Function(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> item,
+  )
+  onRenew;
   final void Function(
     BuildContext context,
     String docId,
@@ -593,6 +837,7 @@ class _ListingsGrid extends StatelessWidget {
             expiryText: expiryText,
             formatPrice: formatPrice,
             onEdit: onEdit,
+            onRenew: onRenew,
             onDelete: onDelete,
           ),
         ),
@@ -604,6 +849,7 @@ class _ListingsGrid extends StatelessWidget {
             expiryText: expiryText,
             formatPrice: formatPrice,
             onEdit: onEdit,
+            onRenew: onRenew,
             onDelete: onDelete,
           ),
         ),
@@ -619,6 +865,7 @@ class _ListingsColumn extends StatelessWidget {
     required this.expiryText,
     required this.formatPrice,
     required this.onEdit,
+    required this.onRenew,
     required this.onDelete,
   });
 
@@ -632,6 +879,12 @@ class _ListingsColumn extends StatelessWidget {
     Map<String, dynamic> item,
   )
   onEdit;
+  final void Function(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> item,
+  )
+  onRenew;
   final void Function(
     BuildContext context,
     String docId,
@@ -651,6 +904,7 @@ class _ListingsColumn extends StatelessWidget {
               expiryText: expiryText(doc.data()),
               formatPrice: formatPrice,
               onEdit: onEdit,
+              onRenew: onRenew,
               onDelete: onDelete,
             ),
           )
@@ -667,6 +921,7 @@ class _ListingManageCard extends StatelessWidget {
     required this.expiryText,
     required this.formatPrice,
     required this.onEdit,
+    required this.onRenew,
     required this.onDelete,
   });
 
@@ -686,18 +941,39 @@ class _ListingManageCard extends StatelessWidget {
     String docId,
     Map<String, dynamic> item,
   )
+  onRenew;
+  final void Function(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> item,
+  )
   onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final isLiveItem = item['status']?.toString() == 'live';
     return Stack(
       children: [
-        ItemCard(docId: docId, item: item, isCompact: true),
+        ItemCard(
+          docId: docId,
+          item: item,
+          isCompact: true,
+          isLivePage: isLiveItem,
+          liveMarkerTop: isLiveItem ? -37 : -29,
+        ),
+        if (isLiveItem)
+          Positioned(
+            top: 36,
+            right: 7,
+            child: _LiveExpiryBadge(text: expiryText),
+          ),
         Positioned(
-          top: 42,
+          top: isLiveItem ? 70 : 42,
           right: 7,
           child: _ListingQuickActions(
+            isLiveItem: isLiveItem,
             onEdit: () => onEdit(context, docId, item),
+            onRenew: () => onRenew(context, docId, item),
             onDelete: () => onDelete(context, docId, item),
           ),
         ),
@@ -707,9 +983,16 @@ class _ListingManageCard extends StatelessWidget {
 }
 
 class _ListingQuickActions extends StatelessWidget {
-  const _ListingQuickActions({required this.onEdit, required this.onDelete});
+  const _ListingQuickActions({
+    required this.isLiveItem,
+    required this.onEdit,
+    required this.onRenew,
+    required this.onDelete,
+  });
 
+  final bool isLiveItem;
   final VoidCallback onEdit;
+  final VoidCallback onRenew;
   final VoidCallback onDelete;
 
   @override
@@ -718,9 +1001,44 @@ class _ListingQuickActions extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         _ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit),
+        if (isLiveItem) ...[
+          const SizedBox(height: 12),
+          _ActionPill(
+            text: 'Renew',
+            color: const Color(0xFFFF7801),
+            onTap: onRenew,
+          ),
+        ],
         const SizedBox(height: 12),
         _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete),
       ],
+    );
+  }
+}
+
+class _LiveExpiryBadge extends StatelessWidget {
+  const _LiveExpiryBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }
