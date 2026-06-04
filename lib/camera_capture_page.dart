@@ -23,11 +23,18 @@ enum CameraCaptureAction { openGallery }
 class CameraCapturePage extends StatefulWidget {
   const CameraCapturePage({super.key});
 
+  static Future<List<CameraDescription>>? _cameraListFuture;
+
+  static Future<List<CameraDescription>> preloadCameras() {
+    return _cameraListFuture ??= availableCameras();
+  }
+
   @override
   State<CameraCapturePage> createState() => _CameraCapturePageState();
 }
 
-class _CameraCapturePageState extends State<CameraCapturePage> {
+class _CameraCapturePageState extends State<CameraCapturePage>
+    with WidgetsBindingObserver {
   static const Duration _maxRecordingDuration = Duration(seconds: 60);
 
   CameraController? _controller;
@@ -49,15 +56,19 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   double? _pressStartY;
   Offset? _focusPoint;
   List<AssetEntity> _recentAssets = const [];
+  int _recentLoadToken = 0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadRecentAssets());
     _initializeCamera = _setupCamera();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _holdTimer?.cancel();
     _recordingLimitTimer?.cancel();
     _recordingTickTimer?.cancel();
@@ -65,8 +76,15 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_loadRecentAssets());
+    }
+  }
+
   Future<void> _setupCamera() async {
-    _cameras = await availableCameras();
+    _cameras = await CameraCapturePage.preloadCameras();
     final backCamera = _cameras.firstWhere(
       (camera) => camera.lensDirection == CameraLensDirection.back,
       orElse: () => _cameras.first,
@@ -80,8 +98,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     await _controller?.dispose();
     final controller = CameraController(
       camera,
-      ResolutionPreset.high,
+      ResolutionPreset.medium,
       enableAudio: true,
+      imageFormatGroup: ImageFormatGroup.jpeg,
     );
     _controller = controller;
     await controller.initialize();
@@ -92,7 +111,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     _pinchStartZoom = _currentZoom;
     await controller.setZoomLevel(_currentZoom);
     _isFlashOn = false;
-    _loadRecentAssets();
   }
 
   Future<void> _toggleCamera() async {
@@ -134,6 +152,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
   }
 
   Future<void> _loadRecentAssets() async {
+    final loadToken = ++_recentLoadToken;
     try {
       final permission = await PhotoManager.requestPermissionExtend();
       if (!permission.hasAccess) {
@@ -141,30 +160,35 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
       }
       final albums = await PhotoManager.getAssetPathList(
         type: RequestType.common,
+        onlyAll: true,
       );
       if (albums.isEmpty) {
         return;
       }
 
-      final byId = <String, AssetEntity>{};
-      for (final album in albums) {
-        final assets = await album.getAssetListPaged(page: 0, size: 30);
-        for (final asset in assets) {
-          if (asset.type == AssetType.video && asset.duration > 60) {
-            continue;
-          }
-          byId[asset.id] = asset;
+      final assets = <AssetEntity>[];
+      var page = 0;
+      while (assets.length < 10 && page < 3) {
+        final pageAssets = await albums.first.getAssetListPaged(
+          page: page,
+          size: 24,
+        );
+        if (pageAssets.isEmpty) {
+          break;
         }
+        assets.addAll(
+          pageAssets.where(
+            (asset) => asset.type != AssetType.video || asset.duration <= 60,
+          ),
+        );
+        page++;
       }
 
-      final assets = byId.values.toList()
-        ..sort((a, b) => b.createDateTime.compareTo(a.createDateTime));
-
-      if (mounted) {
+      if (mounted && loadToken == _recentLoadToken) {
         setState(() => _recentAssets = assets.take(10).toList());
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && loadToken == _recentLoadToken) {
         setState(() => _recentAssets = const []);
       }
     }
@@ -402,6 +426,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     if (!mounted) {
       return;
     }
+    final controller = _controller;
+    if (controller != null && controller.value.isInitialized) {
+      unawaited(controller.pausePreview().catchError((_) {}));
+    }
     final result = await Navigator.push<CapturedMedia>(
       context,
       MaterialPageRoute(
@@ -413,12 +441,20 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
     if (result != null) {
       Navigator.pop(context, result);
+      return;
+    }
+    if (controller != null && controller.value.isInitialized) {
+      unawaited(controller.resumePreview().catchError((_) {}));
     }
   }
 
   Future<void> _showVideoPreview(File file) async {
     if (!mounted) {
       return;
+    }
+    final controller = _controller;
+    if (controller != null && controller.value.isInitialized) {
+      unawaited(controller.pausePreview().catchError((_) {}));
     }
     final result = await Navigator.push<CapturedMedia>(
       context,
@@ -431,6 +467,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> {
     }
     if (result != null) {
       Navigator.pop(context, result);
+      return;
+    }
+    if (controller != null && controller.value.isInitialized) {
+      unawaited(controller.resumePreview().catchError((_) {}));
     }
   }
 

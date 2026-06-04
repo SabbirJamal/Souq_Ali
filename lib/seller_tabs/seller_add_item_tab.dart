@@ -67,6 +67,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     super.initState();
     _isLiveItem = widget.isLive;
     _loadDefaultSellerLocation();
+    unawaited(CameraCapturePage.preloadCameras());
   }
 
   @override

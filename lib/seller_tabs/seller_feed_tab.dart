@@ -35,12 +35,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final Set<String> _rankedSeenItemIds = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
-      FirebaseFirestore.instance
-          .collection('items')
-          .orderBy('created_at', descending: true)
-          .limit(60)
-          .snapshots();
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream;
   bool _isSearchOpen = false;
   bool _isGridView = true;
   String _query = '';
@@ -56,7 +51,19 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void initState() {
     super.initState();
+    _itemsStream = _buildItemsStream();
     _loadSeenItems();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _buildItemsStream() {
+    final items = FirebaseFirestore.instance.collection('items');
+    if (widget.itemStatus == 'live') {
+      return items.where('status', isEqualTo: 'live').snapshots();
+    }
+    return items
+        .orderBy('created_at', descending: true)
+        .limit(60)
+        .snapshots();
   }
 
   @override
@@ -234,6 +241,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     return [...unseenDocs, ...seenDocs];
   }
 
+  void _pruneItemKeys(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final visibleIds = docs.map((doc) => doc.id).toSet();
+    _itemKeys.removeWhere((itemId, _) => !visibleIds.contains(itemId));
+  }
+
   void _scheduleVisibleSeenCheck() {
     _visibilityDebounce?.cancel();
     _visibilityDebounce = Timer(
@@ -335,6 +347,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                   .where((doc) => _isItemActive(doc.data(), _openedAt))
                   .toList(),
             ));
+            _pruneItemKeys(docs);
             final isLivePage = widget.itemStatus == 'live';
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -423,7 +436,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                     const SliverGridDelegateWithFixedCrossAxisCount(
                                       crossAxisCount: 2,
                                       crossAxisSpacing: 4,
-                                      mainAxisSpacing: 4,
+                                      mainAxisSpacing: 6,
                                       childAspectRatio: 0.66,
                                     ),
                                 itemBuilder: (context, index) {

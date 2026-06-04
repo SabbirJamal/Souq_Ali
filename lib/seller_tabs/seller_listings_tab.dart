@@ -21,6 +21,8 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   late final Future<SellerSession?> _sessionFuture;
   late DateTime _now;
   String _selectedStatus = 'post';
+  String? _itemsStreamSellerId;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _itemsStream;
 
   @override
   void initState() {
@@ -76,6 +78,19 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
       return status == null || status.isEmpty || status == 'post';
     }
     return status == _selectedStatus;
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _streamForSeller(
+    String sellerId,
+  ) {
+    if (_itemsStreamSellerId != sellerId || _itemsStream == null) {
+      _itemsStreamSellerId = sellerId;
+      _itemsStream = FirebaseFirestore.instance
+          .collection('items')
+          .where('seller_uid', isEqualTo: sellerId)
+          .snapshots();
+    }
+    return _itemsStream!;
   }
 
   String _uploadedAgo(Object? value) {
@@ -373,10 +388,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                   ),
                 ),
                 StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: FirebaseFirestore.instance
-                      .collection('items')
-                      .where('seller_uid', isEqualTo: session.sellerId)
-                      .snapshots(),
+                  stream: _streamForSeller(session.sellerId),
                   builder: (context, itemsSnapshot) {
                     if (itemsSnapshot.connectionState ==
                         ConnectionState.waiting) {
@@ -434,7 +446,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                             const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
                               crossAxisSpacing: 4,
-                              mainAxisSpacing: 4,
+                              mainAxisSpacing: 6,
                               childAspectRatio: 0.66,
                             ),
                         itemBuilder: (context, index) {

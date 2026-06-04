@@ -33,6 +33,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   int _listingsRefreshTick = 0;
   DateTime? _lastFeedBackPress;
   bool _isAddLiveMode = false;
+  late final List<Widget?> _pageCache = List<Widget?>.filled(5, null);
 
   @override
   void dispose() {
@@ -97,6 +98,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
       _currentIndex = index;
       if (index == 3 && widget.isSellerMode) {
         _listingsRefreshTick++;
+        _pageCache[3] = null;
       }
     });
     _setChromeVisible(true);
@@ -257,6 +259,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
     };
   }
 
+  Widget _pageAt(int index) {
+    return _pageCache[index] ??= _buildPageAt(index);
+  }
+
   void _setChromeVisible(bool visible) {
     if (_chromeVisible.value != visible) {
       _chromeVisible.value = visible;
@@ -306,7 +312,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                       5,
                       (index) => TickerMode(
                         enabled: index == _currentIndex,
-                        child: _buildPageAt(index),
+                        child: _pageAt(index),
                       ),
                     ),
                   ),
@@ -383,14 +389,16 @@ class _LiveNavIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 225,
-      height: 108,
-      child: Lottie.asset(
-        'assets/lottie/live2.json',
-        fit: BoxFit.contain,
-        repeat: true,
-        animate: true,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: 225,
+        height: 108,
+        child: Lottie.asset(
+          'assets/lottie/live2.json',
+          fit: BoxFit.contain,
+          repeat: true,
+          animate: true,
+        ),
       ),
     );
   }

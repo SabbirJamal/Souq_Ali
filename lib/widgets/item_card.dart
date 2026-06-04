@@ -84,7 +84,6 @@ class _ItemCardState extends State<ItemCard> {
         });
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _preloadAudioSource());
   }
 
   @override
@@ -719,14 +718,16 @@ class _LiveCardAnimation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 225,
-      height: 108,
-      child: Lottie.asset(
-        'assets/lottie/live2.json',
-        fit: BoxFit.contain,
-        repeat: true,
-        animate: true,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: 225,
+        height: 108,
+        child: Lottie.asset(
+          'assets/lottie/live2.json',
+          fit: BoxFit.contain,
+          repeat: true,
+          animate: true,
+        ),
       ),
     );
   }
