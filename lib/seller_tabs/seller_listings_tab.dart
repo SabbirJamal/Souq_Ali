@@ -47,42 +47,90 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   Future<void> _loadInitial() async {
     final session = await _sessionFuture;
     if (session == null) return;
-    await _fetchPage(session.sellerId, isInitial: true);
+    await _fetchPage(session, isInitial: true);
   }
 
   Future<void> _loadMore() async {
     final session = await _sessionFuture;
     if (session == null) return;
-    await _fetchPage(session.sellerId, isInitial: false);
+    await _fetchPage(session, isInitial: false);
   }
 
-  Future<void> _fetchPage(String sellerId, {required bool isInitial}) async {
+  Future<void> _fetchPage(SellerSession session, {required bool isInitial}) async {
     if (_isLoading || (!isInitial && !_hasMore)) return;
     setState(() => _isLoading = true);
 
     try {
       var query = FirebaseFirestore.instance
           .collection('items')
-          .where('seller_uid', isEqualTo: sellerId)
-          .orderBy('created_at', descending: true)
-          .limit(_pageSize);
-
-      if (!isInitial && _allDocs.isNotEmpty) {
-        query = query.startAfterDocument(_allDocs.last);
-      }
+          .where('seller_uid', isEqualTo: session.sellerId)
+          .limit(_pageSize * 4);
 
       final snapshot = await query.get();
       if (!mounted) return;
 
-      final newDocs = snapshot.docs;
+      var newDocs = snapshot.docs.toList()
+        ..sort((a, b) {
+          final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
+        });
+      if (newDocs.isEmpty && isInitial) {
+        final legacySnapshot = await FirebaseFirestore.instance
+            .collection('items')
+            .where('seller_phone', isEqualTo: session.phoneNumber)
+            .limit(_pageSize * 4)
+            .get();
+        newDocs = legacySnapshot.docs.toList()
+          ..sort((a, b) {
+            final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bTime.compareTo(aTime);
+          });
+      }
       setState(() {
         if (isInitial) _allDocs.clear();
         _allDocs.addAll(newDocs);
-        _hasMore = newDocs.length == _pageSize;
+        _hasMore = false;
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      try {
+        var fallbackQuery = FirebaseFirestore.instance
+            .collection('items')
+            .where('seller_uid', isEqualTo: session.sellerId)
+            .limit(_pageSize * 4);
+
+        final snapshot = await fallbackQuery.get();
+        if (!mounted) return;
+        var newDocs = snapshot.docs.toList()
+          ..sort((a, b) {
+            final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bTime.compareTo(aTime);
+          });
+        if (newDocs.isEmpty && isInitial) {
+          final legacySnapshot = await FirebaseFirestore.instance
+              .collection('items')
+              .where('seller_phone', isEqualTo: session.phoneNumber)
+              .limit(_pageSize * 4)
+              .get();
+          newDocs = legacySnapshot.docs.toList()
+            ..sort((a, b) {
+              final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+              final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+              return bTime.compareTo(aTime);
+            });
+        }
+        setState(() {
+          if (isInitial) _allDocs.clear();
+          _allDocs.addAll(newDocs);
+          _hasMore = false;
+          _isLoading = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -296,8 +344,11 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                             FocusManager.instance.primaryFocus?.unfocus();
                             setState(() {
                               _selectedStatus = status;
+                              _allDocs.clear();
+                              _hasMore = true;
                               _nowNotifier.value = DateTime.now();
                             });
+                            _loadInitial();
                           }
                         },
                       ),
@@ -311,7 +362,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                           key: ValueKey(_selectedStatus + widget.refreshTick.toString()),
                           itemCount: docs.length,
                           addAutomaticKeepAlives: false,
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.66),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.58),
                           itemBuilder: (context, index) {
                             final doc = docs[index];
                             final data = doc.data();

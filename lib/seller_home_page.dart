@@ -54,9 +54,16 @@ class _SellerHomePageState extends State<SellerHomePage> {
       _currentIndex = isLiveItem ? 1 : 0;
       if (!isLiveItem) {
         _feedRefreshTick++;
+      } else {
+        _pageCache[1] = null;
       }
     });
     _setChromeVisible(true);
+    if (!isLiveItem) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _feedKey.currentState?.reloadItems();
+      });
+    }
   }
 
   void _handleAddLiveModeChanged(bool isLive) {

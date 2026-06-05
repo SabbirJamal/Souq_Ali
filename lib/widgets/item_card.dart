@@ -175,30 +175,27 @@ class _ItemCardState extends State<ItemCard> {
     final showLivePageMarker = widget.isLivePage && isLiveItem;
 
     return RepaintBoundary(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                QuickFadePageRoute(
-                  child: ItemDetailPage(
-                    itemData: widget.item,
-                    itemId: widget.docId,
-                  ),
-                ),
-              );
-            },
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Determine height based on width ratio (AspectRatio) 
-                // instead of screen height to ensure content always fits.
-                final cardHeight = widget.isCompact
-                    ? constraints.maxWidth * 1.62 // Taller ratio for compact grid
-                    : constraints.maxWidth * 1.45; // Standard ratio for list
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardHeight = constraints.hasBoundedHeight
+              ? constraints.maxHeight
+              : constraints.maxWidth / (widget.isCompact ? 0.58 : 0.66);
 
-                return Card(
+          return SizedBox(
+            height: cardHeight,
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  QuickFadePageRoute(
+                    child: ItemDetailPage(
+                      itemData: widget.item,
+                      itemId: widget.docId,
+                    ),
+                  ),
+                );
+              },
+              child: Card(
                   elevation: 6,
                   shadowColor: Colors.black.withValues(alpha: 0.18),
                   color: Colors.white,
@@ -207,99 +204,93 @@ class _ItemCardState extends State<ItemCard> {
                     borderRadius: BorderRadius.circular(widget.isCompact ? 8 : 10),
                   ),
                   clipBehavior: Clip.antiAlias,
-                  child: SizedBox(
-                    height: cardHeight,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: MediaPreview(
-                            media: mediaItems.isEmpty
-                                ? null
-                                : mediaItems.first,
-                            height: cardHeight,
-                            borderRadius: 0,
-                            isCompact: widget.isCompact,
-                          ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: MediaPreview(
+                          media: mediaItems.isEmpty ? null : mediaItems.first,
+                          height: cardHeight,
+                          borderRadius: 0,
+                          isCompact: widget.isCompact,
                         ),
-                        Positioned(
-                          top: widget.isCompact ? 7 : 10,
-                          left: widget.isCompact ? 7 : 10,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _MediaCountBadges(
-                                imageCount: imageCount,
-                                videoCount: videoCount,
+                      ),
+                      Positioned(
+                        top: widget.isCompact ? 7 : 10,
+                        left: widget.isCompact ? 7 : 10,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _MediaCountBadges(
+                              imageCount: imageCount,
+                              videoCount: videoCount,
+                              isCompact: widget.isCompact,
+                            ),
+                            if (isLiveItem && !showLivePageMarker) ...[
+                              SizedBox(height: widget.isCompact ? 4 : 7),
+                              _LiveBadge(isCompact: widget.isCompact),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: showLivePageMarker
+                            ? widget.liveMarkerTop
+                            : widget.isCompact
+                                ? 7
+                                : 10,
+                        right: showLivePageMarker
+                            ? -82
+                            : widget.isCompact
+                                ? 7
+                                : 10,
+                        child: showLivePageMarker
+                            ? const IgnorePointer(
+                                child: _LiveCardAnimation(),
+                              )
+                            : _UploadedAgoBadge(
+                                uploadedAgo: uploadedAgo,
                                 isCompact: widget.isCompact,
                               ),
-                              if (isLiveItem && !showLivePageMarker) ...[
-                                SizedBox(height: widget.isCompact ? 4 : 7),
-                                _LiveBadge(isCompact: widget.isCompact),
-                              ],
-                            ],
-                          ),
+                      ),
+                      Positioned(
+                        left: widget.isCompact ? 8 : 14,
+                        right: widget.isCompact ? 8 : 14,
+                        bottom: widget.isCompact ? 10 : 18,
+                        child: _ImageFilledDetails(
+                          item: widget.item,
+                          isCompact: widget.isCompact,
+                          hasAudio: _audioUrl.isNotEmpty,
+                          isAudioPlaying: _isAudioPlaying,
+                          onAudioTap: _toggleAudio,
                         ),
+                      ),
+                      if (_showAudioProgress)
                         Positioned(
-                          top: showLivePageMarker
-                              ? widget.liveMarkerTop
-                              : widget.isCompact
-                                  ? 7
-                                  : 10,
-                          right: showLivePageMarker
-                              ? -82
-                              : widget.isCompact
-                                  ? 7
-                                  : 10,
-                          child: showLivePageMarker
-                              ? const IgnorePointer(
-                                  child: _LiveCardAnimation(),
-                                )
-                              : _UploadedAgoBadge(
-                                  uploadedAgo: uploadedAgo,
-                                  isCompact: widget.isCompact,
-                                ),
-                        ),
-                        Positioned(
-                          left: widget.isCompact ? 8 : 14,
-                          right: widget.isCompact ? 8 : 14,
-                          bottom: widget.isCompact ? 10 : 18,
-                          child: _ImageFilledDetails(
-                            item: widget.item,
-                            isCompact: widget.isCompact,
-                            hasAudio: _audioUrl.isNotEmpty,
-                            isAudioPlaying: _isAudioPlaying,
-                            onAudioTap: _toggleAudio,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: ValueListenableBuilder<Duration>(
+                            valueListenable: _audioPositionNotifier,
+                            builder: (context, position, _) {
+                              return ValueListenableBuilder<Duration>(
+                                valueListenable: _audioDurationNotifier,
+                                builder: (context, duration, _) {
+                                  return _AudioTimeline(
+                                    position: position,
+                                    duration: duration,
+                                    isCompact: widget.isCompact,
+                                  );
+                                },
+                              );
+                            },
                           ),
                         ),
-                        if (_showAudioProgress)
-                          Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: ValueListenableBuilder<Duration>(
-                              valueListenable: _audioPositionNotifier,
-                              builder: (context, position, _) {
-                                return ValueListenableBuilder<Duration>(
-                                  valueListenable: _audioDurationNotifier,
-                                  builder: (context, duration, _) {
-                                    return _AudioTimeline(
-                                      position: position,
-                                      duration: duration,
-                                      isCompact: widget.isCompact,
-                                    );
-                                  },
-                                );
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
+                    ],
                   ),
-                );
-              },
+                ),
             ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

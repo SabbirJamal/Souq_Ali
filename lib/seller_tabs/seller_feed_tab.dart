@@ -72,8 +72,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   Future<void> _loadInitial() async {
     if (_isLoading) return;
-    setState(() => _isLoading = true);
-    await _loadSeenItems();
+    unawaited(_loadSeenItems());
     await _fetchPage(isInitial: true);
   }
 
@@ -89,25 +88,46 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     try {
       var query = FirebaseFirestore.instance
           .collection('items')
-          .orderBy('created_at', descending: true)
-          .limit(_pageSize);
-
-      if (!isInitial && _allDocs.isNotEmpty) {
-        query = query.startAfterDocument(_allDocs.last);
-      }
+          .limit(_pageSize * 4);
 
       final snapshot = await query.get();
       if (!mounted) return;
 
-      final newDocs = snapshot.docs;
+      var newDocs = snapshot.docs.toList()
+        ..sort((a, b) {
+          final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bTime.compareTo(aTime);
+        });
       setState(() {
         if (isInitial) _allDocs.clear();
         _allDocs.addAll(newDocs);
-        _hasMore = newDocs.length == _pageSize;
+        _hasMore = false;
         _isLoading = false;
       });
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      try {
+        var fallbackQuery = FirebaseFirestore.instance
+            .collection('items')
+            .limit(_pageSize * 4);
+
+        final snapshot = await fallbackQuery.get();
+        if (!mounted) return;
+        final newDocs = snapshot.docs.toList()
+          ..sort((a, b) {
+            final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
+            return bTime.compareTo(aTime);
+          });
+        setState(() {
+          if (isInitial) _allDocs.clear();
+          _allDocs.addAll(newDocs);
+          _hasMore = false;
+          _isLoading = false;
+        });
+      } catch (_) {
+        if (mounted) setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -213,6 +233,8 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     });
     await _fetchPage(isInitial: true);
   }
+
+  Future<void> reloadItems() => _refreshFeed();
 
   void _openSearch() {
     setState(() => _isSearchOpen = true);
@@ -359,7 +381,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                     sliver: _isGridView
                         ? SliverGrid.builder(
                             itemCount: docs.length, addAutomaticKeepAlives: false,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.66),
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.58),
                             itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isCompact: true, isLivePage: isLivePage)),
                           )
                         : SliverList.builder(
@@ -623,6 +645,13 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
     return expiresAt.isAfter(now);
   }
   return true;
+}
+
+DateTime? _createdAt(Map<String, dynamic> item) {
+  final createdAt = item['created_at'];
+  if (createdAt is Timestamp) return createdAt.toDate();
+  if (createdAt is DateTime) return createdAt;
+  return null;
 }
 
 class _FeedViewerIdentity {
