@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 
 import '../item_detail_page.dart';
+import '../utils/formatters.dart';
+import '../utils/transitions.dart';
 import 'media_carousel.dart';
 import 'price_with_currency.dart';
 
@@ -17,6 +20,7 @@ class ItemCard extends StatefulWidget {
     this.isCompact = false,
     this.isLivePage = false,
     this.liveMarkerTop = -29,
+    this.uploadedAgoOverride,
   });
 
   final String docId;
@@ -24,6 +28,7 @@ class ItemCard extends StatefulWidget {
   final bool isCompact;
   final bool isLivePage;
   final double liveMarkerTop;
+  final String? uploadedAgoOverride;
 
   @override
   State<ItemCard> createState() => _ItemCardState();
@@ -33,8 +38,10 @@ final ValueNotifier<String?> _activeFeedAudioItemId = ValueNotifier(null);
 
 class _ItemCardState extends State<ItemCard> {
   late final AudioPlayer _audioPlayer;
-  Duration _audioDuration = Duration.zero;
-  Duration _audioPosition = Duration.zero;
+  final ValueNotifier<Duration> _audioDurationNotifier =
+      ValueNotifier(Duration.zero);
+  final ValueNotifier<Duration> _audioPositionNotifier =
+      ValueNotifier(Duration.zero);
   bool _isAudioPlaying = false;
   bool _showAudioProgress = false;
   bool _hasLoadedAudioSource = false;
@@ -53,22 +60,18 @@ class _ItemCardState extends State<ItemCard> {
     _audioPlayer = AudioPlayer();
     _activeFeedAudioItemId.addListener(_pauseIfAnotherAudioStarts);
     _durationSubscription = _audioPlayer.onDurationChanged.listen((duration) {
-      if (mounted) {
-        setState(() => _audioDuration = duration);
-      }
+      _audioDurationNotifier.value = duration;
     });
     _positionSubscription = _audioPlayer.onPositionChanged.listen((position) {
-      if (mounted) {
-        setState(() => _audioPosition = position);
-      }
+      _audioPositionNotifier.value = position;
     });
     _completeSubscription = _audioPlayer.onPlayerComplete.listen((_) {
       if (mounted) {
         final completionToken = ++_audioCompletionToken;
+        _audioPositionNotifier.value = _audioDurationNotifier.value;
         setState(() {
           _isAudioPlaying = false;
           _showAudioProgress = true;
-          _audioPosition = _audioDuration;
         });
         Future<void>.delayed(const Duration(milliseconds: 220), () {
           if (!mounted ||
@@ -78,12 +81,33 @@ class _ItemCardState extends State<ItemCard> {
           }
           setState(() {
             _showAudioProgress = false;
-            _audioPosition = Duration.zero;
-            _hasLoadedAudioSource = false;
           });
+          _audioPositionNotifier.value = Duration.zero;
+          _hasLoadedAudioSource = false;
         });
       }
     });
+    
+    // Pre-cache first image for detail page
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _precacheDetailMedia();
+    });
+  }
+
+  void _precacheDetailMedia() {
+    if (!mounted) {
+      return;
+    }
+    final mediaItems = mediaItemsFromMap(widget.item);
+    if (mediaItems.isNotEmpty) {
+      final firstMedia = mediaItems.first;
+      final url = firstMedia.isVideo
+          ? firstMedia.thumbnailUrl?.trim()
+          : firstMedia.url.trim();
+      if (url != null && url.isNotEmpty) {
+        precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
+      }
+    }
   }
 
   @override
@@ -93,22 +117,9 @@ class _ItemCardState extends State<ItemCard> {
     _positionSubscription?.cancel();
     _completeSubscription?.cancel();
     _audioPlayer.dispose();
+    _audioDurationNotifier.dispose();
+    _audioPositionNotifier.dispose();
     super.dispose();
-  }
-
-  Future<void> _preloadAudioSource() async {
-    if (_audioUrl.isEmpty || _hasLoadedAudioSource || _isPreloadingAudio) {
-      return;
-    }
-    _isPreloadingAudio = true;
-    try {
-      await _audioPlayer.setSource(UrlSource(_audioUrl));
-      _hasLoadedAudioSource = true;
-    } catch (_) {
-      _hasLoadedAudioSource = false;
-    } finally {
-      _isPreloadingAudio = false;
-    }
   }
 
   Future<void> _pauseIfAnotherAudioStarts() async {
@@ -157,7 +168,7 @@ class _ItemCardState extends State<ItemCard> {
   @override
   Widget build(BuildContext context) {
     final mediaItems = mediaItemsFromMap(widget.item);
-    final uploadedAgo = _uploadedAgo(widget.item['created_at']);
+    final uploadedAgo = widget.uploadedAgoOverride ?? _uploadedAgo(widget.item['created_at']);
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
     final videoCount = mediaItems.where((media) => media.isVideo).length;
     final isLiveItem = widget.item['status']?.toString() == 'live';
@@ -171,8 +182,8 @@ class _ItemCardState extends State<ItemCard> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => ItemDetailPage(
+                QuickFadePageRoute(
+                  child: ItemDetailPage(
                     itemData: widget.item,
                     itemId: widget.docId,
                   ),
@@ -181,9 +192,11 @@ class _ItemCardState extends State<ItemCard> {
             },
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // Determine height based on width ratio (AspectRatio) 
+                // instead of screen height to ensure content always fits.
                 final cardHeight = widget.isCompact
-                    ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
-                    : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
+                    ? constraints.maxWidth * 1.62 // Taller ratio for compact grid
+                    : constraints.maxWidth * 1.45; // Standard ratio for list
 
                 return Card(
                   elevation: 6,
@@ -205,6 +218,7 @@ class _ItemCardState extends State<ItemCard> {
                                 : mediaItems.first,
                             height: cardHeight,
                             borderRadius: 0,
+                            isCompact: widget.isCompact,
                           ),
                         ),
                         Positioned(
@@ -262,10 +276,20 @@ class _ItemCardState extends State<ItemCard> {
                             left: 0,
                             right: 0,
                             bottom: 0,
-                            child: _AudioTimeline(
-                              position: _audioPosition,
-                              duration: _audioDuration,
-                              isCompact: widget.isCompact,
+                            child: ValueListenableBuilder<Duration>(
+                              valueListenable: _audioPositionNotifier,
+                              builder: (context, position, _) {
+                                return ValueListenableBuilder<Duration>(
+                                  valueListenable: _audioDurationNotifier,
+                                  builder: (context, duration, _) {
+                                    return _AudioTimeline(
+                                      position: position,
+                                      duration: duration,
+                                      isCompact: widget.isCompact,
+                                    );
+                                  },
+                                );
+                              },
                             ),
                           ),
                       ],
@@ -403,7 +427,7 @@ class _ImageFilledDetails extends StatelessWidget {
     final itemName = item['item_name']?.toString().trim() ?? '';
     final isTransit = item['is_transit'] == true;
     final location = item['location']?.toString().trim() ?? '';
-    final price = isTransit ? '' : _formatPrice(item['item_price']);
+    final price = isTransit ? '' : formatPrice(item['item_price']);
 
     return IntrinsicWidth(
       stepWidth: 1,
@@ -531,25 +555,6 @@ class _AudioTimeline extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatPrice(Object? value) {
-  final text = value?.toString() ?? '';
-  if (_isZeroPrice(text)) {
-    return '';
-  }
-  return text
-      .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-}
-
-bool _isZeroPrice(String value) {
-  final match = RegExp(r'\d+(?:\.\d+)?').firstMatch(value);
-  if (match == null) {
-    return false;
-  }
-  return (double.tryParse(match.group(0) ?? '') ?? -1) == 0;
 }
 
 class _TextChip extends StatelessWidget {

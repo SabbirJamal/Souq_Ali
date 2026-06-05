@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
 import '../seller_session.dart';
+import '../utils/formatters.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
@@ -16,181 +17,169 @@ class SellerListingsTab extends StatefulWidget {
 }
 
 class _SellerListingsTabState extends State<SellerListingsTab> {
+  static const _pageSize = 15;
   static const _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
 
   late final Future<SellerSession?> _sessionFuture;
-  late DateTime _now;
+  final ValueNotifier<DateTime> _nowNotifier = ValueNotifier(DateTime.now());
+  final _scrollController = ScrollController();
+  
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _allDocs = [];
   String _selectedStatus = 'post';
-  String? _itemsStreamSellerId;
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _itemsStream;
+  bool _isLoading = false;
+  bool _hasMore = true;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _sessionFuture = SellerSession.current();
-    _now = DateTime.now();
+    _loadInitial();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoading || !_hasMore) return;
+    if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 800) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadInitial() async {
+    final session = await _sessionFuture;
+    if (session == null) return;
+    await _fetchPage(session.sellerId, isInitial: true);
+  }
+
+  Future<void> _loadMore() async {
+    final session = await _sessionFuture;
+    if (session == null) return;
+    await _fetchPage(session.sellerId, isInitial: false);
+  }
+
+  Future<void> _fetchPage(String sellerId, {required bool isInitial}) async {
+    if (_isLoading || (!isInitial && !_hasMore)) return;
+    setState(() => _isLoading = true);
+
+    try {
+      var query = FirebaseFirestore.instance
+          .collection('items')
+          .where('seller_uid', isEqualTo: sellerId)
+          .orderBy('created_at', descending: true)
+          .limit(_pageSize);
+
+      if (!isInitial && _allDocs.isNotEmpty) {
+        query = query.startAfterDocument(_allDocs.last);
+      }
+
+      final snapshot = await query.get();
+      if (!mounted) return;
+
+      final newDocs = snapshot.docs;
+      setState(() {
+        if (isInitial) _allDocs.clear();
+        _allDocs.addAll(newDocs);
+        _hasMore = newDocs.length == _pageSize;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _nowNotifier.dispose();
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(covariant SellerListingsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.refreshTick != oldWidget.refreshTick) {
-      setState(() => _now = DateTime.now());
+      _nowNotifier.value = DateTime.now();
+      _loadInitial();
     }
   }
 
   DateTime? _createdAt(Map<String, dynamic> item) {
     final createdAt = item['created_at'];
-    if (createdAt is Timestamp) {
-      return createdAt.toDate();
-    }
-    if (createdAt is DateTime) {
-      return createdAt;
-    }
+    if (createdAt is Timestamp) return createdAt.toDate();
+    if (createdAt is DateTime) return createdAt;
     return null;
   }
 
   DateTime? _expiryAt(Map<String, dynamic> item) {
     final expiresAt = item['expires_at'];
-    if (expiresAt is Timestamp) {
-      return expiresAt.toDate();
-    }
-    if (expiresAt is DateTime) {
-      return expiresAt;
-    }
+    if (expiresAt is Timestamp) return expiresAt.toDate();
+    if (expiresAt is DateTime) return expiresAt;
 
     final postedAt = _createdAt(item);
     final timePeriodHours = item['time_period_hours'];
-    if (postedAt == null || timePeriodHours is! num) {
-      return null;
-    }
+    if (postedAt == null || timePeriodHours is! num) return null;
     return postedAt.add(Duration(hours: timePeriodHours.toInt()));
   }
 
-  bool _isItemActive(Map<String, dynamic> item) {
+  bool _isItemActive(Map<String, dynamic> item, DateTime now) {
     final expiryAt = _expiryAt(item);
-    return expiryAt == null || expiryAt.isAfter(_now);
+    return expiryAt == null || expiryAt.isAfter(now);
   }
 
   bool _matchesSelectedStatus(Map<String, dynamic> item) {
     final status = item['status']?.toString();
-    if (_selectedStatus == 'post') {
-      return status == null || status.isEmpty || status == 'post';
-    }
+    if (_selectedStatus == 'post') return status == null || status.isEmpty || status == 'post';
     return status == _selectedStatus;
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _streamForSeller(
-    String sellerId,
-  ) {
-    if (_itemsStreamSellerId != sellerId || _itemsStream == null) {
-      _itemsStreamSellerId = sellerId;
-      _itemsStream = FirebaseFirestore.instance
-          .collection('items')
-          .where('seller_uid', isEqualTo: sellerId)
-          .snapshots();
-    }
-    return _itemsStream!;
-  }
-
-  String _uploadedAgo(Object? value) {
+  String _uploadedAgo(Object? value, DateTime now) {
     DateTime? uploadedAt;
-    if (value is Timestamp) {
-      uploadedAt = value.toDate();
-    } else if (value is DateTime) {
-      uploadedAt = value;
-    }
-    if (uploadedAt == null) {
-      return 'just now';
-    }
+    if (value is Timestamp) uploadedAt = value.toDate();
+    else if (value is DateTime) uploadedAt = value;
+    if (uploadedAt == null) return 'just now';
 
-    final difference = _now.difference(uploadedAt);
-    if (difference.inMinutes < 1) {
-      return 'just now';
-    }
-    if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} min ago';
-    }
-    if (difference.inHours < 24) {
-      return '${difference.inHours} hrs ago';
-    }
-    if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    }
+    final difference = now.difference(uploadedAt);
+    if (difference.inMinutes < 1) return 'just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes} min ago';
+    if (difference.inHours < 24) return '${difference.inHours} hrs ago';
+    if (difference.inDays < 7) return '${difference.inDays} days ago';
     return '${difference.inDays ~/ 7} weeks ago';
   }
 
-  String _expiryText(Map<String, dynamic> item) {
+  String _expiryText(Map<String, dynamic> item, DateTime now) {
     final expiryAt = _expiryAt(item);
-    if (expiryAt == null) {
-      return 'Exp not set';
-    }
-    final remaining = expiryAt.difference(_now);
-    if (remaining <= Duration.zero) {
-      return 'Expired';
-    }
+    if (expiryAt == null) return 'Exp not set';
+    final remaining = expiryAt.difference(now);
+    if (remaining <= Duration.zero) return 'Expired';
 
     final minutes = (remaining.inSeconds / 60).ceil();
-    if (minutes < 60) {
-      return 'Exp. $minutes ${minutes == 1 ? 'Min' : 'Mins'}';
-    }
+    if (minutes < 60) return 'Exp. $minutes ${minutes == 1 ? 'Min' : 'Mins'}';
 
     final hours = minutes ~/ 60;
     final extraMinutes = minutes % 60;
-    if (extraMinutes == 0) {
-      return 'Exp. $hours ${hours == 1 ? 'Hr' : 'Hrs'}';
-    }
+    if (extraMinutes == 0) return 'Exp. $hours ${hours == 1 ? 'Hr' : 'Hrs'}';
     return 'Exp. $hours ${hours == 1 ? 'Hr' : 'Hrs'} $extraMinutes Mins';
-  }
-
-  String _formatPrice(Object? value) {
-    final text = value?.toString() ?? '';
-    final match = RegExp(r'\d+(?:\.\d+)?').firstMatch(text);
-    if (match != null && (double.tryParse(match.group(0) ?? '') ?? -1) == 0) {
-      return 'Contact for Price';
-    }
-    return text
-        .replaceAll(RegExp(r'\s+per\s+', caseSensitive: false), ' / ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
   }
 
   String _renewPriceText(Map<String, dynamic> item) {
     final priceNumber = item['price_number']?.toString().trim() ?? '';
-    if (priceNumber.isNotEmpty) {
-      return priceNumber.replaceAll(',', '');
-    }
+    if (priceNumber.isNotEmpty) return priceNumber.replaceAll(',', '');
     final priceText = item['item_price']?.toString() ?? '';
-    return RegExp(r'\d+(?:[\.,]\d+)?')
-            .firstMatch(priceText)
-            ?.group(0)
-            ?.replaceAll(',', '') ??
-        '';
+    return RegExp(r'\d+(?:[\.,]\d+)?').firstMatch(priceText)?.group(0)?.replaceAll(',', '') ?? '';
   }
 
   String _renewPriceUnit(Map<String, dynamic> item) {
     final unit = item['price_unit']?.toString().trim() ?? '';
-    if (_priceUnits.contains(unit)) {
-      return unit;
-    }
+    if (_priceUnits.contains(unit)) return unit;
     final priceText = item['item_price']?.toString() ?? '';
-    for (final option in _priceUnits) {
-      if (priceText.contains(option)) {
-        return option;
-      }
-    }
+    for (final option in _priceUnits) { if (priceText.contains(option)) return option; }
     return _priceUnits.first;
   }
 
   String? _normalizeRenewPrice(String value) {
     final cleanValue = value.replaceAll(',', '').trim();
-    if (!RegExp(r'^\d+(\.\d{0,3})?$').hasMatch(cleanValue)) {
-      return null;
-    }
+    if (!RegExp(r'^\d+(\.\d{0,3})?$').hasMatch(cleanValue)) return null;
     final parsed = double.tryParse(cleanValue);
-    if (parsed == null || parsed <= 0) {
-      return null;
-    }
+    if (parsed == null || parsed <= 0) return null;
     return parsed.toStringAsFixed(3);
   }
 
@@ -201,35 +190,18 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     for (var i = 0; i < whole.length; i++) {
       final remaining = whole.length - i;
       buffer.write(whole[i]);
-      if (remaining > 1 && remaining % 3 == 1) {
-        buffer.write(',');
-      }
+      if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
     }
     return '${buffer.toString()}.${parts.length > 1 ? parts.last : '000'}';
   }
 
-  Future<void> _deleteItem(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  ) async {
+  Future<void> _deleteItem(BuildContext context, String docId, Map<String, dynamic> item) async {
     await FirebaseFirestore.instance.collection('items').doc(docId).delete();
-    if (!context.mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Item deleted'),
-        backgroundColor: Colors.red,
-      ),
-    );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item deleted'), backgroundColor: Colors.red));
   }
 
-  Future<void> _confirmDelete(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  ) async {
+  Future<void> _confirmDelete(BuildContext context, String docId, Map<String, dynamic> item) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
@@ -238,52 +210,15 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 22),
-              child: Text(
-                'Delete !',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
-              ),
-            ),
+            const Padding(padding: EdgeInsets.symmetric(vertical: 22), child: Text('Delete !', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500))),
             const Divider(height: 1),
             SizedBox(
               height: 58,
               child: Row(
                 children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.black,
-                        shape: const RoundedRectangleBorder(),
-                      ),
-                      child: const Text(
-                        'No',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: TextButton(onPressed: () => Navigator.pop(context, false), style: TextButton.styleFrom(foregroundColor: Colors.black, shape: const RoundedRectangleBorder()), child: const Text('No', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)))),
                   const VerticalDivider(width: 1),
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.red,
-                        shape: const RoundedRectangleBorder(),
-                      ),
-                      child: const Text(
-                        'Yes',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.red,
-                        ),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: TextButton(onPressed: () => Navigator.pop(context, true), style: TextButton.styleFrom(foregroundColor: Colors.red, shape: const RoundedRectangleBorder()), child: const Text('Yes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.red)))),
                 ],
               ),
             ),
@@ -292,29 +227,16 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
       ),
     );
 
-    if (confirm == true && context.mounted) {
-      await _deleteItem(context, docId, item);
-    }
+    if (confirm == true && context.mounted) await _deleteItem(context, docId, item);
   }
 
-  Future<void> _confirmRenew(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  ) async {
+  Future<void> _confirmRenew(BuildContext context, String docId, Map<String, dynamic> item) async {
     final result = await showDialog<_RenewDialogResult>(
       context: context,
-      builder: (_) => _RenewDialog(
-        initialPrice: _renewPriceText(item),
-        initialUnit: _renewPriceUnit(item),
-        priceUnits: _priceUnits,
-        normalizePrice: _normalizeRenewPrice,
-      ),
+      builder: (_) => _RenewDialog(initialPrice: _renewPriceText(item), initialUnit: _renewPriceUnit(item), priceUnits: _priceUnits, normalizePrice: _normalizeRenewPrice),
     );
 
-    if (result == null || !mounted) {
-      return;
-    }
+    if (result == null || !mounted) return;
 
     final formattedPrice = _formatRenewPrice(result.priceNumber);
     await FirebaseFirestore.instance.collection('items').doc(docId).update({
@@ -324,34 +246,23 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
       'time_period_days': 0,
       'time_period_extra_hours': 2,
       'time_period_hours': 2,
-      'expires_at': Timestamp.fromDate(
-        DateTime.now().add(const Duration(hours: 2)),
-      ),
+      'expires_at': Timestamp.fromDate(DateTime.now().add(const Duration(hours: 2))),
       'updated_at': FieldValue.serverTimestamp(),
     });
 
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(this.context).showSnackBar(
-      const SnackBar(
-        content: Text('Live item renewed'),
-        backgroundColor: Color(0xFFFF7801),
-      ),
-    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Live item renewed'), backgroundColor: Color(0xFFFF7801)));
   }
 
-  void _openEdit(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  ) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ItemEditPage(docId: docId, itemData: item),
-      ),
-    );
+  void _openEdit(BuildContext context, String docId, Map<String, dynamic> item) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => ItemEditPage(docId: docId, itemData: item)));
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _getFilteredDocs(DateTime now) {
+    return _allDocs
+        .where((doc) => _isItemActive(doc.data(), now))
+        .where((doc) => _matchesSelectedStatus(doc.data()))
+        .toList();
   }
 
   @override
@@ -359,120 +270,72 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     return FutureBuilder<SellerSession?>(
       future: _sessionFuture,
       builder: (context, sessionSnapshot) {
-        if (sessionSnapshot.connectionState == ConnectionState.waiting) {
+        if (sessionSnapshot.connectionState == ConnectionState.waiting && _allDocs.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
         final session = sessionSnapshot.data;
-        if (session == null) {
-          return const Center(child: Text('Please login again'));
-        }
+        if (session == null) return const Center(child: Text('Please login again'));
 
         return Stack(
           children: [
-            CustomScrollView(
-              slivers: [
-                const SliverToBoxAdapter(child: _ListingsScrollableHeader()),
-                SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
-                SliverToBoxAdapter(
-                  child: _ListingsStatusTabs(
-                    selectedStatus: _selectedStatus,
-                    onChanged: (status) {
-                      if (status != _selectedStatus) {
-                        FocusManager.instance.primaryFocus?.unfocus();
-                        setState(() {
-                          _selectedStatus = status;
-                          _now = DateTime.now();
-                        });
-                      }
-                    },
-                  ),
-                ),
-                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: _streamForSeller(session.sellerId),
-                  builder: (context, itemsSnapshot) {
-                    if (itemsSnapshot.connectionState ==
-                        ConnectionState.waiting) {
-                      return const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    if (itemsSnapshot.hasError) {
-                      return SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text('Error: ${itemsSnapshot.error}'),
-                        ),
-                      );
-                    }
+            ValueListenableBuilder<DateTime>(
+              valueListenable: _nowNotifier,
+              builder: (context, now, _) {
+                final docs = _getFilteredDocs(now);
 
-                    final docs = (itemsSnapshot.data?.docs ?? [])
-                        .where((doc) => _isItemActive(doc.data()))
-                        .where((doc) => _matchesSelectedStatus(doc.data()))
-                        .toList()
-                      ..sort((a, b) {
-                        final aDate =
-                            _createdAt(a.data()) ??
-                            DateTime.fromMillisecondsSinceEpoch(0);
-                        final bDate =
-                            _createdAt(b.data()) ??
-                            DateTime.fromMillisecondsSinceEpoch(0);
-                        return bDate.compareTo(aDate);
-                      });
-
-                    if (docs.isEmpty) {
-                      return SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text(
-                            _selectedStatus == 'live'
-                                ? 'No live items listed yet'
-                                : 'No items listed yet',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    return SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-                      sliver: SliverGrid.builder(
-                        key: ValueKey(_selectedStatus),
-                        itemCount: docs.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 4,
-                              mainAxisSpacing: 6,
-                              childAspectRatio: 0.66,
-                            ),
-                        itemBuilder: (context, index) {
-                          final doc = docs[index];
-                          return _ListingManageCard(
-                            docId: doc.id,
-                            item: doc.data(),
-                            uploadedAgo: _uploadedAgo(doc.data()['created_at']),
-                            expiryText: _expiryText(doc.data()),
-                            formatPrice: _formatPrice,
-                            onEdit: _openEdit,
-                            onRenew: _confirmRenew,
-                            onDelete: _confirmDelete,
-                          );
+                return CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    const SliverToBoxAdapter(child: _ListingsScrollableHeader()),
+                    SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
+                    SliverToBoxAdapter(
+                      child: _ListingsStatusTabs(
+                        selectedStatus: _selectedStatus,
+                        onChanged: (status) {
+                          if (status != _selectedStatus) {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            setState(() {
+                              _selectedStatus = status;
+                              _nowNotifier.value = DateTime.now();
+                            });
+                          }
                         },
                       ),
-                    );
-                  },
-                ),
-              ],
+                    ),
+                    if (docs.isEmpty && !_isLoading)
+                      SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(_selectedStatus == 'live' ? 'No live items listed yet' : 'No items listed yet', style: const TextStyle(fontSize: 16, color: Colors.grey))))
+                    else ...[
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+                        sliver: SliverGrid.builder(
+                          key: ValueKey(_selectedStatus + widget.refreshTick.toString()),
+                          itemCount: docs.length,
+                          addAutomaticKeepAlives: false,
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.66),
+                          itemBuilder: (context, index) {
+                            final doc = docs[index];
+                            final data = doc.data();
+                            return _ListingManageCard(
+                              key: ValueKey(doc.id),
+                              docId: doc.id,
+                              item: data,
+                              uploadedAgo: _uploadedAgo(data['created_at'], now),
+                              expiryText: _expiryText(data, now),
+                              formatPrice: formatPrice,
+                              onEdit: _openEdit,
+                              onRenew: _confirmRenew,
+                              onDelete: _confirmDelete,
+                            );
+                          },
+                        ),
+                      ),
+                      if (_isLoading) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(color: Color(0xFFFF7801))))),
+                    ],
+                  ],
+                );
+              },
             ),
-            const Positioned(
-              top: 8,
-              right: 14,
-              child: _FloatingShareButton(),
-            ),
+            const Positioned(top: 8, right: 14, child: _FloatingShareButton()),
           ],
         );
       },
@@ -518,10 +381,7 @@ class _FloatingShareButton extends StatelessWidget {
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-      child: const Text(
-        'Share',
-        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-      ),
+      child: const Text('Share', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -534,22 +394,13 @@ class _SellerInfoHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('sellers')
-          .doc(session.sellerId)
-          .snapshots(),
+      stream: FirebaseFirestore.instance.collection('sellers').doc(session.sellerId).snapshots(),
       builder: (context, snapshot) {
         final seller = snapshot.data?.data() ?? {};
         final sellerName = seller['name']?.toString().trim() ?? session.name;
-        final crNumber =
-            seller['cr_number']?.toString().trim().isNotEmpty == true
-            ? seller['cr_number'].toString().trim()
-            : seller['crNumber']?.toString().trim() ?? '';
-        final topLine = [
-          if (sellerName.trim().isNotEmpty) sellerName.trim(),
-          if (crNumber.isNotEmpty) 'CR No. $crNumber',
-        ].join(' | ');
-        final phoneNumber = _formatSellerPhone(session.phoneNumber);
+        final crNumber = seller['cr_number']?.toString().trim().isNotEmpty == true ? seller['cr_number'].toString().trim() : seller['crNumber']?.toString().trim() ?? '';
+        final topLine = [if (sellerName.trim().isNotEmpty) sellerName.trim(), if (crNumber.isNotEmpty) 'CR No. $crNumber'].join(' | ');
+        final phoneNumber = formatSellerPhone(session.phoneNumber);
 
         return Container(
           width: double.infinity,
@@ -558,31 +409,10 @@ class _SellerInfoHeader extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (topLine.isNotEmpty)
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    topLine,
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+              if (topLine.isNotEmpty) FittedBox(fit: BoxFit.scaleDown, child: Text(topLine, maxLines: 1, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold))),
               if (phoneNumber.isNotEmpty) ...[
                 if (topLine.isNotEmpty) const SizedBox(height: 5),
-                Text(
-                  phoneNumber,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                Text(phoneNumber, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.bold)),
               ],
             ],
           ),
@@ -593,10 +423,7 @@ class _SellerInfoHeader extends StatelessWidget {
 }
 
 class _ListingsStatusTabs extends StatelessWidget {
-  const _ListingsStatusTabs({
-    required this.selectedStatus,
-    required this.onChanged,
-  });
+  const _ListingsStatusTabs({required this.selectedStatus, required this.onChanged});
 
   final String selectedStatus;
   final ValueChanged<String> onChanged;
@@ -608,28 +435,12 @@ class _ListingsStatusTabs extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
       child: Container(
         height: 40,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
-          borderRadius: BorderRadius.circular(8),
-        ),
+        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black.withValues(alpha: 0.18)), borderRadius: BorderRadius.circular(8)),
         child: Row(
           children: [
-            Expanded(
-              child: _ListingsStatusTabButton(
-                text: 'POSTINGS',
-                isSelected: selectedStatus == 'post',
-                onTap: () => onChanged('post'),
-              ),
-            ),
+            Expanded(child: _ListingsStatusTabButton(text: 'POSTINGS', isSelected: selectedStatus == 'post', onTap: () => onChanged('post'))),
             Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
-            Expanded(
-              child: _ListingsStatusTabButton(
-                text: 'LIVE',
-                isSelected: selectedStatus == 'live',
-                onTap: () => onChanged('live'),
-              ),
-            ),
+            Expanded(child: _ListingsStatusTabButton(text: 'LIVE', isSelected: selectedStatus == 'live', onTap: () => onChanged('live'))),
           ],
         ),
       ),
@@ -638,11 +449,7 @@ class _ListingsStatusTabs extends StatelessWidget {
 }
 
 class _ListingsStatusTabButton extends StatelessWidget {
-  const _ListingsStatusTabButton({
-    required this.text,
-    required this.isSelected,
-    required this.onTap,
-  });
+  const _ListingsStatusTabButton({required this.text, required this.isSelected, required this.onTap});
 
   final String text;
   final bool isSelected;
@@ -656,17 +463,7 @@ class _ListingsStatusTabButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
+        child: Center(child: Text(text, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0))),
       ),
     );
   }
@@ -674,24 +471,16 @@ class _ListingsStatusTabButton extends StatelessWidget {
 
 class _RenewDialogResult {
   const _RenewDialogResult({required this.priceNumber, required this.priceUnit});
-
   final String priceNumber;
   final String priceUnit;
 }
 
 class _RenewDialog extends StatefulWidget {
-  const _RenewDialog({
-    required this.initialPrice,
-    required this.initialUnit,
-    required this.priceUnits,
-    required this.normalizePrice,
-  });
-
+  const _RenewDialog({required this.initialPrice, required this.initialUnit, required this.priceUnits, required this.normalizePrice});
   final String initialPrice;
   final String initialUnit;
   final List<String> priceUnits;
   final String? Function(String value) normalizePrice;
-
   @override
   State<_RenewDialog> createState() => _RenewDialogState();
 }
@@ -700,32 +489,19 @@ class _RenewDialogState extends State<_RenewDialog> {
   late final TextEditingController _priceController;
   late String _selectedUnit;
   String? _priceError;
-
   @override
   void initState() {
     super.initState();
     _priceController = TextEditingController(text: widget.initialPrice);
     _selectedUnit = widget.initialUnit;
   }
-
   @override
-  void dispose() {
-    _priceController.dispose();
-    super.dispose();
-  }
-
+  void dispose() { _priceController.dispose(); super.dispose(); }
   void _submit() {
     final normalized = widget.normalizePrice(_priceController.text);
-    if (normalized == null) {
-      setState(() => _priceError = 'Price Required');
-      return;
-    }
-    Navigator.pop(
-      context,
-      _RenewDialogResult(priceNumber: normalized, priceUnit: _selectedUnit),
-    );
+    if (normalized == null) { setState(() => _priceError = 'Price Required'); return; }
+    Navigator.pop(context, _RenewDialogResult(priceNumber: normalized, priceUnit: _selectedUnit));
   }
-
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -735,72 +511,15 @@ class _RenewDialogState extends State<_RenewDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 22),
-            child: Text(
-              'RENEW',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
-            ),
-          ),
+          const Padding(padding: EdgeInsets.symmetric(vertical: 22), child: Text('RENEW', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500))),
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
             child: Row(
               children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _priceController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    onChanged: (_) {
-                      if (_priceError != null) {
-                        setState(() => _priceError = null);
-                      }
-                    },
-                    decoration: InputDecoration(
-                      isDense: true,
-                      labelText: _priceError == null
-                          ? 'Price'
-                          : 'Price Required',
-                      errorText: _priceError,
-                      prefixIcon: const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: RiyalCurrencyIcon(size: 22),
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
+                Expanded(flex: 3, child: TextField(controller: _priceController, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) { if (_priceError != null) setState(() => _priceError = null); }, decoration: InputDecoration(isDense: true, labelText: _priceError ?? 'Price', errorText: _priceError, prefixIcon: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))))),
                 const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _selectedUnit,
-                    decoration: InputDecoration(
-                      isDense: true,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    items: widget.priceUnits
-                        .map(
-                          (unit) => DropdownMenuItem(
-                            value: unit,
-                            child: Text(unit.replaceFirst('/ ', '')),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() => _selectedUnit = value);
-                      }
-                    },
-                  ),
-                ),
+                Expanded(flex: 2, child: DropdownButtonFormField<String>(initialValue: _selectedUnit, decoration: InputDecoration(isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), items: widget.priceUnits.map((unit) => DropdownMenuItem(value: unit, child: Text(unit.replaceFirst('/ ', '')))).toList(), onChanged: (value) { if (value != null) setState(() => _selectedUnit = value); })),
               ],
             ),
           ),
@@ -809,40 +528,9 @@ class _RenewDialogState extends State<_RenewDialog> {
             height: 58,
             child: Row(
               children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.black,
-                      shape: const RoundedRectangleBorder(),
-                    ),
-                    child: const Text(
-                      'No',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
+                Expanded(child: TextButton(onPressed: () => Navigator.pop(context), style: TextButton.styleFrom(foregroundColor: Colors.black, shape: const RoundedRectangleBorder()), child: const Text('No', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)))),
                 const VerticalDivider(width: 1),
-                Expanded(
-                  child: TextButton(
-                    onPressed: _submit,
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      shape: const RoundedRectangleBorder(),
-                    ),
-                    child: const Text(
-                      'Yes',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.red,
-                      ),
-                    ),
-                  ),
-                ),
+                Expanded(child: TextButton(onPressed: _submit, style: TextButton.styleFrom(foregroundColor: Colors.red, shape: const RoundedRectangleBorder()), child: const Text('Yes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.red)))),
               ],
             ),
           ),
@@ -853,189 +541,39 @@ class _RenewDialogState extends State<_RenewDialog> {
 }
 
 class _ListingManageCard extends StatelessWidget {
-  const _ListingManageCard({
-    required this.docId,
-    required this.item,
-    required this.uploadedAgo,
-    required this.expiryText,
-    required this.formatPrice,
-    required this.onEdit,
-    required this.onRenew,
-    required this.onDelete,
-  });
-
-  final String docId;
-  final Map<String, dynamic> item;
-  final String uploadedAgo;
-  final String expiryText;
-  final String Function(Object? value) formatPrice;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onEdit;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onRenew;
-  final void Function(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> item,
-  )
-  onDelete;
+  const _ListingManageCard({super.key, required this.docId, required this.item, required this.uploadedAgo, required this.expiryText, required this.formatPrice, required this.onEdit, required this.onRenew, required this.onDelete});
+  final String docId; final Map<String, dynamic> item; final String uploadedAgo; final String expiryText; final String Function(Object? value) formatPrice; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onEdit; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onRenew; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onDelete;
 
   @override
   Widget build(BuildContext context) {
     final isLiveItem = item['status']?.toString() == 'live';
     return Stack(
       children: [
-        ItemCard(
-          docId: docId,
-          item: item,
-          isCompact: true,
-          isLivePage: isLiveItem,
-          liveMarkerTop: isLiveItem ? -37 : -29,
-        ),
-        if (isLiveItem)
-          Positioned(
-            top: 36,
-            right: 7,
-            child: _LiveExpiryBadge(text: expiryText),
-          ),
-        if (!isLiveItem)
-          Positioned(
-            top: 30,
-            right: 7,
-            child: _LiveExpiryBadge(text: expiryText),
-          ),
-        Positioned(
-          top: isLiveItem ? 70 : 58,
-          right: 7,
-          child: _ListingQuickActions(
-            isLiveItem: isLiveItem,
-            onEdit: () => onEdit(context, docId, item),
-            onRenew: () => onRenew(context, docId, item),
-            onDelete: () => onDelete(context, docId, item),
-          ),
-        ),
+        ItemCard(docId: docId, item: item, isCompact: true, isLivePage: isLiveItem, liveMarkerTop: isLiveItem ? -37 : -29, uploadedAgoOverride: uploadedAgo),
+        Positioned(top: isLiveItem ? 36 : 30, right: 7, child: _LiveExpiryBadge(text: expiryText)),
+        Positioned(top: isLiveItem ? 70 : 58, right: 7, child: _ListingQuickActions(isLiveItem: isLiveItem, onEdit: () => onEdit(context, docId, item), onRenew: () => onRenew(context, docId, item), onDelete: () => onDelete(context, docId, item))),
       ],
     );
   }
 }
 
 class _ListingQuickActions extends StatelessWidget {
-  const _ListingQuickActions({
-    required this.isLiveItem,
-    required this.onEdit,
-    required this.onRenew,
-    required this.onDelete,
-  });
-
-  final bool isLiveItem;
-  final VoidCallback onEdit;
-  final VoidCallback onRenew;
-  final VoidCallback onDelete;
-
+  const _ListingQuickActions({required this.isLiveItem, required this.onEdit, required this.onRenew, required this.onDelete});
+  final bool isLiveItem; final VoidCallback onEdit; final VoidCallback onRenew; final VoidCallback onDelete;
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        _ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit),
-        if (isLiveItem) ...[
-          const SizedBox(height: 12),
-          _ActionPill(
-            text: 'Renew',
-            color: const Color(0xFF25D366),
-            onTap: onRenew,
-          ),
-        ],
-        const SizedBox(height: 12),
-        _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.end, children: [_ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit), if (isLiveItem) ...[const SizedBox(height: 12), _ActionPill(text: 'Renew', color: const Color(0xFF25D366), onTap: onRenew)], const SizedBox(height: 12), _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete)]);
 }
 
 class _LiveExpiryBadge extends StatelessWidget {
   const _LiveExpiryBadge({required this.text});
-
   final String text;
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(8)), child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)));
 }
 
 class _ActionPill extends StatelessWidget {
-  const _ActionPill({
-    required this.text,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String text;
-  final Color color;
-  final VoidCallback onTap;
-
+  const _ActionPill({required this.text, required this.color, required this.onTap});
+  final String text; final Color color; final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: color,
-            border: Border.all(color: Colors.black, width: 1.2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Material(color: Colors.transparent, borderRadius: BorderRadius.circular(8), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: color, border: Border.all(color: Colors.black, width: 1.2), borderRadius: BorderRadius.circular(8)), child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))));
 }
-
-String _formatSellerPhone(Object? value) {
-  final digits = value?.toString().replaceAll(RegExp(r'[^0-9]'), '') ?? '';
-  if (digits.isEmpty) {
-    return '';
-  }
-  if (digits.startsWith('968') && digits.length > 3) {
-    return '+968 ${digits.substring(3)}';
-  }
-  return '+968 $digits';
-}
-

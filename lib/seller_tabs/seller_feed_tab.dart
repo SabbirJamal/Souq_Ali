@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
+import '../widgets/media_carousel.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -28,6 +29,8 @@ class SellerFeedTab extends StatefulWidget {
 }
 
 class SellerFeedTabState extends State<SellerFeedTab> {
+  static const _pageSize = 15;
+
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
@@ -35,9 +38,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final Set<String> _rankedSeenItemIds = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream;
-  bool _isSearchOpen = false;
+
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _allDocs = [];
   bool _isGridView = true;
+  bool _isSearchOpen = false;
+  bool _isLoading = false;
+  bool _hasMore = true;
   String _query = '';
   Timer? _searchDebounce;
   Timer? _visibilityDebounce;
@@ -51,23 +57,63 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void initState() {
     super.initState();
-    _itemsStream = _buildItemsStream();
-    _loadSeenItems();
+    _scrollController.addListener(_onScroll);
+    _loadInitial();
   }
 
-  Stream<QuerySnapshot<Map<String, dynamic>>> _buildItemsStream() {
-    final items = FirebaseFirestore.instance.collection('items');
-    if (widget.itemStatus == 'live') {
-      return items.where('status', isEqualTo: 'live').snapshots();
+  void _onScroll() {
+    if (!_scrollController.hasClients || _isLoading || !_hasMore) return;
+    final pos = _scrollController.position.pixels;
+    final max = _scrollController.position.maxScrollExtent;
+    if (pos > max - 800) {
+      _loadMore();
     }
-    return items
-        .orderBy('created_at', descending: true)
-        .limit(60)
-        .snapshots();
+  }
+
+  Future<void> _loadInitial() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
+    await _loadSeenItems();
+    await _fetchPage(isInitial: true);
+  }
+
+  Future<void> _loadMore() async {
+    if (_isLoading || !_hasMore || _isSearchOpen) return;
+    await _fetchPage(isInitial: false);
+  }
+
+  Future<void> _fetchPage({required bool isInitial}) async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      var query = FirebaseFirestore.instance
+          .collection('items')
+          .orderBy('created_at', descending: true)
+          .limit(_pageSize);
+
+      if (!isInitial && _allDocs.isNotEmpty) {
+        query = query.startAfterDocument(_allDocs.last);
+      }
+
+      final snapshot = await query.get();
+      if (!mounted) return;
+
+      final newDocs = snapshot.docs;
+      setState(() {
+        if (isInitial) _allDocs.clear();
+        _allDocs.addAll(newDocs);
+        _hasMore = newDocs.length == _pageSize;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
     _visibilityDebounce?.cancel();
@@ -81,9 +127,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   Future<void> _loadSeenItems() async {
     final viewer = await _resolveViewerIdentity();
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     _viewerId = viewer?.id;
     _viewerType = viewer?.type;
     final viewerId = _viewerId;
@@ -105,9 +149,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                 .limit(500)
                 .get()
           : null;
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() {
         final loadedSeenItemIds = [
           ...snapshot.docs,
@@ -127,9 +169,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _isLoadingSeenItems = false;
       });
     } catch (_) {
-      if (mounted) {
-        setState(() => _isLoadingSeenItems = false);
-      }
+      if (mounted) setState(() => _isLoadingSeenItems = false);
     }
   }
 
@@ -144,9 +184,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       final auth = FirebaseAuth.instance;
       final user = auth.currentUser ?? (await auth.signInAnonymously()).user;
       final uid = user?.uid;
-      if (uid == null || uid.isEmpty) {
-        return null;
-      }
+      if (uid == null || uid.isEmpty) return null;
       return _FeedViewerIdentity(id: uid, type: 'anonymous');
     } catch (_) {
       return null;
@@ -163,22 +201,17 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void scrollToTop() {
-    if (!_scrollController.hasClients) {
-      return;
-    }
-    _scrollController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeOutCubic,
-    );
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(0, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
   }
 
   Future<void> _refreshFeed() async {
     setState(() {
       _rankedSeenItemIds.addAll(_seenItemIds);
       _refreshTick++;
+      _hasMore = true;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+    await _fetchPage(isInitial: true);
   }
 
   void _openSearch() {
@@ -200,71 +233,50 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     setState(() => _isGridView = !_isGridView);
   }
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _filterDocs(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _getFilteredAndRankedDocs() {
+    final activeDocs = _allDocs.where((doc) => _isItemActive(doc.data(), _openedAt)).toList();
+    
     final query = _query.trim().toLowerCase();
-    final statusDocs = docs.where((doc) {
+    var filtered = activeDocs.where((doc) {
       final status = doc.data()['status']?.toString();
       if (widget.itemStatus == 'post') {
         return status == null || status.isEmpty || status == 'post';
       }
       return status == widget.itemStatus;
     }).toList();
-    if (query.isEmpty) {
-      return statusDocs;
-    }
 
-    return statusDocs.where((doc) {
-      final item = doc.data();
-      final searchableText =
-          [item['item_name'], item['item_price'], item['location']]
-              .whereType<Object>()
-              .map((value) => value.toString().toLowerCase())
-              .join(' ');
-      return searchableText.contains(query);
-    }).toList();
-  }
-
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _rankDocs(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    if (_query.trim().isNotEmpty) {
-      return docs;
+    if (query.isNotEmpty) {
+      filtered = filtered.where((doc) {
+        final item = doc.data();
+        final searchableText = [item['item_name'], item['item_price'], item['location']]
+            .whereType<Object>()
+            .map((value) => value.toString().toLowerCase())
+            .join(' ');
+        return searchableText.contains(query);
+      }).toList();
+      return filtered;
     }
 
     final unseenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
     final seenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    for (final doc in docs) {
+    for (final doc in filtered) {
       (_rankedSeenItemIds.contains(doc.id) ? seenDocs : unseenDocs).add(doc);
     }
     return [...unseenDocs, ...seenDocs];
   }
 
-  void _pruneItemKeys(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    final visibleIds = docs.map((doc) => doc.id).toSet();
-    _itemKeys.removeWhere((itemId, _) => !visibleIds.contains(itemId));
-  }
-
   void _scheduleVisibleSeenCheck() {
     _visibilityDebounce?.cancel();
-    _visibilityDebounce = Timer(
-      const Duration(milliseconds: 220),
-      _markVisibleItemsSeen,
-    );
+    _visibilityDebounce = Timer(const Duration(milliseconds: 220), _markVisibleItemsSeen);
   }
 
   void _markVisibleItemsSeen() {
     final viewerId = _viewerId;
-    if (viewerId == null || viewerId.isEmpty || !_scrollController.hasClients) {
-      return;
-    }
+    if (viewerId == null || viewerId.isEmpty || !_scrollController.hasClients) return;
 
     for (final entry in _itemKeys.entries) {
       final itemId = entry.key;
-      if (_seenItemIds.contains(itemId) || _pendingSeenItemIds.contains(itemId)) {
-        continue;
-      }
+      if (_seenItemIds.contains(itemId) || _pendingSeenItemIds.contains(itemId)) continue;
       if (_isItemCardMostlyVisible(entry.value)) {
         _seenItemIds.add(itemId);
         _pendingSeenItemIds.add(itemId);
@@ -272,30 +284,21 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     }
 
     if (_pendingSeenItemIds.isNotEmpty) {
-      _seenFlushTimer ??= Timer(
-        const Duration(milliseconds: 800),
-        _flushSeenItems,
-      );
+      _seenFlushTimer ??= Timer(const Duration(milliseconds: 800), _flushSeenItems);
     }
   }
 
   bool _isItemCardMostlyVisible(GlobalKey key) {
     final context = key.currentContext;
-    if (context == null) {
-      return false;
-    }
+    if (context == null) return false;
     final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.attached || !renderBox.hasSize) {
-      return false;
-    }
+    if (renderBox == null || !renderBox.attached || !renderBox.hasSize) return false;
     final top = renderBox.localToGlobal(Offset.zero).dy;
     final height = renderBox.size.height;
     final bottom = top + height;
     final viewportTop = MediaQuery.paddingOf(context).top + 56;
     final viewportBottom = MediaQuery.sizeOf(context).height - 58;
-    final visibleHeight =
-        bottom.clamp(viewportTop, viewportBottom) -
-        top.clamp(viewportTop, viewportBottom);
+    final visibleHeight = bottom.clamp(viewportTop, viewportBottom) - top.clamp(viewportTop, viewportBottom);
     return visibleHeight > 0 && visibleHeight / height >= 0.35;
   }
 
@@ -303,205 +306,81 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _seenFlushTimer?.cancel();
     _seenFlushTimer = null;
     final viewerId = _viewerId;
-    if (viewerId == null || viewerId.isEmpty || _pendingSeenItemIds.isEmpty) {
-      return;
-    }
+    if (viewerId == null || viewerId.isEmpty || _pendingSeenItemIds.isEmpty) return;
 
     final pending = List<String>.from(_pendingSeenItemIds);
     _pendingSeenItemIds.clear();
     try {
       final batch = FirebaseFirestore.instance.batch();
       for (final itemId in pending) {
-        final ref = FirebaseFirestore.instance
-            .collection('item_seen')
-            .doc(itemId)
-            .collection('viewers')
-            .doc(viewerId);
+        final ref = FirebaseFirestore.instance.collection('item_seen').doc(itemId).collection('viewers').doc(viewerId);
         final viewerType = _viewerType ?? 'anonymous';
         batch.set(ref, {
-          'item_id': itemId,
-          'viewer_id': viewerId,
-          'viewer_type': viewerType,
+          'item_id': itemId, 'viewer_id': viewerId, 'viewer_type': viewerType,
           if (viewerType == 'seller') 'seller_id': viewerId,
           'seen_at': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
       await batch.commit();
-    } catch (_) {
-      _pendingSeenItemIds.addAll(pending);
-    }
+    } catch (_) { _pendingSeenItemIds.addAll(pending); }
   }
 
   @override
   Widget build(BuildContext context) {
+    final docs = _getFilteredAndRankedDocs();
+    _itemKeys.removeWhere((itemId, _) => !docs.any((d) => d.id == itemId));
+    final isLivePage = widget.itemStatus == 'live';
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleVisibleSeenCheck());
+
     return Stack(
       children: [
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _itemsStream,
-          builder: (context, snapshot) {
-            final isLoading =
-                snapshot.connectionState == ConnectionState.waiting;
-            final hasError = snapshot.hasError;
-            final docs = _rankDocs(_filterDocs(
-              (snapshot.data?.docs ?? [])
-                  .where((doc) => _isItemActive(doc.data(), _openedAt))
-                  .toList(),
-            ));
-            _pruneItemKeys(docs);
-            final isLivePage = widget.itemStatus == 'live';
-
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _scheduleVisibleSeenCheck();
-            });
-
-            return RefreshIndicator(
-              color: const Color(0xFFFF7801),
-              onRefresh: _refreshFeed,
-              child: NotificationListener<ScrollEndNotification>(
-                onNotification: (_) {
-                  _scheduleVisibleSeenCheck();
-                  return false;
-                },
-                child: CustomScrollView(
-                  key: PageStorageKey(
-                    'seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick',
-                  ),
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _FeedHeader(
-                        isGridView: _isGridView,
-                        isSearchOpen: _isSearchOpen,
-                        onToggleGrid: _toggleLayoutMode,
-                      ),
-                    ),
-                    if (isLoading || _isLoadingSeenItems)
-                      SliverPadding(
-                        padding: _isGridView
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 8,
-                              )
-                            : const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 12,
-                              ),
-                        sliver: _isGridView
-                            ? const SliverToBoxAdapter(
-                                child: _FeedSkeletonGrid(),
-                              )
-                            : SliverList.builder(
-                                itemCount: 3,
-                                itemBuilder: (context, index) {
-                                  return const ItemCardSkeleton();
-                                },
-                              ),
-                      )
-                    else if (hasError)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text('Error: ${snapshot.error}'),
-                        ),
-                      )
-                    else if (docs.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Text(
-                            widget.emptyMessage,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
+        RefreshIndicator(
+          color: const Color(0xFFFF7801),
+          onRefresh: _refreshFeed,
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
+            child: CustomScrollView(
+              key: PageStorageKey('seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(child: _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode)),
+                if (_allDocs.isEmpty && _isLoading)
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
+                    sliver: _isGridView ? const SliverToBoxAdapter(child: _FeedSkeletonGrid()) : SliverList.builder(itemCount: 3, itemBuilder: (c, i) => const ItemCardSkeleton()),
+                  )
+                else if (docs.isEmpty && !_isLoading)
+                  SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))))
+                else ...[
+                  SliverPadding(
+                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
+                    sliver: _isGridView
+                        ? SliverGrid.builder(
+                            itemCount: docs.length, addAutomaticKeepAlives: false,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.66),
+                            itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isCompact: true, isLivePage: isLivePage)),
+                          )
+                        : SliverList.builder(
+                            itemCount: docs.length, addAutomaticKeepAlives: false,
+                            itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isLivePage: isLivePage)),
                           ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: _isGridView
-                            ? const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 8,
-                              )
-                            : const EdgeInsets.symmetric(
-                                horizontal: 2,
-                                vertical: 12,
-                              ),
-                        sliver: _isGridView
-                            ? SliverGrid.builder(
-                                itemCount: docs.length,
-                                gridDelegate:
-                                    const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 2,
-                                      crossAxisSpacing: 4,
-                                      mainAxisSpacing: 6,
-                                      childAspectRatio: 0.66,
-                                    ),
-                                itemBuilder: (context, index) {
-                                  final doc = docs[index];
-                                  return KeyedSubtree(
-                                    key: _keyForItem(doc.id),
-                                    child: ItemCard(
-                                      docId: doc.id,
-                                      item: doc.data(),
-                                      isCompact: true,
-                                      isLivePage: isLivePage,
-                                    ),
-                                  );
-                                },
-                              )
-                            : SliverList.builder(
-                                itemCount: docs.length,
-                                itemBuilder: (context, index) {
-                                  final doc = docs[index];
-                                  return KeyedSubtree(
-                                    key: _keyForItem(doc.id),
-                                    child: ItemCard(
-                                      docId: doc.id,
-                                      item: doc.data(),
-                                      isLivePage: isLivePage,
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
-        Positioned(
-          top: 10,
-          left: 12,
-          right: 12,
-          child: Align(
-            alignment: Alignment.topRight,
-            child: _FloatingFeedSearchControl(
-              isSearchOpen: _isSearchOpen,
-              searchController: _searchController,
-              searchFocusNode: _searchFocusNode,
-              onOpenSearch: _openSearch,
-              onCloseSearch: _closeSearch,
-              onQueryChanged: _handleSearchChanged,
+                  ),
+                  if (_isLoading && _allDocs.isNotEmpty)
+                    const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: Color(0xFFFF7801))))),
+                ],
+              ],
             ),
           ),
         ),
-        const Positioned(
-          top: 62,
-          left: 0,
-          right: 0,
-          child: Center(child: _UploadStatusBanner()),
-        ),
+        Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
+        const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),
       ],
     );
   }
 
-  GlobalKey _keyForItem(String itemId) {
-    return _itemKeys.putIfAbsent(itemId, GlobalKey.new);
-  }
+  GlobalKey _keyForItem(String itemId) => _itemKeys.putIfAbsent(itemId, GlobalKey.new);
 }
 
 class _FloatingFeedSearchControl extends StatelessWidget {

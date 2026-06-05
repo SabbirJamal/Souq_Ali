@@ -82,12 +82,14 @@ class MediaPreview extends StatelessWidget {
     required this.height,
     this.borderRadius = 0,
     this.fit = BoxFit.cover,
+    this.isCompact = false,
   });
 
   final MediaItem? media;
   final double height;
   final double borderRadius;
   final BoxFit fit;
+  final bool isCompact;
 
   @override
   Widget build(BuildContext context) {
@@ -112,6 +114,7 @@ class MediaPreview extends StatelessWidget {
                 thumbnailUrl: currentMedia.thumbnailUrl,
                 height: height,
                 fit: fit,
+                isCompact: isCompact,
               )
             : CachedNetworkImage(
                 imageUrl: currentMedia.thumbnailUrl?.trim().isNotEmpty == true
@@ -119,8 +122,8 @@ class MediaPreview extends StatelessWidget {
                     : currentMedia.url,
                 width: double.infinity,
                 height: height,
-                memCacheWidth: 720,
-                maxWidthDiskCache: 1080,
+                memCacheWidth: isCompact ? 500 : 800,
+                maxWidthDiskCache: isCompact ? 720 : 1200,
                 fit: fit,
                 fadeInDuration: const Duration(milliseconds: 1),
                 fadeOutDuration: const Duration(milliseconds: 1),
@@ -138,11 +141,13 @@ class _VideoThumbnailPreview extends StatelessWidget {
     required this.thumbnailUrl,
     required this.height,
     required this.fit,
+    this.isCompact = false,
   });
 
   final String? thumbnailUrl;
   final double height;
   final BoxFit fit;
+  final bool isCompact;
 
   @override
   Widget build(BuildContext context) {
@@ -160,8 +165,8 @@ class _VideoThumbnailPreview extends StatelessWidget {
             imageUrl: url,
             width: double.infinity,
             height: height,
-            memCacheWidth: 720,
-            maxWidthDiskCache: 1080,
+            memCacheWidth: isCompact ? 500 : 800,
+            maxWidthDiskCache: isCompact ? 720 : 1200,
             fit: fit,
             fadeInDuration: const Duration(milliseconds: 120),
             fadeOutDuration: const Duration(milliseconds: 1),
@@ -307,8 +312,8 @@ class _MediaCarouselState extends State<MediaCarousel> {
                                     imageUrl: media.url,
                                     width: double.infinity,
                                     height: widget.height,
-                                    memCacheWidth: 1200,
-                                    maxWidthDiskCache: 1600,
+                                    memCacheWidth: widget.peekSideItems ? 900 : 1200,
+                                    maxWidthDiskCache: widget.peekSideItems ? 1200 : 1600,
                                     fit: widget.fit,
                                     fadeInDuration: const Duration(
                                       milliseconds: 1,
