@@ -489,9 +489,9 @@ class _ListingsStatusTabs extends StatelessWidget {
         decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black.withValues(alpha: 0.18)), borderRadius: BorderRadius.circular(8)),
         child: Row(
           children: [
-            Expanded(child: _ListingsStatusTabButton(text: 'POSTINGS', isSelected: selectedStatus == 'post', onTap: () => onChanged('post'))),
+            Expanded(child: _ListingsStatusTabButton(text: 'POSTINGS', isSelected: selectedStatus == 'post', selectedColor: const Color(0xFF001341), onTap: () => onChanged('post'))),
             Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
-            Expanded(child: _ListingsStatusTabButton(text: 'LIVE', isSelected: selectedStatus == 'live', onTap: () => onChanged('live'))),
+            Expanded(child: _ListingsStatusTabButton(text: 'LIVE', isSelected: selectedStatus == 'live', selectedColor: const Color(0xFFFF7801), onTap: () => onChanged('live'))),
           ],
         ),
       ),
@@ -500,20 +500,19 @@ class _ListingsStatusTabs extends StatelessWidget {
 }
 
 class _ListingsStatusTabButton extends StatelessWidget {
-  const _ListingsStatusTabButton({required this.text, required this.isSelected, required this.onTap});
+  const _ListingsStatusTabButton({required this.text, required this.isSelected, required this.selectedColor, required this.onTap});
 
   final String text;
   final bool isSelected;
+  final Color selectedColor;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      color: isSelected ? selectedColor : Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
         child: Center(child: Text(text, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0))),
       ),
     );

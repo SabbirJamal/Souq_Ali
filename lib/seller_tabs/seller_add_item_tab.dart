@@ -114,7 +114,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   Future<void> _addItem() async {
     if (_selectedMedia.isEmpty) { _showMessage('Add at least 1 media'); return; }
     final name = _nameController.text.trim();
-    final loc = _isTransitPost ? 'TRANSIT' : _locationController.text.trim();
+    final loc = _isTransitPost ? '🚚 Transit' : _locationController.text.trim();
     if (loc.isEmpty) { setState(() => _showLocationError = true); return; }
     final normPrice = _isLiveItem ? _normalizePrice(_priceController.text) : '';
     if (_isLiveItem && (normPrice == null || double.parse(normPrice) <= 0)) { setState(() => _showPriceError = true); _priceFocusNode.requestFocus(); return; }
@@ -293,10 +293,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           if (_isLiveItem || !_isTransitPost)
             _field(_locationController, 'Location', prefix: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, error: _showLocationError ? 'Required' : null, onChanged: (v) => _showLocationError ? setState(() => _showLocationError = false) : null),
           const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _isUploading ? null : _addItem,
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF7801), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: _isUploading ? const CircularProgressIndicator(color: Colors.white) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+          FractionallySizedBox(
+            widthFactor: 0.75,
+            child: ElevatedButton(
+              onPressed: _isUploading ? null : _addItem,
+              style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: _isUploading ? const CircularProgressIndicator(color: Colors.white) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+            ),
           ),
             ])),
           );
@@ -308,6 +311,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     leftText: 'POST',
     rightText: 'LIVE',
     isRightSelected: _isLiveItem,
+    leftSelectedColor: const Color(0xFF001341),
+    rightSelectedColor: const Color(0xFFFF7801),
     onLeftTap: _isUploading ? null : () {
       if (!_isLiveItem) return;
       setState(() => _isLiveItem = false);
@@ -327,8 +332,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Widget _buildTransitToggle() => _AddItemSegmentedSelector(
     leftText: 'IN SITE',
-    rightText: 'TRANSIT',
+    rightText: '🚚 TRANSIT',
     isRightSelected: _isTransitPost,
+    leftSelectedColor: const Color(0xFF001341),
+    rightSelectedColor: const Color(0xFFFF7801),
     onLeftTap: _isUploading ? null : () => setState(() => _isTransitPost = false),
     onRightTap: _isUploading ? null : () => setState(() {
       _isTransitPost = true;
@@ -374,6 +381,8 @@ class _AddItemSegmentedSelector extends StatelessWidget {
     required this.leftText,
     required this.rightText,
     required this.isRightSelected,
+    required this.leftSelectedColor,
+    required this.rightSelectedColor,
     required this.onLeftTap,
     required this.onRightTap,
   });
@@ -381,6 +390,8 @@ class _AddItemSegmentedSelector extends StatelessWidget {
   final String leftText;
   final String rightText;
   final bool isRightSelected;
+  final Color leftSelectedColor;
+  final Color rightSelectedColor;
   final VoidCallback? onLeftTap;
   final VoidCallback? onRightTap;
 
@@ -399,6 +410,7 @@ class _AddItemSegmentedSelector extends StatelessWidget {
             child: _AddItemSegmentButton(
               text: leftText,
               isSelected: !isRightSelected,
+              selectedColor: leftSelectedColor,
               onTap: onLeftTap,
             ),
           ),
@@ -407,6 +419,7 @@ class _AddItemSegmentedSelector extends StatelessWidget {
             child: _AddItemSegmentButton(
               text: rightText,
               isSelected: isRightSelected,
+              selectedColor: rightSelectedColor,
               onTap: onRightTap,
             ),
           ),
@@ -420,21 +433,21 @@ class _AddItemSegmentButton extends StatelessWidget {
   const _AddItemSegmentButton({
     required this.text,
     required this.isSelected,
+    required this.selectedColor,
     required this.onTap,
   });
 
   final String text;
   final bool isSelected;
+  final Color selectedColor;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      color: isSelected ? selectedColor : Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
         child: Center(
           child: Text(
             text,

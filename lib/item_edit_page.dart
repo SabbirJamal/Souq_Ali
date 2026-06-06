@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart' as device_permissions;
 import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
@@ -443,10 +442,13 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   if (_isLiveItem || !_isTransitPost)
                     _field(_locationController, 'Location', prefixIconWidget: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, errorText: _showLocationError ? 'Required' : null, onChanged: (_) => _showLocationError ? setState(() => _showLocationError = false) : null),
                   const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: _isSaving ? null : _save,
-                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF7801), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('Update', style: TextStyle(fontSize: 16)),
+                  FractionallySizedBox(
+                    widthFactor: 0.75,
+                    child: ElevatedButton(
+                      onPressed: _isSaving ? null : _save,
+                      style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                      child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('Update', style: TextStyle(fontSize: 16)),
+                    ),
                   ),
                 ],
               ),
