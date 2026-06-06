@@ -56,8 +56,11 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   MediaItem? _zoomReadyMedia;
   final Set<int> _mediaPointers = <int>{};
   final Set<String> _pausedVideoUrls = <String>{};
+  Offset? _mediaSwipeStart;
+  Offset _mediaSwipeDelta = Offset.zero;
   double _zoomScale = 1;
   double _inlineVideoScale = 1;
+  int _mediaSwipeStartIndex = 0;
   int _currentIndex = 0;
   bool _isPinchIntent = false;
   bool _isHoldingMedia = false;
@@ -88,18 +91,59 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
 
   void _handleMediaPointerDown(PointerDownEvent event) {
     _mediaPointers.add(event.pointer);
+    if (_mediaPointers.length == 1 && widget.mediaItems.length > 1) {
+      _mediaSwipeStart = event.position;
+      _mediaSwipeDelta = Offset.zero;
+      _mediaSwipeStartIndex = _currentIndex;
+    }
     if (_mediaPointers.length >= 2 && !_isPinchIntent) {
       setState(() => _isPinchIntent = true);
       widget.onZoomActiveChanged?.call(true);
     }
   }
 
+  void _handleMediaPointerMove(PointerMoveEvent event) {
+    final start = _mediaSwipeStart;
+    if (start == null || _mediaPointers.length != 1) return;
+    _mediaSwipeDelta = event.position - start;
+  }
+
   void _handleMediaPointerUp(PointerEvent event) {
+    _handleLooseHorizontalSwipe();
     _mediaPointers.remove(event.pointer);
+    if (_mediaPointers.isEmpty) {
+      _mediaSwipeStart = null;
+      _mediaSwipeDelta = Offset.zero;
+    }
     if (_mediaPointers.length < 2 && _isPinchIntent && !_isZooming) {
       setState(() => _isPinchIntent = false);
       if (!_isHoldingMedia) widget.onZoomActiveChanged?.call(false);
     }
+  }
+
+  void _handleLooseHorizontalSwipe() {
+    if (widget.mediaItems.length < 2 ||
+        _isZooming ||
+        _isPinchIntent ||
+        _isHoldingMedia ||
+        _currentIndex != _mediaSwipeStartIndex ||
+        !_pageController.hasClients) {
+      return;
+    }
+    final dx = _mediaSwipeDelta.dx;
+    final dy = _mediaSwipeDelta.dy.abs();
+    if (dx.abs() < 42 || dx.abs() < dy * 0.45) return;
+
+    final page = _pageController.page;
+    if (page != null && (page - _currentIndex).abs() > 0.08) return;
+
+    final nextIndex = dx < 0 ? _currentIndex + 1 : _currentIndex - 1;
+    if (nextIndex < 0 || nextIndex >= widget.mediaItems.length) return;
+    _pageController.animateToPage(
+      nextIndex,
+      duration: const Duration(milliseconds: 230),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _handleScaleStart(MediaItem media, ScaleStartDetails details) {
@@ -326,6 +370,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
             key: _mediaKey,
             behavior: HitTestBehavior.opaque,
             onPointerDown: _handleMediaPointerDown,
+            onPointerMove: _handleMediaPointerMove,
             onPointerUp: _handleMediaPointerUp,
             onPointerCancel: _handleMediaPointerUp,
             child: SizedBox(
