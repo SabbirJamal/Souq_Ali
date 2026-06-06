@@ -6,9 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:lottie/lottie.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart' as device_permissions;
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_compress/video_compress.dart';
 
@@ -256,7 +254,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildLiveSwitch(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 20),
+          _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 20),
           if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
           if (!_isLiveItem) ...[
@@ -306,25 +304,36 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     );
   }
 
-  Widget _buildLiveSwitch() {
-    final live = Lottie.asset('assets/lottie/live2.json', fit: BoxFit.contain, repeat: true);
-    return Center(child: GestureDetector(
-      onTap: _isUploading ? null : () {
-        final next = !_isLiveItem;
-        setState(() { _isLiveItem = next; if (next) { _isTransitPost = false; _audioDescriptionPath = null; _audioResetToken++; } });
-        widget.onLiveModeChanged?.call(next);
-      },
-      child: AnimatedScale(scale: _isLiveItem ? 1.06 : 1.0, duration: const Duration(milliseconds: 160), child: SizedBox(width: 210, height: 84, child: _isLiveItem ? live : ColorFiltered(colorFilter: const ColorFilter.matrix([0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0, 0, 0, 1, 0]), child: live))),
-    ));
-  }
+  Widget _buildPostTypeSelector() => _AddItemSegmentedSelector(
+    leftText: 'POST',
+    rightText: 'LIVE',
+    isRightSelected: _isLiveItem,
+    onLeftTap: _isUploading ? null : () {
+      if (!_isLiveItem) return;
+      setState(() => _isLiveItem = false);
+      widget.onLiveModeChanged?.call(false);
+    },
+    onRightTap: _isUploading ? null : () {
+      if (_isLiveItem) return;
+      setState(() {
+        _isLiveItem = true;
+        _isTransitPost = false;
+        _audioDescriptionPath = null;
+        _audioResetToken++;
+      });
+      widget.onLiveModeChanged?.call(true);
+    },
+  );
 
-  Widget _buildTransitToggle() => Container(
-    height: 58, decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(12)),
-    child: Row(children: [
-      Expanded(child: TransitStatusButton(text: 'IN STOCK', isSelected: !_isTransitPost, onTap: () => setState(() { _isTransitPost = false; }))),
-      const VerticalDivider(width: 1),
-      Expanded(child: TransitStatusButton(text: 'TRANSIT', isSelected: _isTransitPost, onTap: () => setState(() { _isTransitPost = true; _showLocationError = false; })))
-    ]),
+  Widget _buildTransitToggle() => _AddItemSegmentedSelector(
+    leftText: 'IN SITE',
+    rightText: 'TRANSIT',
+    isRightSelected: _isTransitPost,
+    onLeftTap: _isUploading ? null : () => setState(() => _isTransitPost = false),
+    onRightTap: _isUploading ? null : () => setState(() {
+      _isTransitPost = true;
+      _showLocationError = false;
+    }),
   );
 
   Widget _buildMediaEditor() {
@@ -358,6 +367,88 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     controller: ctrl, focusNode: focus, readOnly: _isUploading, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
     decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefix, errorText: error, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
   );
+}
+
+class _AddItemSegmentedSelector extends StatelessWidget {
+  const _AddItemSegmentedSelector({
+    required this.leftText,
+    required this.rightText,
+    required this.isRightSelected,
+    required this.onLeftTap,
+    required this.onRightTap,
+  });
+
+  final String leftText;
+  final String rightText;
+  final bool isRightSelected;
+  final VoidCallback? onLeftTap;
+  final VoidCallback? onRightTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _AddItemSegmentButton(
+              text: leftText,
+              isSelected: !isRightSelected,
+              onTap: onLeftTap,
+            ),
+          ),
+          Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+          Expanded(
+            child: _AddItemSegmentButton(
+              text: rightText,
+              isSelected: isRightSelected,
+              onTap: onRightTap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddItemSegmentButton extends StatelessWidget {
+  const _AddItemSegmentButton({
+    required this.text,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool isSelected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _UploadedMedia {

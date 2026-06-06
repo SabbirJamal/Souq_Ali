@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
-import '../widgets/media_carousel.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -365,6 +364,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
             child: CustomScrollView(
               key: PageStorageKey('seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
               controller: _scrollController,
+              cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverToBoxAdapter(child: _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode)),
@@ -380,12 +380,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                     padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
                     sliver: _isGridView
                         ? SliverGrid.builder(
-                            itemCount: docs.length, addAutomaticKeepAlives: false,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.58),
+                            itemCount: docs.length,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
                             itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isCompact: true, isLivePage: isLivePage)),
                           )
                         : SliverList.builder(
-                            itemCount: docs.length, addAutomaticKeepAlives: false,
+                            itemCount: docs.length,
                             itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isLivePage: isLivePage)),
                           ),
                   ),

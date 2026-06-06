@@ -36,7 +36,8 @@ class ItemCard extends StatefulWidget {
 
 final ValueNotifier<String?> _activeFeedAudioItemId = ValueNotifier(null);
 
-class _ItemCardState extends State<ItemCard> {
+class _ItemCardState extends State<ItemCard>
+    with AutomaticKeepAliveClientMixin<ItemCard> {
   late final AudioPlayer _audioPlayer;
   final ValueNotifier<Duration> _audioDurationNotifier =
       ValueNotifier(Duration.zero);
@@ -167,6 +168,7 @@ class _ItemCardState extends State<ItemCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final mediaItems = mediaItemsFromMap(widget.item);
     final uploadedAgo = widget.uploadedAgoOverride ?? _uploadedAgo(widget.item['created_at']);
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
@@ -294,6 +296,9 @@ class _ItemCardState extends State<ItemCard> {
       ),
     );
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   String _uploadedAgo(Object? value) {
     DateTime? uploadedAt;

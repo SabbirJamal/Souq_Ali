@@ -362,7 +362,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                           key: ValueKey(_selectedStatus + widget.refreshTick.toString()),
                           itemCount: docs.length,
                           addAutomaticKeepAlives: false,
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 6, childAspectRatio: 0.58),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
                           itemBuilder: (context, index) {
                             final doc = docs[index];
                             final data = doc.data();
