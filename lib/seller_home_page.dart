@@ -283,7 +283,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final topInset = MediaQuery.paddingOf(context).top;
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
     final bottomBarColor = _currentIndex == 2 && _isAddLiveMode
         ? const Color(0xFFFFE9EC)
@@ -291,9 +290,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.black,
+        statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: PopScope(
         canPop: false,
@@ -304,9 +305,14 @@ class _SellerHomePageState extends State<SellerHomePage> {
         },
         child: Scaffold(
           backgroundColor: const Color(0xFFF4FBF7),
+          extendBody: true, // Background flows behind navigation bar
           body: Column(
             children: [
-              Container(height: topInset, color: Colors.black),
+              // Efficiently handles the status bar height with the brand color
+              Container(
+                height: MediaQuery.viewPaddingOf(context).top,
+                color: Colors.black,
+              ),
               if (showTabHeader)
                 _SellerTabHeader(
                   rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),
@@ -318,10 +324,20 @@ class _SellerHomePageState extends State<SellerHomePage> {
                     index: _currentIndex,
                     children: List.generate(
                       5,
-                      (index) => TickerMode(
-                        enabled: index == _currentIndex,
-                        child: _pageAt(index),
-                      ),
+                      (index) {
+                        // Only build the page if it's currently selected or was previously cached
+                        final isPageInitialized = _pageCache[index] != null;
+                        final isCurrentPage = index == _currentIndex;
+                        
+                        if (isCurrentPage || isPageInitialized) {
+                          return TickerMode(
+                            enabled: isCurrentPage,
+                            child: _pageAt(index),
+                          );
+                        }
+                        
+                        return const SizedBox.shrink();
+                      },
                     ),
                   ),
                 ),
@@ -330,61 +346,64 @@ class _SellerHomePageState extends State<SellerHomePage> {
           ),
           bottomNavigationBar: ColoredBox(
             color: bottomBarColor,
-            child: SizedBox(
-              height: 58,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final tabWidth = constraints.maxWidth / 5;
-                  const liveIconWidth = 61.0;
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      BottomNavigationBar(
-                        currentIndex: _currentIndex > 4 ? 4 : _currentIndex,
-                        onTap: _onTabTapped,
-                        type: BottomNavigationBarType.fixed,
-                        selectedItemColor: const Color(0xFFFF7801),
-                        unselectedItemColor: Colors.grey,
-                        backgroundColor: bottomBarColor,
-                        selectedFontSize: 0,
-                        unselectedFontSize: 0,
-                        showSelectedLabels: false,
-                        showUnselectedLabels: false,
-                        iconSize: 24,
-                        items: const [
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.home, size: 28),
-                            label: 'Home',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: SizedBox(width: 24, height: 24),
-                            activeIcon: SizedBox(width: 24, height: 24),
-                            label: 'Live',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.add_circle_outline),
-                            label: 'Add',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.person),
-                            label: 'Listings',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.settings),
-                            label: 'Settings',
-                          ),
-                        ],
-                      ),
-                      Positioned(
-                        left: tabWidth + (tabWidth - liveIconWidth) / 2,
-                        top: -4,
-                        child: const IgnorePointer(child: _LiveNavIcon()),
-                      ),
-                    ],
-                  );
-                },
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewPaddingOf(context).bottom,
+              ),
+              child: SizedBox(
+                height: 52, // Slimmer height
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tabWidth = constraints.maxWidth / 5;
+                    const liveIconWidth = 61.0;
+                    
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        // Custom Row instead of BottomNavigationBar to avoid rigid constraints and overflows
+                        Row(
+                          children: [
+                            _buildTabItem(0, Icons.home, 28, 'Home'),
+                            _buildTabItem(1, null, 24, 'Live'), // Lottie placeholder
+                            _buildTabItem(2, Icons.add_circle_outline, 24, 'Add'),
+                            _buildTabItem(3, Icons.person, 24, 'Listings'),
+                            _buildTabItem(4, Icons.settings, 24, 'Settings'),
+                          ],
+                        ),
+                        Positioned(
+                          left: tabWidth + (tabWidth - liveIconWidth) / 2,
+                          top: -6, // Adjusted for slimmer bar
+                          child: const IgnorePointer(child: _LiveNavIcon()),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabItem(int index, IconData? icon, double size, String label) {
+    final isSelected = _currentIndex == index;
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _onTabTapped(index),
+          splashColor: Colors.black12,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4), // Shifted down as discussed
+            child: icon == null 
+                ? const SizedBox.shrink() // Space for Lottie
+                : Icon(
+                    icon,
+                    size: size,
+                    color: isSelected ? const Color(0xFFFF7801) : Colors.grey,
+                  ),
           ),
         ),
       ),
