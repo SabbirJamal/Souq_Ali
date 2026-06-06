@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,7 +11,6 @@ import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
 import 'utils/formatters.dart';
-import 'widgets/audio_description_field.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
@@ -41,13 +39,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
   final List<MediaItem> _removedMedia = [];
   final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
 
-  String? _existingAudioUrl;
-  String? _audioDescriptionPath;
-  Duration _audioDescriptionDuration = Duration.zero;
   String _lastValidPriceText = '';
   late String _priceUnit;
-  int _audioResetToken = 0;
-  bool _removeExistingAudio = false;
   bool _isSaving = false;
   bool _showLocationError = false;
   late final bool _isLiveItem;
@@ -66,10 +59,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
     _lastValidPriceText = _priceController.text;
     _locationController = TextEditingController(text: widget.itemData['location'] ?? '');
     _media.addAll(mediaItemsFromMap(widget.itemData).map(EditableMedia.existing));
-    _existingAudioUrl = widget.itemData['audio_description_url']?.toString().trim();
-    if (_existingAudioUrl?.isEmpty == true) {
-      _existingAudioUrl = null;
-    }
     _priceUnit = _priceUnits.contains(widget.itemData['price_unit'])
         ? widget.itemData['price_unit'].toString()
         : '/ kg';
@@ -227,7 +216,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
         if (m.thumbnailUrl != null) 'thumbnail_url': m.thumbnailUrl,
       }).toList();
 
-      final audioUrl = isLiveItem ? null : await _uploadAudioDescription(sellerUid);
       final priceUnit = isLiveItem ? _priceUnit : '';
       final itemPrice = isLiveItem ? 'OMR ${_formatPriceWithCommas(normalizedPrice!)} $priceUnit' : '';
 
@@ -244,18 +232,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
         'updated_at': FieldValue.serverTimestamp(),
       };
 
-      if (isLiveItem || _removeExistingAudio) {
-        updateData['audio_description_url'] = FieldValue.delete();
-        updateData['audio_description_duration_seconds'] = FieldValue.delete();
-      }
-      if (audioUrl != null) {
-        updateData['audio_description_url'] = audioUrl;
-        updateData['audio_description_duration_seconds'] = _audioDescriptionDuration.inSeconds;
-      }
-
       await FirebaseFirestore.instance.collection('items').doc(widget.docId).update(updateData);
       await _deleteRemovedStorageFiles();
-      if (audioUrl != null || isLiveItem) await _deleteRemovedAudioIfNeeded(true);
 
       if (mounted) {
         Navigator.pop(context);
@@ -308,15 +286,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
     } catch (_) { return null; }
   }
 
-  Future<String?> _uploadAudioDescription(String sellerUid) async {
-    if (_audioDescriptionPath == null) return null;
-    final file = File(_audioDescriptionPath!);
-    if (!await file.exists()) return null;
-    final ref = FirebaseStorage.instance.ref().child('items/$sellerUid/audio_description_edit_${DateTime.now().millisecondsSinceEpoch}.m4a');
-    final snap = await ref.putFile(file, SettableMetadata(contentType: 'audio/mp4'));
-    return snap.ref.getDownloadURL();
-  }
-
   Future<File> _compressImage(File file) async {
     final temp = await getTemporaryDirectory();
     final path = '${temp.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
@@ -335,12 +304,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
         if (m.thumbnailUrl?.isNotEmpty == true) await FirebaseStorage.instance.refFromURL(m.thumbnailUrl!).delete();
         await FirebaseStorage.instance.refFromURL(m.url).delete();
       } catch (_) {}
-    }
-  }
-
-  Future<void> _deleteRemovedAudioIfNeeded(bool replaced) async {
-    if (_existingAudioUrl != null && (_removeExistingAudio || replaced)) {
-      try { await FirebaseStorage.instance.refFromURL(_existingAudioUrl!).delete(); } catch (_) {}
     }
   }
 
@@ -414,16 +377,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
                   _field(_nameController, 'Item Name', maxLength: 80),
                   const SizedBox(height: 14),
-                  if (!_isLiveItem) ...[
-                    AudioDescriptionField(
-                      isDisabled: _isSaving,
-                      resetToken: _audioResetToken,
-                      initialUrl: _existingAudioUrl,
-                      initialDuration: Duration(seconds: (widget.itemData['audio_description_duration_seconds'] as num?)?.toInt() ?? 0),
-                      onChanged: (path, dur, rem) { _audioDescriptionPath = path; _audioDescriptionDuration = dur; _removeExistingAudio = rem; },
-                    ),
-                    const SizedBox(height: 8),
-                  ],
                   if (_isLiveItem) ...[
                     Row(
                       children: [

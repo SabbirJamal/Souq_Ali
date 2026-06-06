@@ -51,8 +51,6 @@ dependencies:
   font_awesome_flutter: ^11.0.0
   crop_your_image: ^2.0.0
   permission_handler: ^12.0.1
-  record: ^6.2.1
-  audioplayers: ^6.7.0
   lottie: ^3.3.3
 
 dev_dependencies:

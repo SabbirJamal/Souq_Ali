@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
@@ -244,9 +245,60 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   Future<void> _deleteItem(BuildContext context, String docId, Map<String, dynamic> item) async {
+    await _deleteItemStorageFiles(item);
+    await _deleteSeenRecord(docId);
     await FirebaseFirestore.instance.collection('items').doc(docId).delete();
+    if (mounted) {
+      setState(() => _allDocs.removeWhere((doc) => doc.id == docId));
+    }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item deleted'), backgroundColor: Colors.red));
+  }
+
+  Future<void> _deleteItemStorageFiles(Map<String, dynamic> item) async {
+    final urls = <String>{};
+    final imageUrls = item['image_urls'];
+    if (imageUrls is List) {
+      for (final url in imageUrls) {
+        final text = url?.toString().trim() ?? '';
+        if (text.isNotEmpty) urls.add(text);
+      }
+    }
+
+    final mediaFiles = item['media_files'];
+    if (mediaFiles is List) {
+      for (final media in mediaFiles) {
+        if (media is! Map) continue;
+        final url = media['url']?.toString().trim() ?? '';
+        final thumbnailUrl = media['thumbnail_url']?.toString().trim() ?? '';
+        if (url.isNotEmpty) urls.add(url);
+        if (thumbnailUrl.isNotEmpty) urls.add(thumbnailUrl);
+      }
+    }
+
+    final legacyAudioUrl = item['audio_description_url']?.toString().trim() ?? '';
+    if (legacyAudioUrl.isNotEmpty) urls.add(legacyAudioUrl);
+
+    await Future.wait(
+      urls.map((url) async {
+        try {
+          await FirebaseStorage.instance.refFromURL(url).delete();
+        } catch (_) {}
+      }),
+    );
+  }
+
+  Future<void> _deleteSeenRecord(String docId) async {
+    try {
+      final seenRef = FirebaseFirestore.instance.collection('item_seen').doc(docId);
+      final viewers = await seenRef.collection('viewers').limit(100).get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final viewer in viewers.docs) {
+        batch.delete(viewer.reference);
+      }
+      batch.delete(seenRef);
+      await batch.commit();
+    } catch (_) {}
   }
 
   Future<void> _confirmDelete(BuildContext context, String docId, Map<String, dynamic> item) async {

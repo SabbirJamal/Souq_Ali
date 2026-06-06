@@ -335,7 +335,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final tabWidth = constraints.maxWidth / 5;
-                  const liveIconWidth = 225.0;
+                  const liveIconWidth = 61.0;
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -377,7 +377,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                       ),
                       Positioned(
                         left: tabWidth + (tabWidth - liveIconWidth) / 2,
-                        top: -38,
+                        top: -4,
                         child: const IgnorePointer(child: _LiveNavIcon()),
                       ),
                     ],
@@ -399,10 +399,10 @@ class _LiveNavIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: SizedBox(
-        width: 225,
-        height: 108,
+        width: 66,
+        height: 44,
         child: Lottie.asset(
-          'assets/lottie/live2.json',
+          'assets/lottie/live3.json',
           fit: BoxFit.contain,
           repeat: true,
           animate: true,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -13,7 +12,6 @@ import 'share_listing_page.dart';
 import 'utils/formatters.dart';
 import 'widgets/detail/detail_media_header.dart';
 import 'widgets/media_carousel.dart';
-import 'widgets/price_with_currency.dart';
 
 class ItemDetailPage extends StatefulWidget {
   const ItemDetailPage({super.key, required this.itemData, required this.itemId});
@@ -24,35 +22,14 @@ class ItemDetailPage extends StatefulWidget {
 }
 
 class _ItemDetailPageState extends State<ItemDetailPage> {
-  late final AudioPlayer _audioPlayer;
   final Map<String, VideoPlayerController> _preloadedVideoControllers = {};
   final Map<String, Future<void>> _preloadedVideoInitializers = {};
-  final ValueNotifier<Duration> _audioDurationNotifier = ValueNotifier(Duration.zero);
-  final ValueNotifier<Duration> _audioPositionNotifier = ValueNotifier(Duration.zero);
-  bool _isPreparingDetail = true, _didStartPreparingDetail = false, _isAudioPlaying = false, _showAudioProgress = false, _isAudioSourcePrepared = false, _lockDetailScroll = false;
-  int _audioCompletionToken = 0;
-
-  String get _audioUrl =>
-      widget.itemData['audio_description_url']?.toString().trim() ?? '';
+  bool _isPreparingDetail = true, _didStartPreparingDetail = false, _lockDetailScroll = false;
 
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer(); _preloadDetailVideos();
-    _audioPlayer.onDurationChanged.listen((d) => _audioDurationNotifier.value = d);
-    _audioPlayer.onPositionChanged.listen((p) => _audioPositionNotifier.value = p);
-    _audioPlayer.onPlayerComplete.listen((_) {
-      if (!mounted) return;
-      final token = ++_audioCompletionToken;
-      _audioPositionNotifier.value = _audioDurationNotifier.value;
-      setState(() { _isAudioPlaying = false; _showAudioProgress = true; });
-      Future.delayed(const Duration(milliseconds: 220), () {
-        if (mounted && !_isAudioPlaying && token == _audioCompletionToken) {
-          setState(() => _showAudioProgress = false);
-          _audioPositionNotifier.value = Duration.zero;
-        }
-      });
-    });
+    _preloadDetailVideos();
   }
 
   @override
@@ -64,7 +41,6 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   @override
   void dispose() {
     _stopDetailPlayback(updateUi: false);
-    _audioPlayer.dispose(); _audioDurationNotifier.dispose(); _audioPositionNotifier.dispose();
     for (final c in _preloadedVideoControllers.values) { c.dispose(); }
     super.dispose();
   }
@@ -80,14 +56,8 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       _preloadedVideoControllers[first.url]?.play();
     }).catchError((_) {}) : null;
     
-    _prepareAudioSource();
     await Future.any([Future.wait([...futures, if (firstVid != null) firstVid]), Future.delayed(const Duration(milliseconds: 1600))]);
     if (mounted) setState(() => _isPreparingDetail = false);
-  }
-
-  Future<void> _prepareAudioSource() async {
-    if (_audioUrl.isEmpty) return;
-    try { await _audioPlayer.setSource(UrlSource(_audioUrl)); _isAudioSourcePrepared = true; } catch (_) { _isAudioSourcePrepared = false; }
   }
 
   void _preloadDetailVideos() {
@@ -102,19 +72,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   void _stopDetailPlayback({bool updateUi = true}) {
-    _audioCompletionToken++; _audioPlayer.stop();
     for (final c in _preloadedVideoControllers.values) { if (c.value.isInitialized) c.pause(); }
-    _audioPositionNotifier.value = Duration.zero;
-    if (updateUi && mounted) setState(() { _isAudioPlaying = false; _showAudioProgress = false; });
-  }
-
-  Future<void> _toggleAudio() async {
-    if (_audioUrl.isEmpty) return;
-    if (_isAudioPlaying) { await _audioPlayer.pause(); if (mounted) setState(() => _isAudioPlaying = false); return; }
-    _audioCompletionToken++;
-    if (_isAudioSourcePrepared || _audioPositionNotifier.value > Duration.zero) await _audioPlayer.resume();
-    else { await _audioPlayer.play(UrlSource(_audioUrl)); _isAudioSourcePrepared = true; }
-    if (mounted) setState(() { _isAudioPlaying = true; _showAudioProgress = true; });
   }
 
   Future<void> _goToFeed(BuildContext context) async {
@@ -140,9 +98,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 mediaItems: media, preloadedVideoControllers: _preloadedVideoControllers, preloadedVideoInitializers: _preloadedVideoInitializers,
                 itemName: widget.itemData['item_name']?.toString().trim() ?? '', price: formatPrice(widget.itemData['item_price']),
                 location: widget.itemData['location']?.toString() ?? '', isLiveItem: widget.itemData['status']?.toString() == 'live',
-                audioUrl: _audioUrl, isAudioPlaying: _isAudioPlaying, showAudioProgress: _showAudioProgress,
-                audioPositionNotifier: _audioPositionNotifier, audioDurationNotifier: _audioDurationNotifier,
-                onAudioTap: _toggleAudio, onZoomActiveChanged: (a) => setState(() => _lockDetailScroll = a),
+                onZoomActiveChanged: (a) => setState(() => _lockDetailScroll = a),
               ),
               Padding(padding: const EdgeInsets.fromLTRB(16, 22, 16, 0), child: _SellerAvatarIcon(name: widget.itemData['seller_name'], sellerId: widget.itemData['seller_uid'], sellerPhone: phone, onOpenProfile: _stopDetailPlayback)),
               const SizedBox(height: 8),

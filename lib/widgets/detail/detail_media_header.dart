@@ -16,12 +16,6 @@ class DetailMediaHeader extends StatefulWidget {
     required this.price,
     required this.location,
     required this.isLiveItem,
-    required this.audioUrl,
-    required this.isAudioPlaying,
-    required this.showAudioProgress,
-    required this.audioPositionNotifier,
-    required this.audioDurationNotifier,
-    required this.onAudioTap,
     this.onZoomActiveChanged,
   });
 
@@ -32,12 +26,6 @@ class DetailMediaHeader extends StatefulWidget {
   final String price;
   final String location;
   final bool isLiveItem;
-  final String audioUrl;
-  final bool isAudioPlaying;
-  final bool showAudioProgress;
-  final ValueNotifier<Duration> audioPositionNotifier;
-  final ValueNotifier<Duration> audioDurationNotifier;
-  final VoidCallback onAudioTap;
   final ValueChanged<bool>? onZoomActiveChanged;
 
   @override
@@ -437,13 +425,6 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (widget.audioUrl.isNotEmpty) ...[
-                  _DetailAudioIconChip(
-                    isPlaying: widget.isAudioPlaying,
-                    onTap: widget.onAudioTap,
-                  ),
-                  const SizedBox(height: 6),
-                ],
                 if (widget.itemName.isNotEmpty) ...[
                   IgnorePointer(
                     child: _DetailOverlayChip(
@@ -503,26 +484,6 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
               ],
             ),
           ),
-          if (widget.showAudioProgress && !hideChrome)
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: ValueListenableBuilder<Duration>(
-                valueListenable: widget.audioPositionNotifier,
-                builder: (context, position, _) {
-                  return ValueListenableBuilder<Duration>(
-                    valueListenable: widget.audioDurationNotifier,
-                    builder: (context, duration, _) {
-                      return _DetailAudioTimeline(
-                        position: position,
-                        duration: duration,
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
         ],
       ),
     );
@@ -718,68 +679,6 @@ class _DetailMediaDots extends StatelessWidget {
           ),
         );
       }),
-    );
-  }
-}
-
-class _DetailAudioTimeline extends StatelessWidget {
-  const _DetailAudioTimeline({
-    required this.position,
-    required this.duration,
-  });
-
-  final Duration position;
-  final Duration duration;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
-    final progress = (position.inMilliseconds / total).clamp(0.0, 1.0);
-    return SizedBox(
-      width: double.infinity,
-      child: LinearProgressIndicator(
-        value: progress,
-        minHeight: 4,
-        backgroundColor: Colors.black.withValues(alpha: 0.16),
-        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
-      ),
-    );
-  }
-}
-
-class _DetailAudioIconChip extends StatelessWidget {
-  const _DetailAudioIconChip({
-    required this.isPlaying,
-    required this.onTap,
-  });
-
-  final bool isPlaying;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    const iconSize = 24.0;
-    const touchSize = iconSize * 2.5;
-
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: onTap,
-      child: SizedBox(
-        width: touchSize,
-        height: touchSize,
-        child: Align(
-          alignment: Alignment.bottomLeft,
-          child: IgnorePointer(
-            child: _DetailOverlayChip(
-              child: Icon(
-                isPlaying ? Icons.pause : Icons.volume_up,
-                color: const Color(0xFFFF7801),
-                size: iconSize,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

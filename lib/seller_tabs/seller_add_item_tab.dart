@@ -13,7 +13,6 @@ import 'package:video_compress/video_compress.dart';
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
-import '../widgets/audio_description_field.dart';
 import '../widgets/item_add/media_picker_sheet.dart';
 import '../widgets/item_edit/edit_widgets.dart';
 import '../widgets/price_with_currency.dart';
@@ -43,11 +42,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   final _priceFocusNode = FocusNode();
   final List<SelectedMedia> _selectedMedia = [];
   final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
-  String? _audioDescriptionPath;
-  Duration _audioDescriptionDuration = Duration.zero;
   String _lastValidPriceText = '';
   String _priceUnit = '/ kg';
-  int _audioResetToken = 0;
   bool _isUploading = false;
   bool _showLocationError = false;
   bool _showPriceError = false;
@@ -127,7 +123,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       widget.onItemAddedDone?.call(_isLiveItem);
 
       final uploaded = await _uploadMedia(s.sellerId);
-      final audioUrl = _isLiveItem ? null : await _uploadAudioDescription(s.sellerId);
       final price = _isLiveItem ? 'OMR ${_formatPriceWithCommas(normPrice!)} $_priceUnit' : '';
       
       await FirebaseFirestore.instance.collection('items').add({
@@ -136,8 +131,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'item_price': price, 'price_number': normPrice, 'price_unit': _isLiveItem ? _priceUnit : '',
         'location': loc, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),
         'media_files': uploaded.map((m) => m.toMap()).toList(),
-        if (audioUrl != null) 'audio_description_url': audioUrl,
-        if (audioUrl != null) 'audio_description_duration_seconds': _audioDescriptionDuration.inSeconds,
         'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: _isLiveItem ? 2 : 720))),
       });
       widget.onItemUploadSuccess?.call(_isLiveItem);
@@ -176,14 +169,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     } catch (_) { return null; }
   }
 
-  Future<String?> _uploadAudioDescription(String uid) async {
-    if (_audioDescriptionPath == null) return null;
-    final f = File(_audioDescriptionPath!);
-    if (!await f.exists()) return null;
-    final ref = FirebaseStorage.instance.ref().child('items/$uid/audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
-    return await (await ref.putFile(f, SettableMetadata(contentType: 'audio/mp4'))).ref.getDownloadURL();
-  }
-
   Future<File> _compressImage(File f) async {
     final path = '${(await getTemporaryDirectory()).path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
     final res = await FlutterImageCompress.compressAndGetFile(f.path, path, minWidth: 1080, minHeight: 1080, quality: 42);
@@ -197,7 +182,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   void _clearForm() {
     _nameController.clear(); _priceController.clear(); _lastValidPriceText = '';
-    setState(() { _selectedMedia.clear(); _priceUnit = '/ kg'; _isTransitPost = false; _audioDescriptionPath = null; _audioResetToken++; });
+    setState(() { _selectedMedia.clear(); _priceUnit = '/ kg'; _isTransitPost = false; });
     _loadDefaultSellerLocation();
   }
 
@@ -257,10 +242,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 20),
           if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
-          if (!_isLiveItem) ...[
-            AudioDescriptionField(isDisabled: _isUploading, resetToken: _audioResetToken, onChanged: (p, d, _) { _audioDescriptionPath = p; _audioDescriptionDuration = d; }),
-            const SizedBox(height: 8),
-          ],
           if (_isLiveItem) ...[
             Row(children: [
               Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, error: _showPriceError ? '' : null)),
@@ -323,8 +304,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       setState(() {
         _isLiveItem = true;
         _isTransitPost = false;
-        _audioDescriptionPath = null;
-        _audioResetToken++;
       });
       widget.onLiveModeChanged?.call(true);
     },

@@ -1,8 +1,5 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 
@@ -19,7 +16,7 @@ class ItemCard extends StatefulWidget {
     required this.item,
     this.isCompact = false,
     this.isLivePage = false,
-    this.liveMarkerTop = -29,
+    this.liveMarkerTop = -36,
     this.uploadedAgoOverride,
   });
 
@@ -34,61 +31,11 @@ class ItemCard extends StatefulWidget {
   State<ItemCard> createState() => _ItemCardState();
 }
 
-final ValueNotifier<String?> _activeFeedAudioItemId = ValueNotifier(null);
-
 class _ItemCardState extends State<ItemCard>
     with AutomaticKeepAliveClientMixin<ItemCard> {
-  late final AudioPlayer _audioPlayer;
-  final ValueNotifier<Duration> _audioDurationNotifier =
-      ValueNotifier(Duration.zero);
-  final ValueNotifier<Duration> _audioPositionNotifier =
-      ValueNotifier(Duration.zero);
-  bool _isAudioPlaying = false;
-  bool _showAudioProgress = false;
-  bool _hasLoadedAudioSource = false;
-  bool _isPreloadingAudio = false;
-  int _audioCompletionToken = 0;
-  StreamSubscription<Duration>? _durationSubscription;
-  StreamSubscription<Duration>? _positionSubscription;
-  StreamSubscription<void>? _completeSubscription;
-
-  String get _audioUrl =>
-      widget.item['audio_description_url']?.toString().trim() ?? '';
-
   @override
   void initState() {
     super.initState();
-    _audioPlayer = AudioPlayer();
-    _activeFeedAudioItemId.addListener(_pauseIfAnotherAudioStarts);
-    _durationSubscription = _audioPlayer.onDurationChanged.listen((duration) {
-      _audioDurationNotifier.value = duration;
-    });
-    _positionSubscription = _audioPlayer.onPositionChanged.listen((position) {
-      _audioPositionNotifier.value = position;
-    });
-    _completeSubscription = _audioPlayer.onPlayerComplete.listen((_) {
-      if (mounted) {
-        final completionToken = ++_audioCompletionToken;
-        _audioPositionNotifier.value = _audioDurationNotifier.value;
-        setState(() {
-          _isAudioPlaying = false;
-          _showAudioProgress = true;
-        });
-        Future<void>.delayed(const Duration(milliseconds: 220), () {
-          if (!mounted ||
-              _isAudioPlaying ||
-              completionToken != _audioCompletionToken) {
-            return;
-          }
-          setState(() {
-            _showAudioProgress = false;
-          });
-          _audioPositionNotifier.value = Duration.zero;
-          _hasLoadedAudioSource = false;
-        });
-      }
-    });
-    
     // Pre-cache first image for detail page
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _precacheDetailMedia();
@@ -113,57 +60,7 @@ class _ItemCardState extends State<ItemCard>
 
   @override
   void dispose() {
-    _activeFeedAudioItemId.removeListener(_pauseIfAnotherAudioStarts);
-    _durationSubscription?.cancel();
-    _positionSubscription?.cancel();
-    _completeSubscription?.cancel();
-    _audioPlayer.dispose();
-    _audioDurationNotifier.dispose();
-    _audioPositionNotifier.dispose();
     super.dispose();
-  }
-
-  Future<void> _pauseIfAnotherAudioStarts() async {
-    if (_activeFeedAudioItemId.value == widget.docId || !_isAudioPlaying) {
-      return;
-    }
-    await _audioPlayer.pause();
-    if (mounted) {
-      setState(() {
-        _isAudioPlaying = false;
-        _showAudioProgress = false;
-      });
-    }
-  }
-
-  Future<void> _toggleAudio() async {
-    if (_audioUrl.isEmpty) {
-      return;
-    }
-    if (_isAudioPlaying) {
-      await _audioPlayer.pause();
-      if (mounted) {
-        setState(() {
-          _isAudioPlaying = false;
-          _showAudioProgress = false;
-        });
-      }
-      return;
-    }
-    _audioCompletionToken++;
-    _activeFeedAudioItemId.value = widget.docId;
-    if (_hasLoadedAudioSource) {
-      await _audioPlayer.resume();
-    } else {
-      await _audioPlayer.play(UrlSource(_audioUrl));
-      _hasLoadedAudioSource = true;
-    }
-    if (mounted) {
-      setState(() {
-        _isAudioPlaying = true;
-        _showAudioProgress = true;
-      });
-    }
   }
 
   @override
@@ -261,32 +158,8 @@ class _ItemCardState extends State<ItemCard>
                         child: _ImageFilledDetails(
                           item: widget.item,
                           isCompact: widget.isCompact,
-                          hasAudio: _audioUrl.isNotEmpty,
-                          isAudioPlaying: _isAudioPlaying,
-                          onAudioTap: _toggleAudio,
                         ),
                       ),
-                      if (_showAudioProgress)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: ValueListenableBuilder<Duration>(
-                            valueListenable: _audioPositionNotifier,
-                            builder: (context, position, _) {
-                              return ValueListenableBuilder<Duration>(
-                                valueListenable: _audioDurationNotifier,
-                                builder: (context, duration, _) {
-                                  return _AudioTimeline(
-                                    position: position,
-                                    duration: duration,
-                                    isCompact: widget.isCompact,
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -407,16 +280,10 @@ class _ImageFilledDetails extends StatelessWidget {
   const _ImageFilledDetails({
     required this.item,
     required this.isCompact,
-    required this.hasAudio,
-    required this.isAudioPlaying,
-    required this.onAudioTap,
   });
 
   final Map<String, dynamic> item;
   final bool isCompact;
-  final bool hasAudio;
-  final bool isAudioPlaying;
-  final VoidCallback onAudioTap;
 
   @override
   Widget build(BuildContext context) {
@@ -433,14 +300,6 @@ class _ImageFilledDetails extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (hasAudio) ...[
-              _AudioIconChip(
-                isPlaying: isAudioPlaying,
-                isCompact: isCompact,
-                onTap: onAudioTap,
-              ),
-              SizedBox(height: isCompact ? 5 : 8),
-            ],
             if (location.isNotEmpty) ...[
               _TextChip(
                 child: _OverlayInfoRow(
@@ -482,72 +341,6 @@ class _ImageFilledDetails extends StatelessWidget {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _AudioIconChip extends StatelessWidget {
-  const _AudioIconChip({
-    required this.isPlaying,
-    required this.isCompact,
-    required this.onTap,
-  });
-
-  final bool isPlaying;
-  final bool isCompact;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final iconSize = isCompact ? 18.0 : 24.0;
-    final touchSize = iconSize * 2.5;
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: onTap,
-      child: SizedBox(
-      width: touchSize,
-      height: touchSize,
-        child: Align(
-          alignment: Alignment.bottomLeft,
-          child: IgnorePointer(
-            child: _TextChip(
-                isCompact: isCompact,
-                child: Icon(
-                  isPlaying ? Icons.pause : Icons.volume_up,
-                  color: const Color(0xFFFF7801),
-                  size: iconSize,
-                ),
-              ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AudioTimeline extends StatelessWidget {
-  const _AudioTimeline({
-    required this.position,
-    required this.duration,
-    required this.isCompact,
-  });
-
-  final Duration position;
-  final Duration duration;
-  final bool isCompact;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = duration.inMilliseconds <= 0 ? 1 : duration.inMilliseconds;
-    final progress = (position.inMilliseconds / total).clamp(0.0, 1.0);
-    return SizedBox(
-      width: double.infinity,
-      child: LinearProgressIndicator(
-        value: progress,
-        minHeight: isCompact ? 3 : 4,
-        backgroundColor: Colors.black.withValues(alpha: 0.16),
-        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF7801)),
       ),
     );
   }
