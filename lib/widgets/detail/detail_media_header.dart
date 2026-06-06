@@ -55,9 +55,12 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   Offset _zoomLocalFocal = Offset.zero;
   MediaItem? _zoomReadyMedia;
   final Set<int> _mediaPointers = <int>{};
+  final Set<String> _pausedVideoUrls = <String>{};
   double _zoomScale = 1;
+  double _inlineVideoScale = 1;
   int _currentIndex = 0;
   bool _isPinchIntent = false;
+  bool _isHoldingMedia = false;
   bool _isZooming = false;
 
   @override
@@ -95,18 +98,38 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
     _mediaPointers.remove(event.pointer);
     if (_mediaPointers.length < 2 && _isPinchIntent && !_isZooming) {
       setState(() => _isPinchIntent = false);
-      widget.onZoomActiveChanged?.call(false);
+      if (!_isHoldingMedia) widget.onZoomActiveChanged?.call(false);
     }
   }
 
   void _handleScaleStart(MediaItem media, ScaleStartDetails details) {
-    if (media.isVideo || _zoomImageUrl(media).isEmpty || _isZooming) {
+    if (_isZooming) {
       return;
     }
+    if (media.isVideo) {
+      if (!_isPinchIntent) {
+        setState(() => _isPinchIntent = true);
+        widget.onZoomActiveChanged?.call(true);
+      }
+      return;
+    }
+    if (_zoomImageUrl(media).isEmpty) return;
     _prepareZoom(media, details.focalPoint);
   }
 
   void _handleScaleUpdate(MediaItem media, ScaleUpdateDetails details) {
+    if (media.isVideo) {
+      final nextScale = details.scale.clamp(1.0, 4.0);
+      if (details.pointerCount < 2 && nextScale <= 1.002) return;
+      if (!_isPinchIntent) widget.onZoomActiveChanged?.call(true);
+      if (mounted) {
+        setState(() {
+          _isPinchIntent = true;
+          _inlineVideoScale = nextScale;
+        });
+      }
+      return;
+    }
     if (_zoomReadyMedia?.url != media.url) {
       return;
     }
@@ -122,10 +145,48 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   }
 
   void _handleScaleEnd(MediaItem media) {
+    if (media.isVideo) {
+      if (!_isHoldingMedia) widget.onZoomActiveChanged?.call(false);
+      if (mounted) {
+        setState(() {
+          _isPinchIntent = false;
+          _inlineVideoScale = 1;
+        });
+      }
+      return;
+    }
     if (_zoomReadyMedia?.url != media.url) {
       return;
     }
     _endZoomInteraction();
+  }
+
+  void _handleMediaHoldStart() {
+    if (_isHoldingMedia) return;
+    setState(() => _isHoldingMedia = true);
+    widget.onZoomActiveChanged?.call(true);
+  }
+
+  void _handleMediaHoldEnd() {
+    if (!_isHoldingMedia) return;
+    setState(() => _isHoldingMedia = false);
+    if (!_isZooming && !_isPinchIntent) widget.onZoomActiveChanged?.call(false);
+  }
+
+  void _handleVideoTap(MediaItem media) {
+    if (!media.isVideo) return;
+    final controller = widget.preloadedVideoControllers[media.url];
+    if (controller == null || !controller.value.isInitialized) return;
+    setState(() {
+      if (controller.value.isPlaying) {
+        controller.pause();
+        _pausedVideoUrls.add(media.url);
+      } else {
+        controller.setVolume(1);
+        controller.play();
+        _pausedVideoUrls.remove(media.url);
+      }
+    });
   }
 
   void _prepareZoom(MediaItem media, Offset focalPoint) {
@@ -239,6 +300,11 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
       onScaleStart: _handleScaleStart,
       onScaleUpdate: _handleScaleUpdate,
       onScaleEnd: _handleScaleEnd,
+      onHoldStart: _handleMediaHoldStart,
+      onHoldEnd: _handleMediaHoldEnd,
+      onVideoTap: _handleVideoTap,
+      videoScale: media.isVideo && index == _currentIndex ? _inlineVideoScale : 1,
+      showVideoPauseIcon: media.isVideo && _pausedVideoUrls.contains(media.url),
     );
   }
 
@@ -246,10 +312,10 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   Widget build(BuildContext context) {
     final trimmedLocation = widget.location.trim();
     // Use screen percentage for media header height
-    final mediaHeight = MediaQuery.sizeOf(context).height * 0.72;
+    final mediaHeight = MediaQuery.sizeOf(context).height * 0.85;
     final imageCount = widget.mediaItems.where((media) => !media.isVideo).length;
     final videoCount = widget.mediaItems.where((media) => media.isVideo).length;
-    final hideChrome = _isZooming;
+    final hideChrome = _isZooming || _isPinchIntent || _isHoldingMedia;
     final lockMediaSwipe = hideChrome || _isPinchIntent;
     return SizedBox(
       height: mediaHeight,
@@ -427,6 +493,11 @@ class _DetailMediaPage extends StatelessWidget {
     required this.onScaleStart,
     required this.onScaleUpdate,
     required this.onScaleEnd,
+    required this.onHoldStart,
+    required this.onHoldEnd,
+    required this.onVideoTap,
+    required this.videoScale,
+    required this.showVideoPauseIcon,
     this.preloadedController,
     this.preloadFuture,
   });
@@ -440,51 +511,81 @@ class _DetailMediaPage extends StatelessWidget {
   final void Function(MediaItem media, ScaleStartDetails details) onScaleStart;
   final void Function(MediaItem media, ScaleUpdateDetails details) onScaleUpdate;
   final void Function(MediaItem media) onScaleEnd;
+  final VoidCallback onHoldStart;
+  final VoidCallback onHoldEnd;
+  final void Function(MediaItem media) onVideoTap;
+  final double videoScale;
+  final bool showVideoPauseIcon;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onScaleStart: media.isVideo
-          ? null
-          : (details) => onScaleStart(media, details),
-      onScaleUpdate: media.isVideo
-          ? null
-          : (details) => onScaleUpdate(media, details),
-      onScaleEnd: media.isVideo ? null : (_) => onScaleEnd(media),
-      child: ClipRRect(
-        borderRadius: BorderRadius.zero,
-        child: media.isVideo
-            ? VideoPreview(
-                url: media.url,
-                thumbnailUrl: media.thumbnailUrl,
-                fit: BoxFit.cover,
-                controller: preloadedController,
-                initializeFuture: preloadFuture,
-                autoPlay: autoPlay,
-                pauseSignal: pauseSignal,
-                showPlayButton: false,
-                playIconSize: 72,
-              )
-            : CachedNetworkImage(
-                imageUrl: media.url,
-                width: double.infinity,
-                height: height,
-                memCacheWidth: 1200,
-                maxWidthDiskCache: 1600,
-                fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 1),
-                fadeOutDuration: const Duration(milliseconds: 1),
-                placeholder: (context, url) => const MediaSkeletonPlaceholder(),
-                errorWidget: (context, url, error) => Container(
-                  color: const Color(0xFFDCF8C6),
-                  child: const Icon(
-                    Icons.broken_image,
-                    size: 50,
-                    color: Color(0xFF075E54),
+      onTap: media.isVideo ? () => onVideoTap(media) : null,
+      onLongPressStart: (_) => onHoldStart(),
+      onLongPressEnd: (_) => onHoldEnd(),
+      onLongPressCancel: onHoldEnd,
+      onScaleStart: (details) => onScaleStart(media, details),
+      onScaleUpdate: (details) => onScaleUpdate(media, details),
+      onScaleEnd: (_) => onScaleEnd(media),
+      child: ColoredBox(
+        color: Colors.black,
+        child: ClipRRect(
+          borderRadius: BorderRadius.zero,
+          child: Stack(
+            fit: StackFit.expand,
+            alignment: Alignment.center,
+            children: [
+              media.isVideo
+                  ? Transform.scale(
+                      scale: videoScale,
+                      child: VideoPreview(
+                        url: media.url,
+                        thumbnailUrl: media.thumbnailUrl,
+                        fit: BoxFit.contain,
+                        controller: preloadedController,
+                        initializeFuture: preloadFuture,
+                        autoPlay: autoPlay,
+                        pauseSignal: pauseSignal,
+                        showPlayButton: false,
+                        playIconSize: 72,
+                      ),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: media.url,
+                      width: double.infinity,
+                      height: height,
+                      memCacheWidth: 1200,
+                      maxWidthDiskCache: 1600,
+                      fit: BoxFit.contain,
+                      fadeInDuration: const Duration(milliseconds: 1),
+                      fadeOutDuration: const Duration(milliseconds: 1),
+                      placeholder: (context, url) => const MediaSkeletonPlaceholder(),
+                      errorWidget: (context, url, error) => Container(
+                        color: const Color(0xFFDCF8C6),
+                        child: const Icon(
+                          Icons.broken_image,
+                          size: 50,
+                          color: Color(0xFF075E54),
+                        ),
+                      ),
+                    ),
+              if (showVideoPauseIcon)
+                const IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(14),
+                      child: Icon(Icons.pause, color: Colors.white, size: 44),
+                    ),
                   ),
                 ),
-              ),
+            ],
+          ),
+        ),
       ),
     );
   }
