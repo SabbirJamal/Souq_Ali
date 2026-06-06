@@ -52,14 +52,14 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _showItemAddedTab(bool isLiveItem) {
     setState(() {
       _currentIndex = isLiveItem ? 1 : 0;
-      if (!isLiveItem) {
-        _feedRefreshTick++;
-      } else {
-        _pageCache[1] = null;
-      }
     });
     _setChromeVisible(true);
-    if (!isLiveItem) {
+  }
+
+  void _handleItemUploadSuccess(bool isLiveItem) {
+    if (isLiveItem) {
+      setState(() => _pageCache[1] = null);
+    } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _feedKey.currentState?.reloadItems();
       });
@@ -253,6 +253,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           ? SellerAddItemTab(
               key: _addItemKey,
               onItemAddedDone: _showItemAddedTab,
+              onItemUploadSuccess: _handleItemUploadSuccess,
               onLiveModeChanged: _handleAddLiveModeChanged,
             )
           : const _SellerAccessPrompt(),

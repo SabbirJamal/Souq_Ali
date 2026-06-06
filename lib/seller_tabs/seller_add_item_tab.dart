@@ -21,8 +21,15 @@ import '../widgets/item_edit/edit_widgets.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerAddItemTab extends StatefulWidget {
-  const SellerAddItemTab({super.key, this.onItemAddedDone, this.onLiveModeChanged, this.isLive = false});
+  const SellerAddItemTab({
+    super.key,
+    this.onItemAddedDone,
+    this.onItemUploadSuccess,
+    this.onLiveModeChanged,
+    this.isLive = false,
+  });
   final ValueChanged<bool>? onItemAddedDone;
+  final ValueChanged<bool>? onItemUploadSuccess;
   final ValueChanged<bool>? onLiveModeChanged;
   final bool isLive;
   @override
@@ -135,6 +142,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         if (audioUrl != null) 'audio_description_duration_seconds': _audioDescriptionDuration.inSeconds,
         'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: _isLiveItem ? 2 : 720))),
       });
+      widget.onItemUploadSuccess?.call(_isLiveItem);
       UploadStatusManager.success();
       if (mounted) _clearForm();
     } catch (e) { UploadStatusManager.error('Upload failed: $e'); }

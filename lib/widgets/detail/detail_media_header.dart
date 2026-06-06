@@ -87,6 +87,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
     _mediaPointers.add(event.pointer);
     if (_mediaPointers.length >= 2 && !_isPinchIntent) {
       setState(() => _isPinchIntent = true);
+      widget.onZoomActiveChanged?.call(true);
     }
   }
 
@@ -94,6 +95,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
     _mediaPointers.remove(event.pointer);
     if (_mediaPointers.length < 2 && _isPinchIntent && !_isZooming) {
       setState(() => _isPinchIntent = false);
+      widget.onZoomActiveChanged?.call(false);
     }
   }
 
@@ -111,7 +113,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
     _zoomCurrentFocal = details.focalPoint;
     _zoomScale = details.scale.clamp(1.0, 4.0);
     if (!_isZooming) {
-      if (details.scale <= 1.01) {
+      if (details.pointerCount < 2 || details.scale <= 1.002) {
         return;
       }
       _startZoom(media);
