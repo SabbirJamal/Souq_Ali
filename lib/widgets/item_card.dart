@@ -289,7 +289,8 @@ class _ImageFilledDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final itemName = item['item_name']?.toString().trim() ?? '';
     final isTransit = item['is_transit'] == true;
-    final location = item['location']?.toString().trim() ?? '';
+    final rawLocation = item['location']?.toString().trim() ?? '';
+    final location = _displayLocation(rawLocation, isTransit);
     final price = isTransit ? '' : formatPrice(item['item_price']);
 
     return IntrinsicWidth(
@@ -304,6 +305,7 @@ class _ImageFilledDetails extends StatelessWidget {
               _TextChip(
                 child: _OverlayInfoRow(
                   text: location,
+                  isTransit: isTransit,
                   isCompact: isCompact,
                 ),
                 isCompact: isCompact,
@@ -344,6 +346,14 @@ class _ImageFilledDetails extends StatelessWidget {
       ),
     );
   }
+
+  String _displayLocation(String location, bool isTransit) {
+    if (!isTransit) return location;
+    final text = location
+        .replaceFirst(RegExp(r'^[🚚📍\s]+'), '')
+        .trim();
+    return text.isEmpty ? 'Transit' : text;
+  }
 }
 
 class _TextChip extends StatelessWidget {
@@ -369,9 +379,14 @@ class _TextChip extends StatelessWidget {
 }
 
 class _OverlayInfoRow extends StatelessWidget {
-  const _OverlayInfoRow({required this.text, required this.isCompact});
+  const _OverlayInfoRow({
+    required this.text,
+    required this.isTransit,
+    required this.isCompact,
+  });
 
   final String text;
+  final bool isTransit;
   final bool isCompact;
 
   @override
@@ -379,7 +394,7 @@ class _OverlayInfoRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('📍', style: TextStyle(fontSize: isCompact ? 13 : 20)),
+        Text(isTransit ? '🚚' : '📍', style: TextStyle(fontSize: isCompact ? 13 : 20)),
         SizedBox(width: isCompact ? 4 : 8),
         Flexible(
           child: Text(

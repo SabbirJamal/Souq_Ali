@@ -41,8 +41,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   String _lastValidPriceText = '';
   late String _priceUnit;
+  String _sellerDefaultLocation = '';
   bool _isSaving = false;
   bool _showLocationError = false;
+  bool _showPriceError = false;
   late final bool _isLiveItem;
   bool _isTransitPost = false;
 
@@ -50,18 +52,23 @@ class _ItemEditPageState extends State<ItemEditPage> {
   void initState() {
     super.initState();
     _isLiveItem = widget.itemData['status']?.toString().toLowerCase() == 'live';
-    _isTransitPost = !_isLiveItem && widget.itemData['is_transit'] == true;
+    final existingLocation = widget.itemData['location']?.toString().trim() ?? '';
+    _isTransitPost =
+        !_isLiveItem &&
+        (widget.itemData['is_transit'] == true ||
+            existingLocation.toLowerCase().contains('transit'));
     _nameController = TextEditingController(text: widget.itemData['item_name'] ?? '');
     final existingPrice = widget.itemData['price_number']?.toString() ?? '';
     _priceController = TextEditingController(
       text: isZeroPrice(existingPrice) ? '' : _formatEditingPrice(existingPrice),
     );
     _lastValidPriceText = _priceController.text;
-    _locationController = TextEditingController(text: widget.itemData['location'] ?? '');
+    _locationController = TextEditingController(text: existingLocation);
     _media.addAll(mediaItemsFromMap(widget.itemData).map(EditableMedia.existing));
     _priceUnit = _priceUnits.contains(widget.itemData['price_unit'])
         ? widget.itemData['price_unit'].toString()
         : '/ kg';
+    _loadSellerDefaultLocation();
   }
 
   @override
@@ -179,12 +186,26 @@ class _ItemEditPageState extends State<ItemEditPage> {
     });
   }
 
+  Future<void> _loadSellerDefaultLocation() async {
+    final sellerUid = widget.itemData['seller_uid']?.toString();
+    if (sellerUid == null || sellerUid.isEmpty) return;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('sellers').doc(sellerUid).get();
+      final location = doc.data()?['location']?.toString().trim() ?? '';
+      if (!mounted || location.isEmpty) return;
+      _sellerDefaultLocation = location;
+      if (!_isTransitPost && _locationController.text.trim().isEmpty) {
+        setState(() => _locationController.text = location);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _save() async {
     final isLiveItem = _isLiveItem;
     final isTransitPost = !isLiveItem && _isTransitPost;
     final name = _nameController.text.trim();
-    final price = isLiveItem && _priceController.text.trim().isEmpty ? '0' : _priceController.text.trim();
-    final location = isTransitPost ? 'TRANSIT' : _locationController.text.trim();
+    final price = _priceController.text.trim();
+    final location = isTransitPost ? '🚚 Transit' : _locationController.text.trim();
 
     if (!isTransitPost && location.isEmpty) {
       setState(() => _showLocationError = true);
@@ -192,7 +213,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     }
     final normalizedPrice = isLiveItem ? _normalizePrice(price) : '';
     if (isLiveItem && (normalizedPrice == null || double.parse(normalizedPrice) <= 0)) {
-      _showMessage('Valid price is required for live items');
+      setState(() => _showPriceError = true);
       _priceFocusNode.requestFocus();
       return;
     }
@@ -380,7 +401,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   if (_isLiveItem) ...[
                     Row(
                       children: [
-                        Expanded(flex: 3, child: _field(_priceController, 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () => _priceController.text == '0' ? _setPriceText('') : null, onChanged: _handlePriceChanged)),
+                        Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, errorText: _showPriceError ? '' : null)),
                         const SizedBox(width: 10),
                         Expanded(flex: 2, child: DropdownButtonFormField<String>(
                           value: _priceUnit,
@@ -397,10 +418,13 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   const SizedBox(height: 24),
                   FractionallySizedBox(
                     widthFactor: 0.75,
-                    child: ElevatedButton(
-                      onPressed: _isSaving ? null : _save,
-                      style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                      child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text('Update', style: TextStyle(fontSize: 16)),
+                    child: SizedBox(
+                      height: 40,
+                      child: ElevatedButton(
+                        onPressed: _isSaving ? null : _save,
+                        style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                        child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : const Text('Update', style: TextStyle(fontSize: 16)),
+                      ),
                     ),
                   ),
                 ],
@@ -412,14 +436,20 @@ class _ItemEditPageState extends State<ItemEditPage> {
     );
   }
 
-  Widget _buildTransitToggle() => Container(
-    height: 58,
-    decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(12)),
-    child: Row(children: [
-      Expanded(child: TransitStatusButton(text: 'IN STOCK', isSelected: !_isTransitPost, onTap: () => setState(() { _isTransitPost = false; _locationController.clear(); }))),
-      const VerticalDivider(width: 1),
-      Expanded(child: TransitStatusButton(text: 'TRANSIT', isSelected: _isTransitPost, onTap: () => setState(() { _isTransitPost = true; _locationController.text = 'TRANSIT'; })))
-    ]),
+  Widget _buildTransitToggle() => _EditSegmentedSelector(
+    leftText: 'IN STOCK',
+    rightText: '🚚 TRANSIT',
+    isRightSelected: _isTransitPost,
+    leftSelectedColor: const Color(0xFF001341),
+    rightSelectedColor: const Color(0xFFFF7801),
+    onLeftTap: _isSaving ? null : () => setState(() {
+      _isTransitPost = false;
+      _locationController.text = _sellerDefaultLocation;
+    }),
+    onRightTap: _isSaving ? null : () => setState(() {
+      _isTransitPost = true;
+      _showLocationError = false;
+    }),
   );
 
   Widget _buildMediaEditor() {
@@ -447,4 +477,92 @@ class _ItemEditPageState extends State<ItemEditPage> {
     controller: ctrl, focusNode: focusNode, readOnly: _isSaving, maxLength: maxLength, keyboardType: keyboardType, inputFormatters: inputFormatters, onTap: onTap, onChanged: onChanged,
     decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefixIconWidget, errorText: errorText, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
   );
+}
+
+class _EditSegmentedSelector extends StatelessWidget {
+  const _EditSegmentedSelector({
+    required this.leftText,
+    required this.rightText,
+    required this.isRightSelected,
+    required this.leftSelectedColor,
+    required this.rightSelectedColor,
+    required this.onLeftTap,
+    required this.onRightTap,
+  });
+
+  final String leftText;
+  final String rightText;
+  final bool isRightSelected;
+  final Color leftSelectedColor;
+  final Color rightSelectedColor;
+  final VoidCallback? onLeftTap;
+  final VoidCallback? onRightTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _EditSegmentButton(
+              text: leftText,
+              isSelected: !isRightSelected,
+              selectedColor: leftSelectedColor,
+              onTap: onLeftTap,
+            ),
+          ),
+          Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+          Expanded(
+            child: _EditSegmentButton(
+              text: rightText,
+              isSelected: isRightSelected,
+              selectedColor: rightSelectedColor,
+              onTap: onRightTap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditSegmentButton extends StatelessWidget {
+  const _EditSegmentButton({
+    required this.text,
+    required this.isSelected,
+    required this.selectedColor,
+    required this.onTap,
+  });
+
+  final String text;
+  final bool isSelected;
+  final Color selectedColor;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? selectedColor : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

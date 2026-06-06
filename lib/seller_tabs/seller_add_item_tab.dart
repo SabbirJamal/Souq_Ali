@@ -276,10 +276,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           const SizedBox(height: 24),
           FractionallySizedBox(
             widthFactor: 0.75,
-            child: ElevatedButton(
-              onPressed: _isUploading ? null : _addItem,
-              style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: _isUploading ? const CircularProgressIndicator(color: Colors.white) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+            child: SizedBox(
+              height: 40,
+              child: ElevatedButton(
+                onPressed: _isUploading ? null : _addItem,
+                style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                child: _isUploading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+              ),
             ),
           ),
             ])),
@@ -310,7 +313,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   );
 
   Widget _buildTransitToggle() => _AddItemSegmentedSelector(
-    leftText: 'IN SITE',
+    leftText: 'IN STOCK',
     rightText: '🚚 TRANSIT',
     isRightSelected: _isTransitPost,
     leftSelectedColor: const Color(0xFF001341),
