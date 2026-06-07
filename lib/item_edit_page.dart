@@ -504,7 +504,9 @@ class _EditSegmentedSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
       height: 40,
       decoration: BoxDecoration(
         color: Colors.white,
@@ -519,6 +521,7 @@ class _EditSegmentedSelector extends StatelessWidget {
               isSelected: !isRightSelected,
               selectedColor: leftSelectedColor,
               onTap: onLeftTap,
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
             ),
           ),
           Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
@@ -528,9 +531,11 @@ class _EditSegmentedSelector extends StatelessWidget {
               isSelected: isRightSelected,
               selectedColor: rightSelectedColor,
               onTap: onRightTap,
+              borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -542,19 +547,23 @@ class _EditSegmentButton extends StatelessWidget {
     required this.isSelected,
     required this.selectedColor,
     required this.onTap,
+    required this.borderRadius,
   });
 
   final String text;
   final bool isSelected;
   final Color selectedColor;
   final VoidCallback? onTap;
+  final BorderRadius borderRadius;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: isSelected ? selectedColor : Colors.transparent,
+      borderRadius: borderRadius,
       child: InkWell(
         onTap: onTap,
+        borderRadius: borderRadius,
         child: Center(
           child: Text(
             text,

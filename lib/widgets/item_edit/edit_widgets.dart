@@ -6,42 +6,6 @@ import 'package:image_picker/image_picker.dart';
 
 import '../media_carousel.dart';
 
-class TransitStatusButton extends StatelessWidget {
-  const TransitStatusButton({
-    super.key,
-    required this.text,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final String text;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: isSelected ? const Color(0xFFFF7801) : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Center(
-          child: Text(
-            text,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class EditableMediaTile extends StatelessWidget {
   const EditableMediaTile({
     super.key,

@@ -6,42 +6,6 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'widgets/item_card.dart';
 
-class SellerProfileTab extends StatelessWidget {
-  const SellerProfileTab({
-    super.key,
-    required this.onSettings,
-    required this.onLogout,
-  });
-
-  final VoidCallback onSettings;
-  final VoidCallback onLogout;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<SellerSession?>(
-      future: SellerSession.current(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final session = snapshot.data;
-        if (session == null) {
-          return const Center(child: Text('Please login again'));
-        }
-        return _SellerProfileBody(
-          sellerId: session.sellerId,
-          sellerPhone: session.phoneNumber,
-          fallbackName: session.name,
-          isOwnProfile: true,
-          onSettings: onSettings,
-          onLogout: onLogout,
-          onBack: null,
-        );
-      },
-    );
-  }
-}
-
 class SellerProfilePage extends StatelessWidget {
   const SellerProfilePage({
     super.key,

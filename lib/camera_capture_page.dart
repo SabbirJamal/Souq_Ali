@@ -186,11 +186,20 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   void _setImmersive(bool active) {
     if (active) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: [SystemUiOverlay.top]);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.transparent));
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        statusBarColor: Colors.black,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ));
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarColor: Colors.black));
+      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+        statusBarColor: Colors.black,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ));
     }
   }
 
@@ -414,12 +423,22 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   Widget _buildCameraShell(Widget preview) => Scaffold(
     backgroundColor: Colors.black,
-    body: Stack(
+    body: Column(
       children: [
-        Positioned.fill(child: preview),
-        if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
-        _buildTopBar(),
-        _buildBottomControls(),
+        SizedBox(
+          height: MediaQuery.viewPaddingOf(context).top,
+          child: const ColoredBox(color: Colors.black),
+        ),
+        Expanded(
+          child: Stack(
+            children: [
+              Positioned.fill(child: preview),
+              if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
+              _buildTopBar(),
+              _buildBottomControls(),
+            ],
+          ),
+        ),
       ],
     ),
   );
@@ -444,13 +463,13 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   Widget _buildTopBar() => Positioned(
     top: 0, left: 0, right: 0,
-    child: SafeArea(child: Padding(
+    child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         _CircleBtn(icon: Icons.close, onTap: () => Navigator.pop(context)),
         if (_isRec) _buildRecTimer() else _CircleBtn(icon: _isFlash ? Icons.flash_on : Icons.flash_off, onTap: _toggleFlash),
       ]),
-    )),
+    ),
   );
 
   Widget _buildRecTimer() => Container(
@@ -465,7 +484,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   Widget _buildBottomControls() => Positioned(
     bottom: 0, left: 0, right: 0,
-    child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    child: SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 8),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
       SizedBox(
         height: _recent.isEmpty ? 0 : 94,
         child: Visibility(
@@ -493,7 +515,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         ),
       ),
       const SizedBox(height: 16),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20), child: Row(
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14), child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           _CircleBtn(icon: Icons.photo_library, onTap: () => Navigator.pop(context, CameraCaptureAction.openGallery)),
@@ -508,7 +530,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         maintainState: true,
         child: const Text('Hold for video, tap for photo', style: TextStyle(color: Colors.white70, fontSize: 12)),
       ),
-      const SizedBox(height: 10),
+      const SizedBox(height: 6),
     ])),
   );
 
@@ -842,5 +864,3 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
     );
   }
 }
-
-extension on DateTime { int get msSinceEpoch => millisecondsSinceEpoch; }

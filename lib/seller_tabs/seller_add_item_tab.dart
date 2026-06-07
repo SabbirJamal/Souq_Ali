@@ -245,7 +245,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 20),
+          _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 10),
           if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
           if (_isLiveItem) ...[
@@ -333,6 +333,21 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Widget _buildMediaEditor() {
     final count = _selectedMedia.length;
+    if (count == 0) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: IconButton.filled(
+          onPressed: _openCamera,
+          icon: const Icon(Icons.add_a_photo, size: 32),
+          style: IconButton.styleFrom(
+            fixedSize: const Size(76, 76),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+          ),
+        ),
+      );
+    }
     return GridView.builder(
       shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
       itemCount: count + 1,
@@ -385,7 +400,9 @@ class _AddItemSegmentedSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
       height: 40,
       decoration: BoxDecoration(
         color: Colors.white,
@@ -400,6 +417,7 @@ class _AddItemSegmentedSelector extends StatelessWidget {
               isSelected: !isRightSelected,
               selectedColor: leftSelectedColor,
               onTap: onLeftTap,
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
             ),
           ),
           Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
@@ -409,9 +427,11 @@ class _AddItemSegmentedSelector extends StatelessWidget {
               isSelected: isRightSelected,
               selectedColor: rightSelectedColor,
               onTap: onRightTap,
+              borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -423,19 +443,23 @@ class _AddItemSegmentButton extends StatelessWidget {
     required this.isSelected,
     required this.selectedColor,
     required this.onTap,
+    required this.borderRadius,
   });
 
   final String text;
   final bool isSelected;
   final Color selectedColor;
   final VoidCallback? onTap;
+  final BorderRadius borderRadius;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: isSelected ? selectedColor : Colors.transparent,
+      borderRadius: borderRadius,
       child: InkWell(
         onTap: onTap,
+        borderRadius: borderRadius,
         child: Center(
           child: Text(
             text,

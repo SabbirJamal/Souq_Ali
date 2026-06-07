@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:lottie/lottie.dart';
 
 import 'seller_tabs/seller_add_item_tab.dart';
 import 'seller_tabs/seller_feed_tab.dart';
@@ -348,33 +347,15 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 bottom: MediaQuery.viewPaddingOf(context).bottom,
               ),
               child: SizedBox(
-                height: 48, // Ultra-slim height
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final tabWidth = constraints.maxWidth / 5;
-                    const liveIconWidth = 61.0;
-                    
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        // Custom Row instead of BottomNavigationBar to avoid rigid constraints and overflows
-                        Row(
-                          children: [
-                            _buildTabItem(0, Icons.home, 33, 'Home'),
-                            _buildTabItem(1, null, 29, 'Live'), // Lottie placeholder
-                            _buildTabItem(2, Icons.add_circle_outline, 29, 'Add'),
-                            _buildTabItem(3, Icons.person, 29, 'Listings'),
-                            _buildTabItem(4, Icons.settings, 29, 'Settings'),
-                          ],
-                        ),
-                        Positioned(
-                          left: tabWidth + (tabWidth - liveIconWidth) / 2 - 8,
-                          top: -4, // Slightly adjusted for ultra-slim bar
-                          child: const IgnorePointer(child: _LiveNavIcon()),
-                        ),
-                      ],
-                    );
-                  },
+                height: 48,
+                child: Row(
+                  children: [
+                    _buildTabItem(0, Icons.home, 33, 'Home'),
+                    _buildTabItem(1, null, 29, 'Live'),
+                    _buildTabItem(2, Icons.add_circle_outline, 29, 'Add'),
+                    _buildTabItem(3, Icons.person, 29, 'Listings'),
+                    _buildTabItem(4, Icons.settings, 29, 'Settings'),
+                  ],
                 ),
               ),
             ),
@@ -387,41 +368,41 @@ class _SellerHomePageState extends State<SellerHomePage> {
   Widget _buildTabItem(int index, IconData? icon, double size, String label) {
     final isSelected = _currentIndex == index;
     return Expanded(
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _onTabTapped(index),
-          splashColor: Colors.black12,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 6), // Shifted down as discussed
-            child: icon == null 
-                ? const SizedBox.shrink() // Space for Lottie
-                : Icon(
-                    icon,
-                    size: size,
-                    color: isSelected ? const Color(0xFFFF7801) : Colors.grey,
-                  ),
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkResponse(
+            onTap: () => _onTabTapped(index),
+            containedInkWell: true,
+            customBorder: const CircleBorder(),
+            radius: 36,
+            splashColor: Colors.black12,
+            highlightColor: Colors.black12,
+            child: SizedBox(
+              width: 68,
+              height: 48,
+              child: Center(
+                child: icon == null
+                    ? const Text(
+                        'LIVE',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xFF9B0000),
+                          fontSize: 19,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                        ),
+                      )
+                    : Icon(
+                        icon,
+                        size: size,
+                        color: isSelected ? const Color(0xFFFF7801) : Colors.grey,
+                      ),
+              ),
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LiveNavIcon extends StatelessWidget {
-  const _LiveNavIcon();
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: SizedBox(
-        width: 78,
-        height: 54,
-        child: Lottie.asset(
-          'assets/lottie/live3.json',
-          fit: BoxFit.contain,
-          repeat: true,
-          animate: true,
         ),
       ),
     );

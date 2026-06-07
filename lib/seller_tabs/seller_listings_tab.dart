@@ -544,15 +544,18 @@ class _ListingsStatusTabs extends StatelessWidget {
     return Container(
       color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
-      child: Container(
-        height: 40,
-        decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black.withValues(alpha: 0.18)), borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          children: [
-            Expanded(child: _ListingsStatusTabButton(text: 'POSTINGS', isSelected: selectedStatus == 'post', selectedColor: const Color(0xFF001341), onTap: () => onChanged('post'))),
-            Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
-            Expanded(child: _ListingsStatusTabButton(text: 'LIVE', isSelected: selectedStatus == 'live', selectedColor: const Color(0xFFFF7801), onTap: () => onChanged('live'))),
-          ],
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 40,
+          decoration: BoxDecoration(color: Colors.white, border: Border.all(color: Colors.black.withValues(alpha: 0.18)), borderRadius: BorderRadius.circular(8)),
+          child: Row(
+            children: [
+              Expanded(child: _ListingsStatusTabButton(text: 'POSTINGS', isSelected: selectedStatus == 'post', selectedColor: const Color(0xFF001341), onTap: () => onChanged('post'), borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)))),
+              Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+              Expanded(child: _ListingsStatusTabButton(text: 'LIVE', isSelected: selectedStatus == 'live', selectedColor: const Color(0xFFFF7801), onTap: () => onChanged('live'), borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)))),
+            ],
+          ),
         ),
       ),
     );
@@ -560,19 +563,22 @@ class _ListingsStatusTabs extends StatelessWidget {
 }
 
 class _ListingsStatusTabButton extends StatelessWidget {
-  const _ListingsStatusTabButton({required this.text, required this.isSelected, required this.selectedColor, required this.onTap});
+  const _ListingsStatusTabButton({required this.text, required this.isSelected, required this.selectedColor, required this.onTap, required this.borderRadius});
 
   final String text;
   final bool isSelected;
   final Color selectedColor;
   final VoidCallback onTap;
+  final BorderRadius borderRadius;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: isSelected ? selectedColor : Colors.transparent,
+      borderRadius: borderRadius,
       child: InkWell(
         onTap: onTap,
+        borderRadius: borderRadius,
         child: Center(child: Text(text, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0))),
       ),
     );

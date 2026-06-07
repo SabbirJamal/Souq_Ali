@@ -49,7 +49,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   Timer? _seenFlushTimer;
   String? _viewerId;
   String? _viewerType;
-  bool _isLoadingSeenItems = true;
   final DateTime _openedAt = DateTime.now();
   int _refreshTick = 0;
 
@@ -151,7 +150,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _viewerType = viewer?.type;
     final viewerId = _viewerId;
     if (viewerId == null || viewerId.isEmpty) {
-      setState(() => _isLoadingSeenItems = false);
       return;
     }
 
@@ -185,10 +183,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _seenItemIds
           ..clear()
           ..addAll(_rankedSeenItemIds);
-        _isLoadingSeenItems = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _isLoadingSeenItems = false);
+      return;
     }
   }
 
