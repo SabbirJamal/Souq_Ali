@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'seller_home_page.dart';
 import 'seller_session.dart';
+import 'seller_session_guard.dart';
 import 'widgets/app_toast.dart';
 
 class SellerRegisterPage extends StatefulWidget {
@@ -54,11 +55,12 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
-      await SellerSession.save(
+      final session = await SellerSession.save(
         sellerId: phoneNumber,
         name: name,
         phoneNumber: phoneNumber,
       );
+      await SellerSessionGuard.writeActiveSession(session);
 
       if (!mounted) {
         return;

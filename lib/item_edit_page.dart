@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
+import 'seller_session_guard.dart';
 import 'utils/formatters.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/app_toast.dart';
@@ -17,10 +18,11 @@ import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
 
 class ItemEditPage extends StatefulWidget {
-  const ItemEditPage({super.key, required this.docId, required this.itemData});
+  const ItemEditPage({super.key, required this.docId, required this.itemData, this.onSessionInvalid});
 
   final String docId;
   final Map<String, dynamic> itemData;
+  final VoidCallback? onSessionInvalid;
 
   @override
   State<ItemEditPage> createState() => _ItemEditPageState();
@@ -226,6 +228,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         _showMessage('Please login again');
         return;
       }
+      if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
 
       final newEntries = _media.where((m) => !m.isExisting).toList();
       final uploadedMedia = await _uploadNewMedia(sellerUid, newEntries);

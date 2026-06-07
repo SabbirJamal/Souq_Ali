@@ -4,15 +4,17 @@ import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
 import '../seller_session.dart';
+import '../seller_session_guard.dart';
 import '../utils/formatters.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerListingsTab extends StatefulWidget {
-  const SellerListingsTab({super.key, this.refreshTick = 0});
+  const SellerListingsTab({super.key, this.refreshTick = 0, this.onSessionInvalid});
 
   final int refreshTick;
+  final VoidCallback? onSessionInvalid;
 
   @override
   State<SellerListingsTab> createState() => _SellerListingsTabState();
@@ -246,6 +248,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   Future<void> _deleteItem(BuildContext context, String docId, Map<String, dynamic> item) async {
+    if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
     await _deleteItemStorageFiles(item);
     await _deleteSeenRecord(docId);
     await FirebaseFirestore.instance.collection('items').doc(docId).delete();
@@ -332,6 +335,8 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   Future<void> _confirmRenew(BuildContext context, String docId, Map<String, dynamic> item) async {
+    if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
+    if (!context.mounted) return;
     final result = await showDialog<_RenewDialogResult>(
       context: context,
       builder: (_) => _RenewDialog(initialPrice: _renewPriceText(item), initialUnit: _renewPriceUnit(item), priceUnits: _priceUnits, normalizePrice: _normalizeRenewPrice),
@@ -355,8 +360,10 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     AppToast.show(this.context, 'Live item renewed');
   }
 
-  void _openEdit(BuildContext context, String docId, Map<String, dynamic> item) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => ItemEditPage(docId: docId, itemData: item)));
+  Future<void> _openEdit(BuildContext context, String docId, Map<String, dynamic> item) async {
+    if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
+    if (!context.mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => ItemEditPage(docId: docId, itemData: item, onSessionInvalid: widget.onSessionInvalid)));
   }
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _getFilteredDocs(DateTime now) {

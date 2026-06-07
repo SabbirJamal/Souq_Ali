@@ -12,6 +12,7 @@ import 'package:video_compress/video_compress.dart';
 
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
+import '../seller_session_guard.dart';
 import '../upload_status_manager.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_add/media_picker_sheet.dart';
@@ -24,11 +25,13 @@ class SellerAddItemTab extends StatefulWidget {
     this.onItemAddedDone,
     this.onItemUploadSuccess,
     this.onLiveModeChanged,
+    this.onSessionInvalid,
     this.isLive = false,
   });
   final ValueChanged<bool>? onItemAddedDone;
   final ValueChanged<bool>? onItemUploadSuccess;
   final ValueChanged<bool>? onLiveModeChanged;
+  final VoidCallback? onSessionInvalid;
   final bool isLive;
   @override
   SellerAddItemTabState createState() => SellerAddItemTabState();
@@ -120,6 +123,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     try {
       final s = await SellerSession.current();
       if (s == null) return;
+      if (!mounted) return;
+      if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
       UploadStatusManager.uploading();
       widget.onItemAddedDone?.call(_isLiveItem);
 

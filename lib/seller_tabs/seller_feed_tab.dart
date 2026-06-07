@@ -362,7 +362,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
             child: CustomScrollView(
-              key: PageStorageKey('seller-feed-scroll-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
+              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
               controller: _scrollController,
               cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
@@ -382,11 +382,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                         ? SliverGrid.builder(
                             itemCount: docs.length,
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                            itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isCompact: true, isLivePage: isLivePage)),
+                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isCompact: true, isLivePage: isLivePage)),
                           )
                         : SliverList.builder(
                             itemCount: docs.length,
-                            itemBuilder: (context, index) => KeyedSubtree(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isLivePage: isLivePage)),
+                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isLivePage: isLivePage)),
                           ),
                   ),
                   if (_isLoading && _allDocs.isNotEmpty)
@@ -472,6 +472,27 @@ class _FloatingFeedSearchControl extends StatelessWidget {
               ),
       ),
     );
+  }
+}
+
+class _KeepAliveItem extends StatefulWidget {
+  const _KeepAliveItem({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveItem> createState() => _KeepAliveItemState();
+}
+
+class _KeepAliveItemState extends State<_KeepAliveItem>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 

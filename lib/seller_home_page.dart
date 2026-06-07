@@ -9,6 +9,7 @@ import 'seller_tabs/seller_listings_tab.dart';
 import 'seller_tabs/seller_live_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_session.dart';
+import 'seller_session_guard.dart';
 import 'widgets/app_toast.dart';
 
 class SellerHomePage extends StatefulWidget {
@@ -78,6 +79,14 @@ class _SellerHomePageState extends State<SellerHomePage> {
     setState(() => _currentIndex = 4);
   }
 
+  void _handleInvalidSellerSession() {
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
+      (route) => false,
+    );
+  }
+
   void _showSellerGate() {
     setState(() {
       _currentIndex = 4;
@@ -85,7 +94,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
     _setChromeVisible(true);
   }
 
-  void _onTabTapped(int index) {
+  Future<void> _onTabTapped(int index) async {
     if (index == 0 && _currentIndex == 0) {
       _feedKey.currentState?.scrollToTop();
       _setChromeVisible(true);
@@ -94,12 +103,17 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
     if (index == 4) {
       if (widget.isSellerMode) {
+        if (!await SellerSessionGuard.ensureActive(context, onInvalid: _handleInvalidSellerSession)) return;
         _showSettingsTab();
         _setChromeVisible(true);
       } else {
         _showSellerGate();
       }
       return;
+    }
+
+    if (widget.isSellerMode && (index == 2 || index == 3)) {
+      if (!await SellerSessionGuard.ensureActive(context, onInvalid: _handleInvalidSellerSession)) return;
     }
 
     setState(() {
@@ -237,10 +251,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
               onItemAddedDone: _showItemAddedTab,
               onItemUploadSuccess: _handleItemUploadSuccess,
               onLiveModeChanged: _handleAddLiveModeChanged,
+              onSessionInvalid: _handleInvalidSellerSession,
             )
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
-          ? SellerListingsTab(refreshTick: _listingsRefreshTick)
+          ? SellerListingsTab(refreshTick: _listingsRefreshTick, onSessionInvalid: _handleInvalidSellerSession)
           : const _SellerAccessPrompt(),
       4 => widget.isSellerMode
           ? SellerSettingsTab(onLogout: _confirmLogout)
@@ -333,7 +348,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 bottom: MediaQuery.viewPaddingOf(context).bottom,
               ),
               child: SizedBox(
-                height: 52, // Slimmer height
+                height: 48, // Ultra-slim height
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final tabWidth = constraints.maxWidth / 5;
@@ -345,16 +360,16 @@ class _SellerHomePageState extends State<SellerHomePage> {
                         // Custom Row instead of BottomNavigationBar to avoid rigid constraints and overflows
                         Row(
                           children: [
-                            _buildTabItem(0, Icons.home, 28, 'Home'),
-                            _buildTabItem(1, null, 24, 'Live'), // Lottie placeholder
-                            _buildTabItem(2, Icons.add_circle_outline, 24, 'Add'),
-                            _buildTabItem(3, Icons.person, 24, 'Listings'),
-                            _buildTabItem(4, Icons.settings, 24, 'Settings'),
+                            _buildTabItem(0, Icons.home, 33, 'Home'),
+                            _buildTabItem(1, null, 29, 'Live'), // Lottie placeholder
+                            _buildTabItem(2, Icons.add_circle_outline, 29, 'Add'),
+                            _buildTabItem(3, Icons.person, 29, 'Listings'),
+                            _buildTabItem(4, Icons.settings, 29, 'Settings'),
                           ],
                         ),
                         Positioned(
-                          left: tabWidth + (tabWidth - liveIconWidth) / 2,
-                          top: -6, // Adjusted for slimmer bar
+                          left: tabWidth + (tabWidth - liveIconWidth) / 2 - 8,
+                          top: -4, // Slightly adjusted for ultra-slim bar
                           child: const IgnorePointer(child: _LiveNavIcon()),
                         ),
                       ],
@@ -378,7 +393,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           onTap: () => _onTabTapped(index),
           splashColor: Colors.black12,
           child: Padding(
-            padding: const EdgeInsets.only(top: 4), // Shifted down as discussed
+            padding: const EdgeInsets.only(top: 6), // Shifted down as discussed
             child: icon == null 
                 ? const SizedBox.shrink() // Space for Lottie
                 : Icon(
@@ -400,8 +415,8 @@ class _LiveNavIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return RepaintBoundary(
       child: SizedBox(
-        width: 66,
-        height: 44,
+        width: 78,
+        height: 54,
         child: Lottie.asset(
           'assets/lottie/live3.json',
           fit: BoxFit.contain,
@@ -457,11 +472,12 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
         seller = {'name': ''};
       }
 
-      await SellerSession.save(
+      final session = await SellerSession.save(
         sellerId: phoneNumber,
         name: seller['name']?.toString() ?? '',
         phoneNumber: phoneNumber,
       );
+      await SellerSessionGuard.writeActiveSession(session);
 
       if (!mounted) {
         return;
