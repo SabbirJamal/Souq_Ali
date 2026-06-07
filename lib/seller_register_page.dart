@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'seller_home_page.dart';
 import 'seller_session.dart';
+import 'widgets/app_toast.dart';
 
 class SellerRegisterPage extends StatefulWidget {
   const SellerRegisterPage({super.key});
@@ -81,9 +82,7 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   @override

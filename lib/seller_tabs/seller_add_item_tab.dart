@@ -13,6 +13,7 @@ import 'package:video_compress/video_compress.dart';
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/item_add/media_picker_sheet.dart';
 import '../widgets/item_edit/edit_widgets.dart';
 import '../widgets/price_with_currency.dart';
@@ -186,7 +187,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     _loadDefaultSellerLocation();
   }
 
-  void _showMessage(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _showMessage(String m) => AppToast.show(context, m);
 
   void _handlePriceChanged(String v) {
     final raw = v.replaceAll(',', '');

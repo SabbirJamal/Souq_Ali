@@ -106,6 +106,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             ])),
             _FixedActionBar(phone: phone, onShare: () { _stopDetailPlayback(); Navigator.push(context, MaterialPageRoute(builder: (_) => ShareListingPage(itemId: widget.itemId, itemData: widget.itemData, mediaItems: media))); }),
           ]),
+          Positioned(top: 0, left: 0, right: 0, height: MediaQuery.paddingOf(context).top, child: const ColoredBox(color: Colors.black)),
           _DetailHeader(onBack: () => _goToFeed(context)),
         ]),
       ),

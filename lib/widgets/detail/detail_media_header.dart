@@ -389,7 +389,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   Widget build(BuildContext context) {
     final trimmedLocation = _displayLocation(widget.location.trim());
     // Use screen percentage for media header height
-    final mediaHeight = MediaQuery.sizeOf(context).height * 0.85;
+    final mediaHeight = MediaQuery.sizeOf(context).height * 0.8;
     final imageCount = widget.mediaItems.where((media) => !media.isVideo).length;
     final videoCount = widget.mediaItems.where((media) => media.isVideo).length;
     final hideChrome = _isZooming || _isPinchIntent || _isHoldingMedia;

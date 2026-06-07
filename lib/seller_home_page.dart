@@ -9,6 +9,7 @@ import 'seller_tabs/seller_listings_tab.dart';
 import 'seller_tabs/seller_live_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_session.dart';
+import 'widgets/app_toast.dart';
 
 class SellerHomePage extends StatefulWidget {
   const SellerHomePage({
@@ -215,26 +216,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
     _lastFeedBackPress = now;
     setState(() => _feedRefreshTick++);
     _setChromeVisible(true);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check, color: Color(0xFF25D366), size: 30),
-              SizedBox(width: 18),
-              Expanded(
-                child: Text(
-                  'Please click back again to exit',
-                  style: TextStyle(fontSize: 18),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Color(0xFF3A3A3A),
-          duration: Duration(seconds: 2),
-        ),
-      );
+    AppToast.show(context, 'Please click back again to exit');
   }
 
   Widget _buildPageAt(int index) {
@@ -505,9 +487,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     if (!mounted) {
       return;
     }
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   @override

@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../app_toast.dart';
+
 class MediaPickerSheet extends StatefulWidget {
   const MediaPickerSheet({
     super.key,
@@ -213,9 +215,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
       return;
     }
     if (asset.type == AssetType.video && asset.duration > 60) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Video cannot be more than 1 minute')),
-      );
+      AppToast.show(context, 'Video cannot be more than 1 minute');
       return;
     }
 

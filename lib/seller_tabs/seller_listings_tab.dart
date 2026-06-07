@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../item_edit_page.dart';
 import '../seller_session.dart';
 import '../utils/formatters.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
@@ -252,7 +253,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
       setState(() => _allDocs.removeWhere((doc) => doc.id == docId));
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item deleted'), backgroundColor: Colors.red));
+    AppToast.show(context, 'Item deleted');
   }
 
   Future<void> _deleteItemStorageFiles(Map<String, dynamic> item) async {
@@ -351,7 +352,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     });
 
     if (!mounted) return;
-    ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Live item renewed'), backgroundColor: Color(0xFFFF7801)));
+    AppToast.show(this.context, 'Live item renewed');
   }
 
   void _openEdit(BuildContext context, String docId, Map<String, dynamic> item) {

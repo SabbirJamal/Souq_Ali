@@ -12,6 +12,7 @@ import 'package:video_compress/video_compress.dart';
 import 'camera_capture_page.dart';
 import 'utils/formatters.dart';
 import 'widgets/item_edit/edit_widgets.dart';
+import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
 
@@ -329,7 +330,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   void _showMessage(String msg) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (mounted) AppToast.show(context, msg);
   }
 
   void _handlePriceChanged(String val) {

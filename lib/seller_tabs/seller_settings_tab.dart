@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../seller_session.dart';
+import '../widgets/app_toast.dart';
 
 class SellerSettingsTab extends StatefulWidget {
   const SellerSettingsTab({super.key, required this.onLogout});
@@ -165,16 +166,12 @@ class _CrNumberFieldState extends State<_CrNumberField> {
       }
       FocusScope.of(context).unfocus();
       setState(() => _isEditing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CR number saved')),
-      );
+      AppToast.show(context, 'CR number saved');
     } on FirebaseException catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${error.message ?? error.code}')),
-      );
+      AppToast.show(context, 'Error: ${error.message ?? error.code}');
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -334,16 +331,12 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
       }
       FocusScope.of(context).unfocus();
       setState(() => _isEditing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.savedMessage)),
-      );
+      AppToast.show(context, widget.savedMessage);
     } on FirebaseException catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${error.message ?? error.code}')),
-      );
+      AppToast.show(context, 'Error: ${error.message ?? error.code}');
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
