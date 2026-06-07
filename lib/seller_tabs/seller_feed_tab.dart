@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
@@ -28,17 +29,14 @@ class SellerFeedTab extends StatefulWidget {
 }
 
 class SellerFeedTabState extends State<SellerFeedTab> {
-  static const _pageSize = 15;
-
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final Map<String, GlobalKey> _itemKeys = {};
-  final Set<String> _rankedSeenItemIds = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
 
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _allDocs = [];
+  final List<FeedItem> _allDocs = [];
   bool _isGridView = true;
   bool _isSearchOpen = false;
   bool _isLoading = false;
@@ -49,6 +47,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   Timer? _seenFlushTimer;
   String? _viewerId;
   String? _viewerType;
+  FeedCursor? _feedCursor;
   final DateTime _openedAt = DateTime.now();
   int _refreshTick = 0;
 
@@ -70,7 +69,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   Future<void> _loadInitial() async {
     if (_isLoading) return;
-    unawaited(_loadSeenItems());
     await _fetchPage(isInitial: true);
   }
 
@@ -84,48 +82,35 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     setState(() => _isLoading = true);
 
     try {
-      var query = FirebaseFirestore.instance
-          .collection('items')
-          .limit(_pageSize * 4);
-
-      final snapshot = await query.get();
+      final viewer = await _ensureViewerIdentity();
       if (!mounted) return;
+      final viewerId = viewer?.id;
+      if (viewerId == null || viewerId.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
-      var newDocs = snapshot.docs.toList()
-        ..sort((a, b) {
-          final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return bTime.compareTo(aTime);
-        });
+      final result = await FeedService.fetchItems(
+        viewerId: viewerId,
+        status: widget.itemStatus,
+        cursor: isInitial ? null : _feedCursor,
+        limit: 60,
+      );
+      if (!mounted) return;
       setState(() {
-        if (isInitial) _allDocs.clear();
-        _allDocs.addAll(newDocs);
-        _hasMore = false;
+        if (isInitial) {
+          _allDocs.clear();
+        }
+        final existingIds = _allDocs.map((doc) => doc.id).toSet();
+        _allDocs.addAll(result.items.where((doc) => !existingIds.contains(doc.id)));
+        _feedCursor = result.cursor;
+        _hasMore = result.hasMore;
         _isLoading = false;
       });
-    } catch (e) {
-      try {
-        var fallbackQuery = FirebaseFirestore.instance
-            .collection('items')
-            .limit(_pageSize * 4);
-
-        final snapshot = await fallbackQuery.get();
-        if (!mounted) return;
-        final newDocs = snapshot.docs.toList()
-          ..sort((a, b) {
-            final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return bTime.compareTo(aTime);
-          });
-        setState(() {
-          if (isInitial) _allDocs.clear();
-          _allDocs.addAll(newDocs);
-          _hasMore = false;
-          _isLoading = false;
-        });
-      } catch (_) {
-        if (mounted) setState(() => _isLoading = false);
-      }
+    } catch (error, stackTrace) {
+      debugPrint('Feed load failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -143,50 +128,15 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     super.dispose();
   }
 
-  Future<void> _loadSeenItems() async {
+  Future<_FeedViewerIdentity?> _ensureViewerIdentity() async {
+    if (_viewerId != null && _viewerId!.isNotEmpty && _viewerType != null) {
+      return _FeedViewerIdentity(id: _viewerId!, type: _viewerType!);
+    }
     final viewer = await _resolveViewerIdentity();
-    if (!mounted) return;
+    if (!mounted) return null;
     _viewerId = viewer?.id;
     _viewerType = viewer?.type;
-    final viewerId = _viewerId;
-    if (viewerId == null || viewerId.isEmpty) {
-      return;
-    }
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collectionGroup('viewers')
-          .where('viewer_id', isEqualTo: viewerId)
-          .limit(500)
-          .get();
-      final legacySellerSnapshot = _viewerType == 'seller'
-          ? await FirebaseFirestore.instance
-                .collectionGroup('viewers')
-                .where('seller_id', isEqualTo: viewerId)
-                .limit(500)
-                .get()
-          : null;
-      if (!mounted) return;
-      setState(() {
-        final loadedSeenItemIds = [
-          ...snapshot.docs,
-          ...?legacySellerSnapshot?.docs,
-        ].map((doc) {
-          final itemId = doc.data()['item_id']?.toString();
-          return itemId?.isNotEmpty == true
-              ? itemId!
-              : doc.reference.parent.parent?.id ?? '';
-        }).where((itemId) => itemId.isNotEmpty);
-        _rankedSeenItemIds
-          ..clear()
-          ..addAll(loadedSeenItemIds);
-        _seenItemIds
-          ..clear()
-          ..addAll(_rankedSeenItemIds);
-      });
-    } catch (_) {
-      return;
-    }
+    return viewer;
   }
 
   Future<_FeedViewerIdentity?> _resolveViewerIdentity() async {
@@ -222,10 +172,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   Future<void> _refreshFeed() async {
+    _markVisibleItemsSeen();
+    await _flushSeenItems();
     setState(() {
-      _rankedSeenItemIds.addAll(_seenItemIds);
       _refreshTick++;
       _hasMore = true;
+      _feedCursor = null;
     });
     await _fetchPage(isInitial: true);
   }
@@ -251,21 +203,18 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     setState(() => _isGridView = !_isGridView);
   }
 
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _getFilteredAndRankedDocs() {
-    final activeDocs = _allDocs.where((doc) => _isItemActive(doc.data(), _openedAt)).toList();
+  List<FeedItem> _getFilteredAndRankedDocs() {
+    final activeDocs = _allDocs.where((doc) => _isItemActive(doc.data, _openedAt)).toList();
     
     final query = _query.trim().toLowerCase();
     var filtered = activeDocs.where((doc) {
-      final status = doc.data()['status']?.toString();
-      if (widget.itemStatus == 'post') {
-        return status == null || status.isEmpty || status == 'post';
-      }
+      final status = doc.data['status']?.toString();
       return status == widget.itemStatus;
     }).toList();
 
     if (query.isNotEmpty) {
       filtered = filtered.where((doc) {
-        final item = doc.data();
+        final item = doc.data;
         final searchableText = [item['item_name'], item['item_price'], item['location']]
             .whereType<Object>()
             .map((value) => value.toString().toLowerCase())
@@ -275,12 +224,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       return filtered;
     }
 
-    final unseenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    final seenDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    for (final doc in filtered) {
-      (_rankedSeenItemIds.contains(doc.id) ? seenDocs : unseenDocs).add(doc);
-    }
-    return [...unseenDocs, ...seenDocs];
+    return filtered;
   }
 
   void _scheduleVisibleSeenCheck() {
@@ -329,18 +273,16 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final pending = List<String>.from(_pendingSeenItemIds);
     _pendingSeenItemIds.clear();
     try {
-      final batch = FirebaseFirestore.instance.batch();
-      for (final itemId in pending) {
-        final ref = FirebaseFirestore.instance.collection('item_seen').doc(itemId).collection('viewers').doc(viewerId);
-        final viewerType = _viewerType ?? 'anonymous';
-        batch.set(ref, {
-          'item_id': itemId, 'viewer_id': viewerId, 'viewer_type': viewerType,
-          if (viewerType == 'seller') 'seller_id': viewerId,
-          'seen_at': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-      await batch.commit();
-    } catch (_) { _pendingSeenItemIds.addAll(pending); }
+      await FeedService.markItemsSeen(
+        viewerId: viewerId,
+        viewerType: _viewerType ?? 'anonymous',
+        itemIds: pending,
+      );
+    } catch (error) {
+      debugPrint('Seen write failed: $error');
+      _pendingSeenItemIds.addAll(pending);
+      _seenFlushTimer ??= Timer(const Duration(seconds: 2), _flushSeenItems);
+    }
   }
 
   @override
@@ -379,11 +321,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                         ? SliverGrid.builder(
                             itemCount: docs.length,
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isCompact: true, isLivePage: isLivePage)),
+                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage)),
                           )
                         : SliverList.builder(
                             itemCount: docs.length,
-                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data(), isLivePage: isLivePage)),
+                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage)),
                           ),
                   ),
                   if (_isLoading && _allDocs.isNotEmpty)
@@ -663,13 +605,6 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
     return expiresAt.isAfter(now);
   }
   return true;
-}
-
-DateTime? _createdAt(Map<String, dynamic> item) {
-  final createdAt = item['created_at'];
-  if (createdAt is Timestamp) return createdAt.toDate();
-  if (createdAt is DateTime) return createdAt;
-  return null;
 }
 
 class _FeedViewerIdentity {

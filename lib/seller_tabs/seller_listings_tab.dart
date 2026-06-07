@@ -299,6 +299,7 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
       final batch = FirebaseFirestore.instance.batch();
       for (final viewer in viewers.docs) {
         batch.delete(viewer.reference);
+        batch.delete(FirebaseFirestore.instance.collection('viewer_seen').doc(viewer.id).collection('items').doc(docId));
       }
       batch.delete(seenRef);
       await batch.commit();

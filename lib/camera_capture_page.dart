@@ -634,6 +634,7 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomControlsInset = MediaQuery.viewPaddingOf(context).bottom + 48;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
@@ -654,14 +655,14 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
         Positioned(top: 10, left: 10, child: SafeArea(child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)))),
         if (!_isCropping) Positioned(top: 10, right: 10, child: SafeArea(child: IconButton(icon: const Icon(Icons.crop, color: Colors.white), onPressed: () => setState(() => _isCropping = true)))),
         if (!_isCropping) Positioned(
-          bottom: 20, left: 16, right: 84,
+          bottom: bottomControlsInset, left: 16, right: 84,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(24)),
             child: TextField(controller: _caption, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Add a caption...', hintStyle: TextStyle(color: Colors.white70), border: InputBorder.none, isDense: true)),
           ),
         ),
-        Positioned(bottom: 20, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: () {
+        Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: () {
           if (_isCropping) _crop.crop(); 
           else Navigator.pop(context, CapturedMedia(file: _currFile, type: 'image', caption: _caption.text));
         }, child: Icon(_isCropping ? Icons.check : Icons.send))),
@@ -787,6 +788,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomControlsInset = MediaQuery.viewPaddingOf(context).bottom + 48;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
@@ -851,7 +853,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
           )),
         ),
 
-        Positioned(bottom: 20, left: 16, right: 16, child: Row(children: [
+        Positioned(bottom: bottomControlsInset, left: 16, right: 16, child: Row(children: [
           Expanded(child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(24)),

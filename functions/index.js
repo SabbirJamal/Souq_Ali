@@ -1,4 +1,5 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
@@ -8,6 +9,156 @@ initializeApp();
 
 const db = getFirestore();
 const bucket = getStorage().bucket();
+const DEFAULT_FEED_LIMIT = 60;
+const FEED_FETCH_BATCH_SIZE = 200;
+const FEED_MAX_SCANNED_DOCS = 1200;
+
+exports.getFeedItems = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "512MiB",
+  },
+  async (request) => {
+    const viewerId = stringValue(request.data && request.data.viewerId);
+    const status = stringValue(request.data && request.data.status);
+    const cursor = request.data && request.data.cursor ? request.data.cursor : null;
+    const limit = normalizedLimit(request.data && request.data.limit);
+
+    if (!viewerId) {
+      throw new HttpsError("invalid-argument", "viewerId is required.");
+    }
+    if (status !== "post" && status !== "live") {
+      throw new HttpsError("invalid-argument", "status must be post or live.");
+    }
+
+    try {
+      const seenIds = await loadViewerSeenIds(viewerId);
+      const now = Timestamp.now();
+      const unseen = [];
+      const seenFallback = [];
+      let queryCursor = normalizeCursor(cursor);
+      let scanned = 0;
+      let hasMore = true;
+      let lastCursor = queryCursor;
+
+      while (unseen.length < limit && scanned < FEED_MAX_SCANNED_DOCS && hasMore) {
+        let query = db
+          .collection("items")
+          .orderBy("created_at", "desc")
+          .limit(FEED_FETCH_BATCH_SIZE);
+
+        if (queryCursor) {
+          query = query.startAfter(
+            Timestamp.fromMillis(queryCursor.createdAtMs),
+          );
+        }
+
+        const snapshot = await query.get();
+        hasMore = snapshot.size === FEED_FETCH_BATCH_SIZE;
+
+        for (const doc of snapshot.docs) {
+          scanned += 1;
+          const item = doc.data();
+          lastCursor = cursorFromDoc(doc);
+
+          if (stringValue(item.status) !== status || !isItemVisible(item, now)) {
+            continue;
+          }
+
+          const entry = { id: doc.id, data: serializeItem(item), cursor: lastCursor };
+          if (seenIds.has(doc.id)) {
+            if (seenFallback.length < limit) {
+              seenFallback.push(entry);
+            }
+          } else {
+            unseen.push(entry);
+            if (unseen.length >= limit) {
+              break;
+            }
+          }
+        }
+
+        if (!lastCursor) {
+          hasMore = false;
+        }
+        queryCursor = lastCursor;
+        if (snapshot.empty) {
+          hasMore = false;
+        }
+      }
+
+      const selectedItems = unseen.length > 0
+        ? unseen.slice(0, limit)
+        : seenFallback.slice(0, limit);
+      const responseCursor =
+        unseen.length === 0 && selectedItems.length > 0
+          ? selectedItems[selectedItems.length - 1].cursor
+          : lastCursor;
+
+      return {
+        items: selectedItems.map((item) => ({ id: item.id, data: item.data })),
+        cursor: responseCursor,
+        hasMore: Boolean(hasMore || scanned >= FEED_MAX_SCANNED_DOCS),
+      };
+    } catch (error) {
+      logger.error("getFeedItems failed", { viewerId, status, error });
+      throw new HttpsError("internal", error && error.message ? error.message : "Feed loading failed.");
+    }
+  },
+);
+
+exports.markFeedItemsSeen = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  async (request) => {
+    const viewerId = stringValue(request.data && request.data.viewerId);
+    const viewerType = stringValue(request.data && request.data.viewerType) || "anonymous";
+    const rawItemIds = Array.isArray(request.data && request.data.itemIds)
+      ? request.data.itemIds
+      : [];
+    const itemIds = [...new Set(rawItemIds.map(stringValue).filter(Boolean))].slice(0, 120);
+
+    if (!viewerId) {
+      throw new HttpsError("invalid-argument", "viewerId is required.");
+    }
+    if (itemIds.length === 0) {
+      return { written: 0 };
+    }
+
+    const batch = db.batch();
+    const seenAt = Timestamp.now();
+
+    for (const itemId of itemIds) {
+      const seenData = {
+        item_id: itemId,
+        viewer_id: viewerId,
+        viewer_type: viewerType,
+        seen_at: seenAt,
+      };
+      if (viewerType === "seller") {
+        seenData.seller_id = viewerId;
+      }
+
+      batch.set(
+        db.collection("item_seen").doc(itemId).collection("viewers").doc(viewerId),
+        seenData,
+        { merge: true },
+      );
+      batch.set(
+        db.collection("viewer_seen").doc(viewerId).collection("items").doc(itemId),
+        seenData,
+        { merge: true },
+      );
+    }
+
+    await batch.commit();
+    return { written: itemIds.length };
+  },
+);
 
 exports.cleanupExpiredItems = onSchedule(
   {
@@ -179,4 +330,124 @@ async function removeItemSeenRecords(itemId) {
   }
 
   await seenDocRef.delete();
+
+  const mirrored = await db
+    .collectionGroup("items")
+    .where("item_id", "==", itemId)
+    .limit(500)
+    .get();
+
+  if (!mirrored.empty) {
+    let batch = db.batch();
+    let count = 0;
+    for (const doc of mirrored.docs) {
+      batch.delete(doc.ref);
+      count += 1;
+      if (count % 450 === 0) {
+        await batch.commit();
+        batch = db.batch();
+      }
+    }
+    await batch.commit();
+    logger.info(`Deleted ${mirrored.size} mirrored seen document(s) for item ${itemId}.`);
+  }
+}
+
+async function loadViewerSeenIds(viewerId) {
+  const seenIds = new Set();
+  const seen = await db
+    .collection("viewer_seen")
+    .doc(viewerId)
+    .collection("items")
+    .limit(5000)
+    .get();
+
+  for (const doc of seen.docs) {
+    seenIds.add(doc.id);
+  }
+
+  try {
+    const legacySeen = await db
+      .collectionGroup("viewers")
+      .where("viewer_id", "==", viewerId)
+      .limit(5000)
+      .get();
+
+    for (const doc of legacySeen.docs) {
+      const itemId = stringValue(doc.get("item_id")) ||
+        (doc.ref.parent.parent ? doc.ref.parent.parent.id : "");
+      if (itemId) {
+        seenIds.add(itemId);
+      }
+    }
+  } catch (error) {
+    logger.warn("Skipping legacy seen lookup.", { viewerId, error });
+  }
+
+  return seenIds;
+}
+
+function stringValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizedLimit(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_FEED_LIMIT;
+  }
+  return Math.min(Math.max(Math.floor(parsed), 1), DEFAULT_FEED_LIMIT);
+}
+
+function normalizeCursor(cursor) {
+  if (!cursor || typeof cursor !== "object") {
+    return null;
+  }
+  const createdAtMs = Number(cursor.createdAtMs);
+  const docId = stringValue(cursor.docId);
+  if (!Number.isFinite(createdAtMs) || !docId) {
+    return null;
+  }
+  return { createdAtMs, docId };
+}
+
+function cursorFromDoc(doc) {
+  const createdAt = doc.get("created_at");
+  if (!createdAt || typeof createdAt.toMillis !== "function") {
+    return null;
+  }
+  return { createdAtMs: createdAt.toMillis(), docId: doc.id };
+}
+
+function isItemVisible(item, now) {
+  const status = stringValue(item.status);
+  if (status !== "post" && status !== "live") {
+    return false;
+  }
+  return isItemExpired(item, now) === false;
+}
+
+function serializeItem(item) {
+  const serialized = {};
+  for (const [key, value] of Object.entries(item)) {
+    serialized[key] = serializeValue(value);
+  }
+  return serialized;
+}
+
+function serializeValue(value) {
+  if (value && typeof value.toMillis === "function") {
+    return { __timestampMs: value.toMillis() };
+  }
+  if (Array.isArray(value)) {
+    return value.map(serializeValue);
+  }
+  if (value && typeof value === "object") {
+    const output = {};
+    for (const [key, child] of Object.entries(value)) {
+      output[key] = serializeValue(child);
+    }
+    return output;
+  }
+  return value;
 }
