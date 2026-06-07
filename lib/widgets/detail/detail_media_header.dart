@@ -36,6 +36,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   final GlobalKey _mediaKey = GlobalKey();
   late final PageController _pageController;
   final ValueNotifier<int> _pauseSignal = ValueNotifier<int>(0);
+  final Map<String, Size> _imageSizes = {};
   OverlayEntry? _zoomOverlay;
   Rect? _zoomRect;
   Offset _zoomStartFocal = Offset.zero;
@@ -228,12 +229,50 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
       return;
     }
     final topLeft = box.localToGlobal(Offset.zero);
-    _zoomRect = topLeft & box.size;
+    final displayRect = _containedDisplayRect(media, topLeft, box.size);
+    _zoomRect = displayRect;
     _zoomStartFocal = focalPoint;
     _zoomCurrentFocal = focalPoint;
-    _zoomLocalFocal = focalPoint - topLeft;
+    _zoomLocalFocal = focalPoint - displayRect.topLeft;
     _zoomScale = 1;
     _zoomReadyMedia = media;
+  }
+
+  Rect _containedDisplayRect(MediaItem media, Offset topLeft, Size frameSize) {
+    final sourceSize = _sourceSizeFor(media);
+    if (sourceSize == null || sourceSize.isEmpty || frameSize.isEmpty) {
+      return topLeft & frameSize;
+    }
+
+    final fitted = applyBoxFit(BoxFit.contain, sourceSize, frameSize);
+    final destination = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & frameSize,
+    );
+    return destination.shift(topLeft);
+  }
+
+  Size? _sourceSizeFor(MediaItem media) {
+    if (media.isVideo) {
+      final controller = widget.preloadedVideoControllers[media.url];
+      final size = controller?.value.size;
+      return size == null || size.isEmpty ? null : size;
+    }
+    return _imageSizes[media.url];
+  }
+
+  void _rememberImageSize(String url, ImageProvider provider) {
+    if (_imageSizes.containsKey(url)) return;
+    final stream = provider.resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener((info, _) {
+      stream.removeListener(listener);
+      _imageSizes[url] = Size(
+        info.image.width.toDouble(),
+        info.image.height.toDouble(),
+      );
+    });
+    stream.addListener(listener);
   }
 
   void _startZoom(MediaItem media) {
@@ -292,7 +331,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
                       imageUrl: imageUrl,
                       width: rect.width,
                       height: rect.height,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,
                     ),
@@ -322,6 +361,10 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
 
   Widget _buildDetailMediaPage(int index, double mediaHeight) {
     final media = widget.mediaItems[index];
+    if (!media.isVideo) {
+      final provider = CachedNetworkImageProvider(media.url);
+      _rememberImageSize(media.url, provider);
+    }
     return _DetailMediaPage(
       media: media,
       height: mediaHeight,

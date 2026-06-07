@@ -100,7 +100,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 location: widget.itemData['location']?.toString() ?? '', isLiveItem: widget.itemData['status']?.toString() == 'live',
                 onZoomActiveChanged: (a) => setState(() => _lockDetailScroll = a),
               ),
-              Padding(padding: const EdgeInsets.fromLTRB(16, 22, 16, 0), child: _SellerAvatarIcon(name: widget.itemData['seller_name'], sellerId: widget.itemData['seller_uid'], sellerPhone: phone, onOpenProfile: _stopDetailPlayback)),
+              Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: _SellerAvatarIcon(name: widget.itemData['seller_name'], sellerId: widget.itemData['seller_uid'], sellerPhone: phone, onOpenProfile: _stopDetailPlayback)),
               const SizedBox(height: 8),
             ])),
             _FixedActionBar(phone: phone, onShare: () { _stopDetailPlayback(); Navigator.push(context, MaterialPageRoute(builder: (_) => ShareListingPage(itemId: widget.itemId, itemData: widget.itemData, mediaItems: media))); }),
