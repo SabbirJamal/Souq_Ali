@@ -374,7 +374,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    if (_isCheckingPermission) return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Colors.white)));
+    if (_isCheckingPermission) return _buildCameraShell(const CircularProgressIndicator(color: Colors.white));
     if (!_hasPermission) return _buildPermissionPrompt();
     return Scaffold(
       backgroundColor: Colors.black,
@@ -383,31 +383,36 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         builder: (ctx, snap) {
           final controller = _controller;
           final isReady = controller != null && controller.value.isInitialized;
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: isReady
-                    ? GestureDetector(
-                        onTapDown: _onTapFocus,
-                        onDoubleTap: _flip,
-                        onScaleUpdate: (d) => _setZoom((_currZoom * d.scale).clamp(_minZoom, _maxZoom)),
-                        child: RepaintBoundary(child: Center(child: CameraPreview(controller))),
-                      )
-                    : Center(
-                        child: snap.connectionState == ConnectionState.done
-                            ? const Text('Camera error', style: TextStyle(color: Colors.white))
-                            : const CircularProgressIndicator(color: Colors.white),
-                      ),
-              ),
-              if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
-              _buildTopBar(),
-              _buildBottomControls(),
-            ],
+          return _buildCameraShell(
+            isReady
+                ? GestureDetector(
+                    onTapDown: _onTapFocus,
+                    onDoubleTap: _flip,
+                    onScaleUpdate: (d) => _setZoom((_currZoom * d.scale).clamp(_minZoom, _maxZoom)),
+                    child: RepaintBoundary(child: Center(child: CameraPreview(controller))),
+                  )
+                : Center(
+                    child: snap.connectionState == ConnectionState.done
+                        ? const Text('Camera error', style: TextStyle(color: Colors.white))
+                        : const CircularProgressIndicator(color: Colors.white),
+                  ),
           );
         },
       ),
     );
   }
+
+  Widget _buildCameraShell(Widget preview) => Scaffold(
+    backgroundColor: Colors.black,
+    body: Stack(
+      children: [
+        Positioned.fill(child: preview),
+        if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
+        _buildTopBar(),
+        _buildBottomControls(),
+      ],
+    ),
+  );
 
   Widget _buildPermissionPrompt() => Scaffold(
     backgroundColor: Colors.black,
