@@ -21,10 +21,119 @@ class CapturedMedia {
 
 enum CameraCaptureAction { openGallery }
 
+class _CameraControllerCache {
+  static const _keepAlive = Duration(minutes: 2);
+  static CameraController? _controller;
+  static CameraDescription? _description;
+  static Future<CameraController>? _initializing;
+  static Future<void>? _preparingVideo;
+  static Timer? _releaseTimer;
+  static int _activePages = 0;
+
+  static bool _sameCamera(CameraDescription a, CameraDescription b) => a.name == b.name;
+
+  static bool isCurrent(CameraController controller) => identical(_controller, controller);
+
+  static void retain() {
+    _activePages++;
+    _releaseTimer?.cancel();
+  }
+
+  static void release() {
+    if (_activePages > 0) _activePages--;
+    if (_activePages == 0) scheduleRelease();
+  }
+
+  static Future<CameraController> controllerFor(CameraDescription description, {bool forceNew = false}) {
+    _releaseTimer?.cancel();
+    final current = _controller;
+    if (!forceNew &&
+        current != null &&
+        current.value.isInitialized &&
+        _description != null &&
+        _sameCamera(_description!, description)) {
+      return Future.value(current);
+    }
+    final pending = _initializing;
+    if (!forceNew && pending != null && _description != null && _sameCamera(_description!, description)) {
+      return pending;
+    }
+    _initializing = _create(description);
+    return _initializing!;
+  }
+
+  static Future<CameraController> _create(CameraDescription description) async {
+    try {
+      final old = _controller;
+      _controller = null;
+      await old?.dispose();
+      _description = description;
+      final controller = CameraController(
+        description,
+        ResolutionPreset.high,
+        enableAudio: true,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      _controller = controller;
+      await controller.initialize();
+      return controller;
+    } catch (_) {
+      _controller = null;
+      _description = null;
+      rethrow;
+    } finally {
+      _initializing = null;
+    }
+  }
+
+  static Future<void> prepareVideo(CameraController controller) {
+    if (!controller.value.isInitialized) return Future.value();
+    return _preparingVideo ??= controller.prepareForVideoRecording().catchError((_) {}).whenComplete(() {
+      _preparingVideo = null;
+    });
+  }
+
+  static void scheduleRelease() {
+    _releaseTimer?.cancel();
+    _releaseTimer = Timer(_keepAlive, releaseNow);
+  }
+
+  static Future<void> releaseNow() async {
+    if (_activePages > 0) return;
+    _releaseTimer?.cancel();
+    final pending = _initializing;
+    CameraController? current = _controller;
+    if (pending != null) {
+      try {
+        current = await pending;
+      } catch (_) {
+        current = null;
+      }
+    }
+    if (_activePages > 0) return;
+    _controller = null;
+    _description = null;
+    _initializing = null;
+    _preparingVideo = null;
+    await current?.dispose();
+  }
+}
+
 class CameraCapturePage extends StatefulWidget {
   const CameraCapturePage({super.key});
   static Future<List<CameraDescription>>? _cameraListFuture;
   static Future<List<CameraDescription>> preloadCameras() => _cameraListFuture ??= availableCameras();
+  static Future<void> prewarmCamera() async {
+    try {
+      final cam = await permissions.Permission.camera.status;
+      final mic = await permissions.Permission.microphone.status;
+      if (!cam.isGranted || !mic.isGranted) return;
+      final cameras = await preloadCameras();
+      if (cameras.isEmpty) return;
+      final index = cameras.indexWhere((c) => c.lensDirection == CameraLensDirection.back);
+      await _CameraControllerCache.controllerFor(cameras[index == -1 ? 0 : index]);
+    } catch (_) {}
+  }
 
   @override
   State<CameraCapturePage> createState() => _CameraCapturePageState();
@@ -50,6 +159,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   @override
   void initState() {
     super.initState();
+    _CameraControllerCache.retain();
     WidgetsBinding.instance.addObserver(this);
     _setImmersive(true);
     _checkPermissionAndSetup();
@@ -60,8 +170,17 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     WidgetsBinding.instance.removeObserver(this);
     _setImmersive(false);
     _holdTimer?.cancel(); _tickTimer?.cancel();
-    _controller?.dispose();
+    _CameraControllerCache.release();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      _holdTimer?.cancel();
+      _tickTimer?.cancel();
+      unawaited(_CameraControllerCache.releaseNow());
+    }
   }
 
   void _setImmersive(bool active) {
@@ -105,25 +224,37 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   }
 
   Future<void> _initCam(CameraDescription desc) async {
-    await _controller?.dispose();
-    final c = CameraController(desc, ResolutionPreset.high, enableAudio: true, imageFormatGroup: ImageFormatGroup.jpeg);
-    _controller = c;
-    await c.initialize();
-    if (!mounted) return;
-    await c.prepareForVideoRecording();
-    await c.lockCaptureOrientation(DeviceOrientation.portraitUp);
-    _minZoom = await c.getMinZoomLevel();
-    _maxZoom = await c.getMaxZoomLevel();
-    _currZoom = _minZoom;
-    await c.setZoomLevel(_currZoom);
-    setState(() {});
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final c = await _CameraControllerCache.controllerFor(desc, forceNew: attempt == 1);
+        if (!mounted) return;
+        if (!_CameraControllerCache.isCurrent(c) || !c.value.isInitialized) {
+          if (attempt == 0) continue;
+          return;
+        }
+        _controller = c;
+        await c.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        _minZoom = await c.getMinZoomLevel();
+        _maxZoom = await c.getMaxZoomLevel();
+        _currZoom = _minZoom;
+        await c.setZoomLevel(_currZoom);
+        setState(() {});
+        unawaited(_CameraControllerCache.prepareVideo(c));
+        return;
+      } catch (_) {
+        if (attempt == 1) rethrow;
+      }
+    }
   }
 
   Future<void> _flip() async {
     if (_cameras.length < 2 || _isRec || _isBusy) return;
     HapticFeedback.mediumImpact();
     _camIdx = (_camIdx + 1) % _cameras.length;
-    setState(() => _initFuture = _initCam(_cameras[_camIdx]));
+    setState(() {
+      _controller = null;
+      _initFuture = _initCam(_cameras[_camIdx]);
+    });
   }
 
   Future<void> _toggleFlash() async {
@@ -209,6 +340,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     if (_controller == null || !_controller!.value.isInitialized || _isRec || _isBusy) return;
     try {
       if (_controller!.value.isRecordingVideo) return;
+      await _CameraControllerCache.prepareVideo(_controller!);
       await _controller!.startVideoRecording();
       HapticFeedback.heavyImpact();
       if (mounted) setState(() { _isRec = true; _elapsed = Duration.zero; });
@@ -232,6 +364,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await Future.delayed(const Duration(milliseconds: 300));
       final file = File(f.path);
       if (await file.exists()) {
+        if (!mounted) return;
         final res = await Navigator.push<CapturedMedia>(context, MaterialPageRoute(builder: (_) => _VideoPreviewPage(file: file)));
         if (res != null && mounted) Navigator.pop(context, res);
       }
@@ -248,15 +381,24 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       body: FutureBuilder(
         future: _initFuture,
         builder: (ctx, snap) {
-          if (snap.connectionState != ConnectionState.done) return const Center(child: CircularProgressIndicator(color: Colors.white));
-          if (_controller == null) return const Center(child: Text('Camera error', style: TextStyle(color: Colors.white)));
+          final controller = _controller;
+          final isReady = controller != null && controller.value.isInitialized;
           return Stack(
             children: [
-              Positioned.fill(child: GestureDetector(
-                onTapDown: _onTapFocus, onDoubleTap: _flip,
-                onScaleUpdate: (d) => _setZoom((_currZoom * d.scale).clamp(_minZoom, _maxZoom)),
-                child: Center(child: CameraPreview(_controller!)),
-              )),
+              Positioned.fill(
+                child: isReady
+                    ? GestureDetector(
+                        onTapDown: _onTapFocus,
+                        onDoubleTap: _flip,
+                        onScaleUpdate: (d) => _setZoom((_currZoom * d.scale).clamp(_minZoom, _maxZoom)),
+                        child: RepaintBoundary(child: Center(child: CameraPreview(controller))),
+                      )
+                    : Center(
+                        child: snap.connectionState == ConnectionState.done
+                            ? const Text('Camera error', style: TextStyle(color: Colors.white))
+                            : const CircularProgressIndicator(color: Colors.white),
+                      ),
+              ),
               if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
               _buildTopBar(),
               _buildBottomControls(),

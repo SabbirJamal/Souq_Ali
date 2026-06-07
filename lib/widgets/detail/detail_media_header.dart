@@ -16,6 +16,7 @@ class DetailMediaHeader extends StatefulWidget {
     required this.price,
     required this.location,
     required this.isLiveItem,
+    required this.isTransitItem,
     this.onZoomActiveChanged,
   });
 
@@ -26,6 +27,7 @@ class DetailMediaHeader extends StatefulWidget {
   final String price;
   final String location;
   final bool isLiveItem;
+  final bool isTransitItem;
   final ValueChanged<bool>? onZoomActiveChanged;
 
   @override
@@ -385,7 +387,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
 
   @override
   Widget build(BuildContext context) {
-    final trimmedLocation = widget.location.trim();
+    final trimmedLocation = _displayLocation(widget.location.trim());
     // Use screen percentage for media header height
     final mediaHeight = MediaQuery.sizeOf(context).height * 0.85;
     final imageCount = widget.mediaItems.where((media) => !media.isVideo).length;
@@ -468,30 +470,13 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (widget.itemName.isNotEmpty) ...[
-                  IgnorePointer(
-                    child: _DetailOverlayChip(
-                      child: Text(
-                        widget.itemName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-                if (trimmedLocation.isNotEmpty)
+                if (trimmedLocation.isNotEmpty) ...[
                   IgnorePointer(
                     child: _DetailOverlayChip(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                        const Text('📍', style: TextStyle(fontSize: 15)),
+                        Text(widget.isTransitItem ? '🚚' : '📍', style: const TextStyle(fontSize: 15)),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
@@ -509,8 +494,10 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
                       ),
                     ),
                   ),
+                  if (widget.price.isNotEmpty || widget.itemName.isNotEmpty)
+                    const SizedBox(height: 6),
+                ],
                 if (widget.price.isNotEmpty) ...[
-                  const SizedBox(height: 6),
                   IgnorePointer(
                     child: _DetailOverlayChip(
                       child: PriceWithCurrency(
@@ -523,6 +510,23 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
                       ),
                     ),
                   ),
+                  if (widget.itemName.isNotEmpty) const SizedBox(height: 6),
+                ],
+                if (widget.itemName.isNotEmpty) ...[
+                  IgnorePointer(
+                    child: _DetailOverlayChip(
+                      child: Text(
+                        widget.itemName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -530,6 +534,12 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
         ],
       ),
     );
+  }
+
+  String _displayLocation(String location) {
+    if (!widget.isTransitItem) return location;
+    final text = location.replaceFirst(RegExp(r'^[🚚📍\s]+'), '').trim();
+    return text.isEmpty ? 'Transit' : text;
   }
 }
 
@@ -638,6 +648,7 @@ class _DetailMediaPage extends StatelessWidget {
       ),
     );
   }
+
 }
 
 class _DetailMediaCountBadge extends StatelessWidget {

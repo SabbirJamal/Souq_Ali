@@ -98,6 +98,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
                 mediaItems: media, preloadedVideoControllers: _preloadedVideoControllers, preloadedVideoInitializers: _preloadedVideoInitializers,
                 itemName: widget.itemData['item_name']?.toString().trim() ?? '', price: formatPrice(widget.itemData['item_price']),
                 location: widget.itemData['location']?.toString() ?? '', isLiveItem: widget.itemData['status']?.toString() == 'live',
+                isTransitItem: widget.itemData['is_transit'] == true || (widget.itemData['location']?.toString().toLowerCase().contains('transit') ?? false),
                 onZoomActiveChanged: (a) => setState(() => _lockDetailScroll = a),
               ),
               Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: _SellerAvatarIcon(name: widget.itemData['seller_name'], sellerId: widget.itemData['seller_uid'], sellerPhone: phone, onOpenProfile: _stopDetailPlayback)),

@@ -549,8 +549,17 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   maxLength: 8,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
-                    prefixText: '+968 ',
-                    prefixIcon: Icon(Icons.phone),
+                    prefixIcon: Padding(
+                      padding: EdgeInsets.only(left: 12, right: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.phone),
+                          SizedBox(width: 8),
+                          Text('+968 '),
+                        ],
+                      ),
+                    ),
                     counterText: '',
                   ),
                   validator: _validatePhoneNumber,
