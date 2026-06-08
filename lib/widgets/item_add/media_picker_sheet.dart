@@ -27,6 +27,16 @@ class MediaPickerSheet extends StatefulWidget {
 
 class _MediaPickerSheetState extends State<MediaPickerSheet> {
   static const _pageSize = 90;
+  static const _preferredAlbumOrder = {
+    'camera': 1,
+    'cameraroll': 1,
+    'videos': 2,
+    'video': 2,
+    'screenshots': 3,
+    'screenshot': 3,
+    'download': 4,
+    'downloads': 4,
+  };
 
   final Set<String> _selectedIds = {};
   final Map<String, int> _selectedOrder = {};
@@ -121,17 +131,30 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
       ),
     );
     for (final album in albums) {
-      albumsById[album.id] = album;
+      if (album.isAll || _preferredAlbumOrder.containsKey(_albumKey(album))) {
+        albumsById[album.id] = album;
+      }
     }
     final sortedAlbums = albumsById.values.toList();
     sortedAlbums.sort((first, second) {
       if (first.isAll != second.isAll) {
         return first.isAll ? -1 : 1;
       }
+      final firstRank = _albumRank(first);
+      final secondRank = _albumRank(second);
+      if (firstRank != secondRank) {
+        return firstRank.compareTo(secondRank);
+      }
       return first.name.toLowerCase().compareTo(second.name.toLowerCase());
     });
     return sortedAlbums;
   }
+
+  int _albumRank(AssetPathEntity album) =>
+      album.isAll ? 0 : _preferredAlbumOrder[_albumKey(album)] ?? 99;
+
+  String _albumKey(AssetPathEntity album) =>
+      album.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
   Future<void> _changeAlbum(AssetPathEntity album) async {
     if (_selectedAlbum?.id == album.id) {

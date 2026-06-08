@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
-import 'package:photo_manager/photo_manager.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
@@ -152,8 +151,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   double _minZoom = 1.0, _maxZoom = 1.0, _currZoom = 1.0, _startZoom = 1.0;
   double? _startY;
   Offset? _focusPoint;
-  List<AssetEntity> _recent = [];
-  int _loadToken = 0;
   bool _hasPermission = false;
   bool _isCheckingPermission = true;
 
@@ -209,7 +206,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     if (cam.isGranted && mic.isGranted) {
       setState(() { _hasPermission = true; _isCheckingPermission = false; });
       _initFuture = _setup();
-      _loadRecent();
     } else {
       setState(() { _hasPermission = false; _isCheckingPermission = false; });
     }
@@ -220,7 +216,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     if (status[permissions.Permission.camera]?.isGranted == true && status[permissions.Permission.microphone]?.isGranted == true) {
       setState(() { _hasPermission = true; });
       _initFuture = _setup();
-      _loadRecent();
     } else {
       permissions.openAppSettings();
     }
@@ -274,18 +269,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       final next = !_isFlash;
       await _controller!.setFlashMode(next ? FlashMode.torch : FlashMode.off);
       setState(() => _isFlash = next);
-    } catch (_) {}
-  }
-
-  Future<void> _loadRecent() async {
-    final token = ++_loadToken;
-    try {
-      final res = await PhotoManager.requestPermissionExtend();
-      if (!res.hasAccess) return;
-      final paths = await PhotoManager.getAssetPathList(type: RequestType.common, onlyAll: true);
-      if (paths.isEmpty) return;
-      final assets = await paths.first.getAssetListPaged(page: 0, size: 10);
-      if (mounted && token == _loadToken) setState(() => _recent = assets);
     } catch (_) {}
   }
 
@@ -488,33 +471,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       top: false,
       minimum: const EdgeInsets.only(bottom: 8),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-      SizedBox(
-        height: _recent.isEmpty ? 0 : 94,
-        child: Visibility(
-          visible: !_isRec && _recent.isNotEmpty,
-          maintainSize: true,
-          maintainAnimation: true,
-          maintainState: true,
-          child: GestureDetector(
-            onVerticalDragEnd: (d) { if (d.primaryVelocity != null && d.primaryVelocity! < -300) Navigator.pop(context, CameraCaptureAction.openGallery); },
-            child: _RecentStrip(assets: _recent, onSelect: (a) async {
-              final f = await a.fileWithSubtype ?? await a.file;
-              if (f == null || !mounted) return;
-              final isVideo = a.type == AssetType.video;
-              final res = await Navigator.push<CapturedMedia>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => isVideo
-                      ? _VideoPreviewPage(file: f)
-                      : _ImagePreviewPage(file: f),
-                ),
-              );
-              if (res != null && mounted) Navigator.pop(context, res);
-            }),
-          ),
-        ),
-      ),
-      const SizedBox(height: 16),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14), child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -571,36 +527,6 @@ class _CircleBtn extends StatelessWidget {
     onTap: onTap,
     child: CircleAvatar(backgroundColor: Colors.black38, radius: 24, child: Icon(icon, color: Colors.white, size: 28)),
   );
-}
-
-class _RecentStrip extends StatelessWidget {
-  final List<AssetEntity> assets; final ValueChanged<AssetEntity> onSelect;
-  const _RecentStrip({required this.assets, required this.onSelect});
-  Widget _tile(AssetEntity asset) {
-    return FutureBuilder<Uint8List?>(
-      future: asset.thumbnailDataWithSize(const ThumbnailSize.square(200)),
-      builder: (context, snapshot) {
-        if (snapshot.data == null) return Container(width: 70, height: 70, color: Colors.white10);
-        return Image.memory(snapshot.data!, width: 70, height: 70, fit: BoxFit.cover);
-      },
-    );
-  }
-  @override
-  Widget build(BuildContext context) => Column(children: [
-    const Icon(Icons.keyboard_arrow_up, color: Colors.white70, size: 20),
-    const SizedBox(height: 4),
-    SizedBox(
-      height: 70,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: assets.length,
-        itemBuilder: (ctx, i) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: GestureDetector(onTap: () => onSelect(assets[i]), child: ClipRRect(borderRadius: BorderRadius.circular(8), child: _tile(assets[i]))),
-        ),
-      ),
-    ),
-  ]);
 }
 
 class _FocusRing extends StatelessWidget {

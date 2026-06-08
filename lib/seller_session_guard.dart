@@ -54,6 +54,7 @@ class SellerSessionGuard {
               ),
               const Divider(height: 1),
               SizedBox(
+                width: double.infinity,
                 height: 64,
                 child: TextButton(
                   onPressed: () => Navigator.pop(context),

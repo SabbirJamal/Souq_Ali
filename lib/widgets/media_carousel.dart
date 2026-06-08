@@ -301,7 +301,7 @@ class _MediaCarouselState extends State<MediaCarousel> {
                                             index == _currentIndex,
                                         showPlayButton:
                                             !widget.autoPlayActiveVideo,
-                                        playIconSize: 72,
+                                        playIconSize: 36,
                                       )
                                     : _VideoThumbnailPreview(
                                         thumbnailUrl: media.thumbnailUrl,
@@ -606,26 +606,6 @@ class _VideoPreviewState extends State<VideoPreview> {
               ),
             ),
           ),
-          if (widget.showPlayButton)
-            IconButton.filled(
-              style: IconButton.styleFrom(
-                fixedSize: Size.square(widget.playIconSize + 20),
-              ),
-              onPressed: () {
-                setState(() {
-                  if (_controller.value.isPlaying) {
-                    _controller.pause();
-                  } else {
-                    _controller.setVolume(1);
-                    _controller.play();
-                  }
-                });
-              },
-              icon: Icon(
-                _controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                size: widget.playIconSize,
-              ),
-            ),
         ],
       ),
     );

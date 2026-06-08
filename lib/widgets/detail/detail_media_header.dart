@@ -630,15 +630,17 @@ class _DetailMediaPage extends StatelessWidget {
                       ),
                     ),
               if (showVideoPauseIcon)
-                const IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(14),
-                      child: Icon(Icons.pause, color: Colors.white, size: 44),
+                Center(
+                  child: IgnorePointer(
+                    child: SizedBox.square(
+                      dimension: 45,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.pause, color: Colors.white, size: 29),
+                      ),
                     ),
                   ),
                 ),
