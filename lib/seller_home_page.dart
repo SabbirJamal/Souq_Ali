@@ -377,11 +377,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
             onTap: () => _onTabTapped(index),
             containedInkWell: true,
             customBorder: const CircleBorder(),
-            radius: 36,
+            radius: 52,
             splashColor: Colors.black12,
             highlightColor: Colors.black12,
             child: SizedBox(
-              width: 68,
+              width: 108,
               height: 48,
               child: Center(
                 child: icon == null
@@ -389,7 +389,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                         'LIVE',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: Color(0xFF9B0000),
+                          color: Color(0xFFFF0000),
                           fontSize: 19,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0,

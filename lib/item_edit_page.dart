@@ -29,7 +29,7 @@ class ItemEditPage extends StatefulWidget {
 }
 
 class _ItemEditPageState extends State<ItemEditPage> {
-  static const _maxMediaCount = 9;
+  static const _maxMediaCount = 8;
   static const _maxPriceValue = 1000000.0;
 
   late final TextEditingController _nameController;
@@ -398,7 +398,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
                   _buildMediaEditor(),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 15),
                   if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
                   _field(_nameController, 'Item Name', maxLength: 80),
                   const SizedBox(height: 14),
@@ -458,24 +458,49 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   Widget _buildMediaEditor() {
     final count = _media.length;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
-      itemCount: count < _maxMediaCount ? count + 1 : count,
-      itemBuilder: (ctx, i) {
-        if (i == count) return Center(child: IconButton.filled(onPressed: _openMediaSheet, icon: const Icon(Icons.add_a_photo, size: 32), style: IconButton.styleFrom(fixedSize: const Size(76, 76), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), backgroundColor: Colors.white, foregroundColor: Colors.black)));
-        return DragTarget<int>(
-          onAcceptWithDetails: (d) => _moveMedia(d.data, i),
-          builder: (ctx, cand, _) => LongPressDraggable<int>(
-            data: i,
-            feedback: SizedBox(width: 100, height: 100, child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: false, onRemove: null)),
-            child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: cand.isNotEmpty, onRemove: () { if (_canRemoveMedia()) setState(() { final r = _media.removeAt(i); if (r.isExisting) _removedMedia.add(r.existing!); }); }),
-          ),
-        );
-      },
-    );
+    if (count == 0) {
+      return Align(alignment: Alignment.centerLeft, child: _cameraAddButton(_openMediaSheet));
+    }
+    final itemCount = count < _maxMediaCount ? count + 1 : count;
+    return LayoutBuilder(builder: (context, constraints) {
+      const spacing = 8.0;
+      final tileSize = (constraints.maxWidth - (spacing * 2)) / 3;
+      return Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (var i = 0; i < itemCount; i++)
+            if (i == count)
+              _cameraAddButton(_openMediaSheet)
+            else
+              SizedBox(
+                width: tileSize,
+                height: tileSize,
+                child: DragTarget<int>(
+                  onAcceptWithDetails: (d) => _moveMedia(d.data, i),
+                  builder: (ctx, cand, _) => LongPressDraggable<int>(
+                    data: i,
+                    feedback: SizedBox(width: tileSize, height: tileSize, child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: false, onRemove: null)),
+                    child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: cand.isNotEmpty, onRemove: () { if (_canRemoveMedia()) setState(() { final r = _media.removeAt(i); if (r.isExisting) _removedMedia.add(r.existing!); }); }),
+                  ),
+                ),
+              ),
+        ],
+      );
+    });
   }
+
+  Widget _cameraAddButton(VoidCallback onPressed) => IconButton.filled(
+    onPressed: onPressed,
+    icon: const Icon(Icons.add_a_photo, size: 32),
+    style: IconButton.styleFrom(
+      fixedSize: const Size(76, 76),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+    ),
+  );
 
   Widget _field(TextEditingController ctrl, String label, {Widget? prefixIconWidget, int? maxLength, String? errorText, TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focusNode}) => TextField(
     controller: ctrl, focusNode: focusNode, readOnly: _isSaving, maxLength: maxLength, keyboardType: keyboardType, inputFormatters: inputFormatters, onTap: onTap, onChanged: onChanged,

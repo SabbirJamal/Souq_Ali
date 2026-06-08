@@ -605,7 +605,7 @@ class _PickerLimitMessage extends StatelessWidget {
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Text(
-            'Only 9 media can be selected',
+            'Only 8 media can be selected',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white,

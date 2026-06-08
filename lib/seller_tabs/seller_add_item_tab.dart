@@ -38,7 +38,7 @@ class SellerAddItemTab extends StatefulWidget {
 }
 
 class SellerAddItemTabState extends State<SellerAddItemTab> {
-  static const _maxMediaCount = 9;
+  static const _maxMediaCount = 8;
   static const _maxPriceValue = 1000000.0;
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
@@ -137,7 +137,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'item_price': price, 'price_number': normPrice, 'price_unit': _isLiveItem ? _priceUnit : '',
         'location': loc, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),
         'media_files': uploaded.map((m) => m.toMap()).toList(),
-        'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: _isLiveItem ? 2 : 720))),
+        'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: _isLiveItem ? 2 : 18))),
       });
       widget.onItemUploadSuccess?.call(_isLiveItem);
       UploadStatusManager.success();
@@ -245,7 +245,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 10),
+          _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 15),
           if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
           if (_isLiveItem) ...[
@@ -336,33 +336,46 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if (count == 0) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: IconButton.filled(
-          onPressed: _openCamera,
-          icon: const Icon(Icons.add_a_photo, size: 32),
-          style: IconButton.styleFrom(
-            fixedSize: const Size(76, 76),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
-          ),
-        ),
+        child: _cameraAddButton(_openCamera),
       );
     }
-    return GridView.builder(
-      shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
-      itemCount: count + 1,
-      itemBuilder: (ctx, i) {
-        if (i == count) return Center(child: IconButton.filled(onPressed: _openCamera, icon: const Icon(Icons.add_a_photo, size: 32), style: IconButton.styleFrom(fixedSize: const Size(76, 76), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), backgroundColor: Colors.white, foregroundColor: Colors.black)));
-        return DragTarget<int>(
-          onAcceptWithDetails: (d) => setState(() { final m = _selectedMedia.removeAt(d.data); _selectedMedia.insert(i, m); }),
-          builder: (ctx, cand, _) => LongPressDraggable<int>(
-            data: i, feedback: SizedBox(width: 100, height: 100, child: Opacity(opacity: 0.8, child: _tile(i, false))),
-            child: _tile(i, cand.isNotEmpty),
-          ),
-        );
-      },
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      const spacing = 8.0;
+      final tileSize = (constraints.maxWidth - (spacing * 2)) / 3;
+      return Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (var i = 0; i < count; i++)
+            SizedBox(
+              width: tileSize,
+              height: tileSize,
+              child: DragTarget<int>(
+                onAcceptWithDetails: (d) => setState(() { final m = _selectedMedia.removeAt(d.data); _selectedMedia.insert(i, m); }),
+                builder: (ctx, cand, _) => LongPressDraggable<int>(
+                  data: i,
+                  feedback: SizedBox(width: tileSize, height: tileSize, child: Opacity(opacity: 0.8, child: _tile(i, false))),
+                  child: _tile(i, cand.isNotEmpty),
+                ),
+              ),
+            ),
+          _cameraAddButton(_openCamera),
+        ],
+      );
+    });
   }
+
+  Widget _cameraAddButton(VoidCallback onPressed) => IconButton.filled(
+    onPressed: onPressed,
+    icon: const Icon(Icons.add_a_photo, size: 32),
+    style: IconButton.styleFrom(
+      fixedSize: const Size(76, 76),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+    ),
+  );
 
   Widget _tile(int i, bool drop) => Container(
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: drop ? Border.all(color: const Color(0xFF25D366), width: 3) : null),
