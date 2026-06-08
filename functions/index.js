@@ -2,7 +2,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore, Timestamp } = require("firebase-admin/firestore");
+const { FieldPath, getFirestore, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 
 initializeApp();
@@ -41,23 +41,27 @@ exports.getFeedItems = onCall(
       let scanned = 0;
       let hasMore = true;
       let lastCursor = queryCursor;
+      let filledPageBeforeBatchEnd = false;
 
       while (unseen.length < limit && scanned < FEED_MAX_SCANNED_DOCS && hasMore) {
         let query = db
           .collection("items")
           .orderBy("created_at", "desc")
+          .orderBy(FieldPath.documentId(), "desc")
           .limit(FEED_FETCH_BATCH_SIZE);
 
         if (queryCursor) {
           query = query.startAfter(
             Timestamp.fromMillis(queryCursor.createdAtMs),
+            queryCursor.docId,
           );
         }
 
         const snapshot = await query.get();
         hasMore = snapshot.size === FEED_FETCH_BATCH_SIZE;
 
-        for (const doc of snapshot.docs) {
+        for (let index = 0; index < snapshot.docs.length; index += 1) {
+          const doc = snapshot.docs[index];
           scanned += 1;
           const item = doc.data();
           lastCursor = cursorFromDoc(doc);
@@ -74,6 +78,8 @@ exports.getFeedItems = onCall(
           } else {
             unseen.push(entry);
             if (unseen.length >= limit) {
+              filledPageBeforeBatchEnd =
+                index < snapshot.docs.length - 1 || snapshot.size === FEED_FETCH_BATCH_SIZE;
               break;
             }
           }
@@ -88,18 +94,19 @@ exports.getFeedItems = onCall(
         }
       }
 
-      const selectedItems = unseen.length > 0
-        ? unseen.slice(0, limit)
-        : seenFallback.slice(0, limit);
+      const remainingSlots = Math.max(limit - unseen.length, 0);
+      const selectedItems = unseen
+        .slice(0, limit)
+        .concat(seenFallback.slice(0, remainingSlots));
       const responseCursor =
-        unseen.length === 0 && selectedItems.length > 0
+        selectedItems.length > 0
           ? selectedItems[selectedItems.length - 1].cursor
           : lastCursor;
 
       return {
         items: selectedItems.map((item) => ({ id: item.id, data: item.data })),
         cursor: responseCursor,
-        hasMore: Boolean(hasMore || scanned >= FEED_MAX_SCANNED_DOCS),
+        hasMore: Boolean(hasMore || filledPageBeforeBatchEnd || scanned >= FEED_MAX_SCANNED_DOCS),
       };
     } catch (error) {
       logger.error("getFeedItems failed", { viewerId, status, error });

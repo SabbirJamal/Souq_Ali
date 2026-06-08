@@ -40,6 +40,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   bool _isGridView = true;
   bool _isSearchOpen = false;
   bool _isLoading = false;
+  bool _isMergingLatest = false;
   bool _hasMore = true;
   String _query = '';
   Timer? _searchDebounce;
@@ -75,6 +76,13 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   Future<void> _loadMore() async {
     if (_isLoading || !_hasMore || _isSearchOpen) return;
     await _fetchPage(isInitial: false);
+  }
+
+  void _maybeLoadMoreFromBuilder(int index, int total) {
+    if (total - index > 8 || _isLoading || !_hasMore || _isSearchOpen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadMore();
+    });
   }
 
   Future<void> _fetchPage({required bool isInitial}) async {
@@ -184,6 +192,42 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   Future<void> reloadItems() => _refreshFeed();
 
+  Future<void> mergeLatestItems() async {
+    if (_isLoading || _isMergingLatest) return;
+    _isMergingLatest = true;
+    final viewer = await _ensureViewerIdentity();
+    if (!mounted) {
+      _isMergingLatest = false;
+      return;
+    }
+    final viewerId = viewer?.id;
+    if (viewerId == null || viewerId.isEmpty) {
+      _isMergingLatest = false;
+      return;
+    }
+
+    try {
+      final result = await FeedService.fetchItems(
+        viewerId: viewerId,
+        status: widget.itemStatus,
+        limit: 20,
+      );
+      if (!mounted) return;
+      setState(() {
+        final existingIds = _allDocs.map((doc) => doc.id).toSet();
+        final newItems = result.items
+            .where((doc) => !existingIds.contains(doc.id))
+            .toList(growable: false);
+        _allDocs.insertAll(0, newItems);
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Feed merge refresh failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      _isMergingLatest = false;
+    }
+  }
+
   void _openSearch() {
     setState(() => _isSearchOpen = true);
     widget.onSearchActiveChanged(true);
@@ -290,6 +334,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final docs = _getFilteredAndRankedDocs();
     _itemKeys.removeWhere((itemId, _) => !docs.any((d) => d.id == itemId));
     final isLivePage = widget.itemStatus == 'live';
+    final showInlineLoading =
+        _isLoading && UploadStatusManager.current.value == null;
+    final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 68;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleVisibleSeenCheck());
 
@@ -307,7 +354,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
                 SliverToBoxAdapter(child: _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode)),
-                if (_allDocs.isEmpty && _isLoading)
+                if (_allDocs.isEmpty && showInlineLoading)
                   SliverPadding(
                     padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
                     sliver: _isGridView ? const SliverToBoxAdapter(child: _FeedSkeletonGrid()) : SliverList.builder(itemCount: 3, itemBuilder: (c, i) => const ItemCardSkeleton()),
@@ -321,16 +368,30 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                         ? SliverGrid.builder(
                             itemCount: docs.length,
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage)),
+                            itemBuilder: (context, index) {
+                              _maybeLoadMoreFromBuilder(index, docs.length);
+                              return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage));
+                            },
                           )
                         : SliverList.builder(
                             itemCount: docs.length,
-                            itemBuilder: (context, index) => _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage)),
+                            itemBuilder: (context, index) {
+                              _maybeLoadMoreFromBuilder(index, docs.length);
+                              return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage));
+                            },
                           ),
                   ),
-                  if (_isLoading && _allDocs.isNotEmpty)
+                  if (showInlineLoading && _allDocs.isNotEmpty)
                     const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: Color(0xFFFF7801))))),
                 ],
+                if (_hasMore && !_isSearchOpen)
+                  SliverToBoxAdapter(
+                    child: _LoadMoreTrigger(
+                      isLoading: _isLoading,
+                      onVisible: _loadMore,
+                    ),
+                  ),
+                SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
               ],
             ),
           ),
@@ -342,6 +403,45 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   GlobalKey _keyForItem(String itemId) => _itemKeys.putIfAbsent(itemId, GlobalKey.new);
+}
+
+class _LoadMoreTrigger extends StatefulWidget {
+  const _LoadMoreTrigger({
+    required this.isLoading,
+    required this.onVisible,
+  });
+
+  final bool isLoading;
+  final VoidCallback onVisible;
+
+  @override
+  State<_LoadMoreTrigger> createState() => _LoadMoreTriggerState();
+}
+
+class _LoadMoreTriggerState extends State<_LoadMoreTrigger> {
+  @override
+  void initState() {
+    super.initState();
+    _scheduleLoad();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LoadMoreTrigger oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleLoad();
+  }
+
+  void _scheduleLoad() {
+    if (widget.isLoading) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onVisible();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(height: 1);
+  }
 }
 
 class _FloatingFeedSearchControl extends StatelessWidget {

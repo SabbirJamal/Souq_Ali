@@ -81,7 +81,7 @@ class _TopToast extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.black,
-                          fontSize: 14,
+                          fontSize: 21,
                           fontWeight: FontWeight.w600,
                           decoration: TextDecoration.none,
                         ),

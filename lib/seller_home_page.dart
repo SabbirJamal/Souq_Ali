@@ -28,6 +28,8 @@ class SellerHomePage extends StatefulWidget {
 class _SellerHomePageState extends State<SellerHomePage> {
   final _addItemKey = GlobalKey<SellerAddItemTabState>();
   final _feedKey = GlobalKey<SellerFeedTabState>();
+  final _liveFeedKey = GlobalKey<SellerFeedTabState>();
+  final _listingsKey = GlobalKey<SellerListingsTabState>();
   final _chromeVisible = ValueNotifier<bool>(true);
   late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
@@ -59,10 +61,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
   void _handleItemUploadSuccess(bool isLiveItem) {
     if (isLiveItem) {
-      setState(() => _pageCache[1] = null);
+      setState(() => _currentIndex = 1);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _liveFeedKey.currentState?.mergeLatestItems();
+      });
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _feedKey.currentState?.reloadItems();
+        _feedKey.currentState?.mergeLatestItems();
       });
     }
   }
@@ -96,6 +101,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
   Future<void> _onTabTapped(int index) async {
     if (index == 0 && _currentIndex == 0) {
       _feedKey.currentState?.scrollToTop();
+      _setChromeVisible(true);
+      return;
+    }
+
+    if (index == 3 && _currentIndex == 3) {
+      _listingsKey.currentState?.scrollToTopOrRefresh();
       _setChromeVisible(true);
       return;
     }
@@ -243,7 +254,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           }
         },
       ),
-      1 => const SellerLiveTab(),
+      1 => SellerLiveTab(feedKey: _liveFeedKey),
       2 => widget.isSellerMode
           ? SellerAddItemTab(
               key: _addItemKey,
@@ -254,7 +265,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
             )
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
-          ? SellerListingsTab(refreshTick: _listingsRefreshTick, onSessionInvalid: _handleInvalidSellerSession)
+          ? SellerListingsTab(key: _listingsKey, refreshTick: _listingsRefreshTick, onSessionInvalid: _handleInvalidSellerSession)
           : const _SellerAccessPrompt(),
       4 => widget.isSellerMode
           ? SellerSettingsTab(onLogout: _confirmLogout)
@@ -285,11 +296,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
         : const Color(0xFFF4FBF7);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
+      value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarColor: bottomBarColor,
         systemNavigationBarIconBrightness: Brightness.dark,
       ),
       child: PopScope(

@@ -77,7 +77,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> _openCamera() async {
-    final res = await Navigator.push<Object?>(context, MaterialPageRoute(builder: (_) => const CameraCapturePage()));
+    final res = await Navigator.push<Object?>(context, _cameraCaptureRoute());
     if (res == CameraCaptureAction.openGallery) { _openGallerySheet(); return; }
     if (res is! CapturedMedia) return;
     if (_selectedMedia.length >= _maxMediaCount) return;
@@ -112,7 +112,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> _addItem() async {
-    if (_selectedMedia.isEmpty) { _showMessage('Add at least 1 media'); return; }
+    if (_selectedMedia.isEmpty) { _showMessage('Minimum 1 media is required'); return; }
     final name = _nameController.text.trim();
     final loc = _isTransitPost ? '🚚 Transit' : _locationController.text.trim();
     if (loc.isEmpty) { setState(() => _showLocationError = true); return; }
@@ -163,8 +163,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   Future<String?> _uploadThumb(File f, String uid, String name, int i, bool isVid) async {
     try {
       final File thumb;
-      if (isVid) thumb = await VideoCompress.getFileThumbnail(f.path, quality: 45);
-      else {
+      if (isVid) {
+        thumb = await VideoCompress.getFileThumbnail(f.path, quality: 45);
+      } else {
         final path = '${(await getTemporaryDirectory()).path}/${DateTime.now().microsecondsSinceEpoch}_t.jpg';
         final res = await FlutterImageCompress.compressAndGetFile(f.path, path, minWidth: 720, minHeight: 720, quality: 36);
         if (res == null) return null;
@@ -193,6 +194,26 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   void _showMessage(String m) => AppToast.show(context, m);
+
+  Route<Object?> _cameraCaptureRoute() => PageRouteBuilder<Object?>(
+    pageBuilder: (context, animation, secondaryAnimation) => const CameraCapturePage(),
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 220),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      );
+    },
+  );
 
   void _handlePriceChanged(String v) {
     final raw = v.replaceAll(',', '');
@@ -250,12 +271,15 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
           if (_isLiveItem) ...[
             Row(children: [
-              Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, error: _showPriceError ? '' : null)),
+              Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError)),
               const SizedBox(width: 10),
                 Expanded(
                   flex: 2,
-                  child: DropdownButtonFormField<String>(
+                  child: SizedBox(
+                    height: 56,
+                    child: DropdownButtonFormField<String>(
                     initialValue: _priceUnit,
+                    isExpanded: true,
                     items: _priceUnits
                         .map(
                           (u) => DropdownMenuItem(
@@ -268,10 +292,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                  ),
                   ),
                 ),
             ]),
@@ -333,12 +359,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Widget _buildMediaEditor() {
     final count = _selectedMedia.length;
-    if (count == 0) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: _cameraAddButton(_openCamera),
-      );
-    }
     return LayoutBuilder(builder: (context, constraints) {
       const spacing = 8.0;
       final tileSize = (constraints.maxWidth - (spacing * 2)) / 3;
@@ -360,17 +380,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                 ),
               ),
             ),
-          _cameraAddButton(_openCamera),
+          _cameraAddButton(_openCamera, size: tileSize),
         ],
       );
     });
   }
 
-  Widget _cameraAddButton(VoidCallback onPressed) => IconButton.filled(
+  Widget _cameraAddButton(VoidCallback onPressed, {double size = 76}) => IconButton.filled(
     onPressed: onPressed,
-    icon: const Icon(Icons.add_a_photo, size: 32),
+    icon: Icon(Icons.add_a_photo, size: size * 0.42),
     style: IconButton.styleFrom(
-      fixedSize: const Size(76, 76),
+      fixedSize: Size.square(size),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
@@ -386,9 +406,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     ]),
   );
 
-  Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, String? error, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => TextField(
+  Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, String? error, bool hasErrorBorder = false, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => TextField(
     controller: ctrl, focusNode: focus, readOnly: _isUploading, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
-    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefix, errorText: error, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefix, errorText: error, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
   );
 }
 

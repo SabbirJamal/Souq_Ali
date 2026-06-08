@@ -56,18 +56,16 @@ class SellerSessionGuard {
               SizedBox(
                 width: double.infinity,
                 height: 64,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.black,
-                    shape: const RoundedRectangleBorder(),
-                  ),
-                  child: const Text(
+                child: InkWell(
+                  onTap: () => Navigator.pop(context),
+                  child: const Center(
+                    child: Text(
                     'OK',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
+                  ),
                   ),
                 ),
               ),

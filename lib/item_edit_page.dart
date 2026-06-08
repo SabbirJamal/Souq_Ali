@@ -405,13 +405,17 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   if (_isLiveItem) ...[
                     Row(
                       children: [
-                        Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, errorText: _showPriceError ? '' : null)),
+                        Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError)),
                         const SizedBox(width: 10),
-                        Expanded(flex: 2, child: DropdownButtonFormField<String>(
-                          value: _priceUnit,
-                          items: _priceUnits.map((u) => DropdownMenuItem(value: u, child: Text(u.replaceFirst('/ ', '')))).toList(),
-                          onChanged: _isSaving ? null : (v) => setState(() => _priceUnit = v!),
-                          decoration: InputDecoration(filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                        Expanded(flex: 2, child: SizedBox(
+                          height: 56,
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _priceUnit,
+                            isExpanded: true,
+                            items: _priceUnits.map((u) => DropdownMenuItem(value: u, child: Text(u.replaceFirst('/ ', '')))).toList(),
+                            onChanged: _isSaving ? null : (v) => setState(() => _priceUnit = v!),
+                            decoration: InputDecoration(filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                          ),
                         )),
                       ],
                     ),
@@ -458,9 +462,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   Widget _buildMediaEditor() {
     final count = _media.length;
-    if (count == 0) {
-      return Align(alignment: Alignment.centerLeft, child: _cameraAddButton(_openMediaSheet));
-    }
     final itemCount = count < _maxMediaCount ? count + 1 : count;
     return LayoutBuilder(builder: (context, constraints) {
       const spacing = 8.0;
@@ -472,7 +473,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         children: [
           for (var i = 0; i < itemCount; i++)
             if (i == count)
-              _cameraAddButton(_openMediaSheet)
+              _cameraAddButton(_openMediaSheet, size: tileSize)
             else
               SizedBox(
                 width: tileSize,
@@ -491,20 +492,20 @@ class _ItemEditPageState extends State<ItemEditPage> {
     });
   }
 
-  Widget _cameraAddButton(VoidCallback onPressed) => IconButton.filled(
+  Widget _cameraAddButton(VoidCallback onPressed, {double size = 76}) => IconButton.filled(
     onPressed: onPressed,
-    icon: const Icon(Icons.add_a_photo, size: 32),
+    icon: Icon(Icons.add_a_photo, size: size * 0.42),
     style: IconButton.styleFrom(
-      fixedSize: const Size(76, 76),
+      fixedSize: Size.square(size),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
     ),
   );
 
-  Widget _field(TextEditingController ctrl, String label, {Widget? prefixIconWidget, int? maxLength, String? errorText, TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focusNode}) => TextField(
+  Widget _field(TextEditingController ctrl, String label, {Widget? prefixIconWidget, int? maxLength, String? errorText, bool hasErrorBorder = false, TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focusNode}) => TextField(
     controller: ctrl, focusNode: focusNode, readOnly: _isSaving, maxLength: maxLength, keyboardType: keyboardType, inputFormatters: inputFormatters, onTap: onTap, onChanged: onChanged,
-    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefixIconWidget, errorText: errorText, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefixIconWidget, errorText: errorText, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
   );
 }
 

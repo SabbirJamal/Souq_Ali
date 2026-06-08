@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../item_edit_page.dart';
 import '../seller_session.dart';
@@ -17,10 +18,10 @@ class SellerListingsTab extends StatefulWidget {
   final VoidCallback? onSessionInvalid;
 
   @override
-  State<SellerListingsTab> createState() => _SellerListingsTabState();
+  SellerListingsTabState createState() => SellerListingsTabState();
 }
 
-class _SellerListingsTabState extends State<SellerListingsTab> {
+class SellerListingsTabState extends State<SellerListingsTab> {
   static const _pageSize = 15;
   static const _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
 
@@ -52,6 +53,23 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
     final session = await _sessionFuture;
     if (session == null) return;
     await _fetchPage(session, isInitial: true);
+  }
+
+  Future<void> reloadItems() async {
+    _nowNotifier.value = DateTime.now();
+    await _loadInitial();
+  }
+
+  Future<void> scrollToTopOrRefresh() async {
+    if (!_scrollController.hasClients || _scrollController.offset <= 8) {
+      await reloadItems();
+      return;
+    }
+    await _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> _loadMore() async {
@@ -185,8 +203,11 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
 
   String _uploadedAgo(Object? value, DateTime now) {
     DateTime? uploadedAt;
-    if (value is Timestamp) uploadedAt = value.toDate();
-    else if (value is DateTime) uploadedAt = value;
+    if (value is Timestamp) {
+      uploadedAt = value.toDate();
+    } else if (value is DateTime) {
+      uploadedAt = value;
+    }
     if (uploadedAt == null) return 'just now';
 
     final difference = now.difference(uploadedAt);
@@ -392,9 +413,13 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
               builder: (context, now, _) {
                 final docs = _getFilteredDocs(now);
 
-                return CustomScrollView(
-                  controller: _scrollController,
-                  slivers: [
+                return RefreshIndicator(
+                  color: const Color(0xFFFF7801),
+                  onRefresh: reloadItems,
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
                     const SliverToBoxAdapter(child: _ListingsScrollableHeader()),
                     SliverToBoxAdapter(child: _SellerInfoHeader(session: session)),
                     SliverToBoxAdapter(
@@ -443,7 +468,8 @@ class _SellerListingsTabState extends State<SellerListingsTab> {
                       ),
                       if (_isLoading) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(color: Color(0xFFFF7801))))),
                     ],
-                  ],
+                    ],
+                  ),
                 );
               },
             ),
@@ -634,7 +660,7 @@ class _RenewDialogState extends State<_RenewDialog> {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
             child: Row(
               children: [
-                Expanded(flex: 3, child: TextField(controller: _priceController, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) { if (_priceError != null) setState(() => _priceError = null); }, decoration: InputDecoration(isDense: true, labelText: _priceError ?? 'Price', errorText: _priceError, prefixIcon: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))))),
+                Expanded(flex: 3, child: TextField(controller: _priceController, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: const [_RenewPriceInputFormatter()], onChanged: (_) { if (_priceError != null) setState(() => _priceError = null); }, decoration: InputDecoration(isDense: true, labelText: _priceError ?? 'Price', errorText: _priceError, prefixIcon: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))))),
                 const SizedBox(width: 10),
                 Expanded(flex: 2, child: DropdownButtonFormField<String>(initialValue: _selectedUnit, decoration: InputDecoration(isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), items: widget.priceUnits.map((unit) => DropdownMenuItem(value: unit, child: Text(unit.replaceFirst('/ ', '')))).toList(), onChanged: (value) { if (value != null) setState(() => _selectedUnit = value); })),
               ],
@@ -654,6 +680,24 @@ class _RenewDialogState extends State<_RenewDialog> {
         ],
       ),
     );
+  }
+}
+
+class _RenewPriceInputFormatter extends TextInputFormatter {
+  const _RenewPriceInputFormatter();
+
+  static final _validPrice = RegExp(r'^\d*\.?\d{0,3}$');
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text.replaceAll(',', '');
+    if (text.isEmpty || _validPrice.hasMatch(text)) {
+      return newValue;
+    }
+    return oldValue;
   }
 }
 
