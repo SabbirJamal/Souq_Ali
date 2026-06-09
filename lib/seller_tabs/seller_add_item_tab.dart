@@ -112,7 +112,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> _addItem() async {
-    if (_selectedMedia.isEmpty) { _showMessage('Minimum 1 media is required'); return; }
+    if (_selectedMedia.isEmpty) { _showMessage('Minimum 1 media required'); return; }
     final name = _nameController.text.trim();
     final loc = _isTransitPost ? '🚚 Transit' : _locationController.text.trim();
     if (loc.isEmpty) { setState(() => _showLocationError = true); return; }
@@ -270,41 +270,44 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
           if (_isLiveItem) ...[
-            Row(children: [
-              Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError)),
-              const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: SizedBox(
-                    height: 56,
-                    child: DropdownButtonFormField<String>(
-                    initialValue: _priceUnit,
-                    isExpanded: true,
-                    items: _priceUnits
-                        .map(
-                          (u) => DropdownMenuItem(
-                            value: u,
-                            child: Text(u.replaceFirst('/ ', '')),
+            Builder(builder: (context) {
+              return Row(children: [
+                  Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError)),
+                  const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 56,
+                        child: DropdownButtonFormField<String>(
+                        initialValue: _priceUnit,
+                        isExpanded: true,
+                        items: _priceUnits
+                            .map(
+                              (u) => DropdownMenuItem(
+                                value: u,
+                                child: Text(u.replaceFirst('/ ', '')),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _isUploading ? null : (v) => setState(() => _priceUnit = v!),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        )
-                        .toList(),
-                    onChanged: _isUploading ? null : (v) => setState(() => _priceUnit = v!),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                       ),
                     ),
-                  ),
-                  ),
-                ),
-            ]),
+                ]);
+            }),
             const SizedBox(height: 14),
           ],
           if (_isLiveItem || !_isTransitPost)
-            _field(_locationController, 'Location', prefix: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, error: _showLocationError ? 'Required' : null, onChanged: (v) => _showLocationError ? setState(() => _showLocationError = false) : null),
+            _field(_locationController, _showLocationError ? 'Location Required' : 'Location', prefix: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, hasErrorBorder: _showLocationError, onChanged: (v) => _showLocationError ? setState(() => _showLocationError = false) : null),
+          if (!_isLiveItem) SizedBox(height: _isTransitPost ? 126 : 56),
           const SizedBox(height: 24),
           FractionallySizedBox(
             widthFactor: 0.75,
@@ -406,9 +409,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     ]),
   );
 
-  Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, String? error, bool hasErrorBorder = false, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => TextField(
+  Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, bool hasErrorBorder = false, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => TextField(
     controller: ctrl, focusNode: focus, readOnly: _isUploading, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
-    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefix, errorText: error, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
+    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, floatingLabelBehavior: hasErrorBorder ? FloatingLabelBehavior.always : null, prefixIcon: prefix, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
   );
 }
 
