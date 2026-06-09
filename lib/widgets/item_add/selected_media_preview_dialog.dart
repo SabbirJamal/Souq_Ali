@@ -4,13 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 class SelectedMediaPreviewItem {
-  const SelectedMediaPreviewItem({
+  const SelectedMediaPreviewItem.file({
     required this.file,
     required this.isVideo,
-  });
+  }) : url = null,
+       thumbnailUrl = null;
 
-  final File file;
+  const SelectedMediaPreviewItem.network({
+    required this.url,
+    required this.isVideo,
+    this.thumbnailUrl,
+  }) : file = null;
+
+  final File? file;
+  final String? url;
+  final String? thumbnailUrl;
   final bool isVideo;
+
+  bool get isNetwork => url != null;
 }
 
 class SelectedMediaPreviewDialog extends StatefulWidget {
@@ -62,7 +73,9 @@ class _SelectedMediaPreviewDialogState
       return;
     }
 
-    final controller = VideoPlayerController.file(_current.file);
+    final controller = _current.isNetwork
+        ? VideoPlayerController.networkUrl(Uri.parse(_current.url!))
+        : VideoPlayerController.file(_current.file!);
     _videoController = controller;
     await controller.initialize();
     await controller.setLooping(true);
@@ -167,7 +180,9 @@ class _MediaPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!item.isVideo) {
-      return Image.file(item.file, fit: BoxFit.cover);
+      return item.isNetwork
+          ? Image.network(item.url!, fit: BoxFit.cover)
+          : Image.file(item.file!, fit: BoxFit.cover);
     }
 
     final controller = videoController;
@@ -245,16 +260,21 @@ class _PreviewThumb extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              item.isVideo
-                  ? const ColoredBox(
-                      color: Colors.black87,
-                      child: Icon(
-                        Icons.play_circle_fill,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                    )
-                  : Image.file(item.file, fit: BoxFit.cover),
+              if (item.thumbnailUrl?.isNotEmpty == true)
+                Image.network(item.thumbnailUrl!, fit: BoxFit.cover)
+              else if (item.isVideo)
+                const ColoredBox(
+                  color: Colors.black87,
+                  child: Icon(
+                    Icons.play_circle_fill,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                )
+              else if (item.isNetwork)
+                Image.network(item.url!, fit: BoxFit.cover)
+              else
+                Image.file(item.file!, fit: BoxFit.cover),
             ],
           ),
         ),

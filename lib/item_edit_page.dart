@@ -13,6 +13,7 @@ import 'camera_capture_page.dart';
 import 'seller_session_guard.dart';
 import 'utils/formatters.dart';
 import 'widgets/item_edit/edit_widgets.dart';
+import 'widgets/item_add/selected_media_preview_dialog.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
@@ -85,10 +86,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _openCamera() async {
-    final result = await Navigator.push<Object?>(
-      context,
-      MaterialPageRoute(builder: (_) => const CameraCapturePage()),
-    );
+    final result = await Navigator.push<Object?>(context, _cameraCaptureRoute());
     if (result == CameraCaptureAction.openGallery) {
       await _pickGalleryMedia();
       return;
@@ -106,42 +104,28 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _openMediaSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: const Color(0xFF111614),
-      shape: const RoundedRectangleBorder(),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
-          child: Row(
-            children: [
-              Expanded(
-                child: MediaSheetButton(
-                  icon: Icons.photo_camera,
-                  label: 'Camera',
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _openCamera();
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: MediaSheetButton(
-                  icon: Icons.photo_library,
-                  label: 'Gallery',
-                  onTap: () async {
-                    Navigator.pop(context);
-                    await _pickGalleryMedia();
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    await _openCamera();
   }
+
+  Route<Object?> _cameraCaptureRoute() => PageRouteBuilder<Object?>(
+    pageBuilder: (context, animation, secondaryAnimation) => const CameraCapturePage(),
+    transitionDuration: const Duration(milliseconds: 260),
+    reverseTransitionDuration: const Duration(milliseconds: 220),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(curved),
+        child: child,
+      );
+    },
+  );
 
   Future<void> _pickGalleryMedia() async {
     final remaining = _maxMediaCount - _media.length;
@@ -187,6 +171,30 @@ class _ItemEditPageState extends State<ItemEditPage> {
       final item = _media.removeAt(fromIndex);
       _media.insert(toIndex, item);
     });
+  }
+
+  Future<void> _openSelectedMediaPreview(int index) async {
+    if (index < 0 || index >= _media.length) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => SelectedMediaPreviewDialog(
+        initialIndex: index,
+        items: _media
+            .map(
+              (media) => media.isExisting
+                  ? SelectedMediaPreviewItem.network(
+                      url: media.existing!.url,
+                      thumbnailUrl: media.existing!.thumbnailUrl,
+                      isVideo: media.isVideo,
+                    )
+                  : SelectedMediaPreviewItem.file(
+                      file: media.selected!.file,
+                      isVideo: media.isVideo,
+                    ),
+            )
+            .toList(growable: false),
+      ),
+    );
   }
 
   Future<void> _loadSellerDefaultLocation() async {
@@ -422,7 +430,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
                     const SizedBox(height: 14),
                   ],
                   if (_isLiveItem || !_isTransitPost)
-                    _field(_locationController, 'Location', prefixIconWidget: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, errorText: _showLocationError ? 'Required' : null, onChanged: (_) => _showLocationError ? setState(() => _showLocationError = false) : null),
+                    _field(_locationController, _showLocationError ? 'Location Required' : 'Location', prefixIconWidget: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, hasErrorBorder: _showLocationError, onChanged: (_) => _showLocationError ? setState(() => _showLocationError = false) : null),
+                  SizedBox(height: _buttonAlignmentSpacerHeight),
                   const SizedBox(height: 24),
                   FractionallySizedBox(
                     widthFactor: 0.75,
@@ -460,9 +469,14 @@ class _ItemEditPageState extends State<ItemEditPage> {
     }),
   );
 
+  double get _buttonAlignmentSpacerHeight {
+    if (_isLiveItem) return 4;
+    if (_isTransitPost) return 76;
+    return 20;
+  }
+
   Widget _buildMediaEditor() {
     final count = _media.length;
-    final itemCount = count < _maxMediaCount ? count + 1 : count;
     return LayoutBuilder(builder: (context, constraints) {
       const spacing = 8.0;
       final tileSize = (constraints.maxWidth - (spacing * 2)) / 3;
@@ -471,22 +485,23 @@ class _ItemEditPageState extends State<ItemEditPage> {
         runSpacing: spacing,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          for (var i = 0; i < itemCount; i++)
-            if (i == count)
-              _cameraAddButton(_openMediaSheet, size: tileSize)
-            else
-              SizedBox(
-                width: tileSize,
-                height: tileSize,
-                child: DragTarget<int>(
-                  onAcceptWithDetails: (d) => _moveMedia(d.data, i),
-                  builder: (ctx, cand, _) => LongPressDraggable<int>(
-                    data: i,
-                    feedback: SizedBox(width: tileSize, height: tileSize, child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: false, onRemove: null)),
+          for (var i = 0; i < count; i++)
+            SizedBox(
+              width: tileSize,
+              height: tileSize,
+              child: DragTarget<int>(
+                onAcceptWithDetails: (d) => _moveMedia(d.data, i),
+                builder: (ctx, cand, _) => LongPressDraggable<int>(
+                  data: i,
+                  feedback: SizedBox(width: tileSize, height: tileSize, child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: false, onRemove: null)),
+                  child: GestureDetector(
+                    onTap: () => _openSelectedMediaPreview(i),
                     child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: cand.isNotEmpty, onRemove: () { if (_canRemoveMedia()) setState(() { final r = _media.removeAt(i); if (r.isExisting) _removedMedia.add(r.existing!); }); }),
                   ),
                 ),
               ),
+            ),
+          _cameraAddButton(_openMediaSheet, size: tileSize),
         ],
       );
     });
@@ -505,7 +520,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   Widget _field(TextEditingController ctrl, String label, {Widget? prefixIconWidget, int? maxLength, String? errorText, bool hasErrorBorder = false, TextInputType? keyboardType, List<TextInputFormatter>? inputFormatters, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focusNode}) => TextField(
     controller: ctrl, focusNode: focusNode, readOnly: _isSaving, maxLength: maxLength, keyboardType: keyboardType, inputFormatters: inputFormatters, onTap: onTap, onChanged: onChanged,
-    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, prefixIcon: prefixIconWidget, errorText: errorText, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
+    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, floatingLabelBehavior: hasErrorBorder ? FloatingLabelBehavior.always : null, prefixIcon: prefixIconWidget, errorText: errorText, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
   );
 }
 

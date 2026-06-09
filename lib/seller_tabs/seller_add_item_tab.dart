@@ -120,7 +120,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         initialIndex: index,
         items: _selectedMedia
             .map(
-              (media) => SelectedMediaPreviewItem(
+              (media) => SelectedMediaPreviewItem.file(
                 file: media.file,
                 isVideo: media.isVideo,
               ),
@@ -367,9 +367,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   );
 
   double get _buttonAlignmentSpacerHeight {
-    if (_isLiveItem) return 54;
-    if (_isTransitPost) return 126;
-    return 70;
+    if (_isLiveItem) return 4;
+    if (_isTransitPost) return 76;
+    return 20;
   }
 
   Widget _buildTransitToggle() => _AddItemSegmentedSelector(
