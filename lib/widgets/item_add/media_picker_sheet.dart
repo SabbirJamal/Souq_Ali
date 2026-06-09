@@ -13,11 +13,13 @@ class MediaPickerSheet extends StatefulWidget {
     required this.selectedCount,
     required this.maxCount,
     required this.onAssetsDone,
+    this.maxSelectionMessage = 'Only 8 media can be selected',
   });
 
   final Set<String> selectedIds;
   final int selectedCount;
   final int maxCount;
+  final String maxSelectionMessage;
   final Future<void> Function(List<AssetEntity> assets, Set<String> selectedIds)
   onAssetsDone;
 
@@ -381,7 +383,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 180),
                       child: _isMaxSelectionMessageVisible
-                          ? const _PickerLimitMessage()
+                          ? _PickerLimitMessage(widget.maxSelectionMessage)
                           : const SizedBox.shrink(),
                     ),
                   ),
@@ -615,7 +617,9 @@ class _SelectedAssetPreview extends StatelessWidget {
 }
 
 class _PickerLimitMessage extends StatelessWidget {
-  const _PickerLimitMessage();
+  const _PickerLimitMessage(this.message);
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -625,12 +629,12 @@ class _PickerLimitMessage extends StatelessWidget {
           color: Colors.black.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(18),
         ),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Text(
-            'Only 8 media can be selected',
+            message,
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 13,
               fontWeight: FontWeight.w700,

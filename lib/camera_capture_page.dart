@@ -2,13 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
 import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
+
+import 'widgets/app_status_bar.dart';
+import 'widgets/app_toast.dart';
+import 'widgets/item_add/media_picker_sheet.dart';
 
 class CapturedMedia {
   const CapturedMedia({required this.file, required this.type, this.caption});
@@ -19,6 +22,13 @@ class CapturedMedia {
 }
 
 enum CameraCaptureAction { openGallery }
+
+class GalleryMediaSelection {
+  const GalleryMediaSelection({required this.assets, required this.selectedIds});
+
+  final List<AssetEntity> assets;
+  final Set<String> selectedIds;
+}
 
 class _CameraControllerCache {
   static const _keepAlive = Duration(minutes: 2);
@@ -119,7 +129,46 @@ class _CameraControllerCache {
 }
 
 class CameraCapturePage extends StatefulWidget {
-  const CameraCapturePage({super.key});
+  const CameraCapturePage({
+    super.key,
+    this.selectedCount = 0,
+    this.maxCount = 8,
+    this.maxSelectionMessage,
+  });
+
+  final int selectedCount;
+  final int maxCount;
+  final String? maxSelectionMessage;
+
+  static Future<GalleryMediaSelection?> openGalleryPicker(
+    BuildContext context, {
+    required Set<String> selectedIds,
+    required int selectedCount,
+    required int maxCount,
+    String maxSelectionMessage = 'Only 8 media can be selected',
+  }) async {
+    GalleryMediaSelection? result;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF111614),
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height -
+            MediaQuery.viewPaddingOf(context).top,
+        child: MediaPickerSheet(
+          selectedIds: selectedIds,
+          selectedCount: selectedCount,
+          maxCount: maxCount,
+          maxSelectionMessage: maxSelectionMessage,
+          onAssetsDone: (assets, ids) async {
+            result = GalleryMediaSelection(assets: assets, selectedIds: ids);
+          },
+        ),
+      ),
+    );
+    return result;
+  }
+
   static Future<List<CameraDescription>>? _cameraListFuture;
   static Future<List<CameraDescription>> preloadCameras() => _cameraListFuture ??= availableCameras();
   static Future<void> prewarmCamera() async {
@@ -194,6 +243,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
       SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
         statusBarColor: Colors.black,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
         systemNavigationBarColor: Colors.transparent,
         systemNavigationBarIconBrightness: Brightness.dark,
       ));
@@ -219,6 +270,15 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     } else {
       permissions.openAppSettings();
     }
+  }
+
+  bool _hasReachedMediaLimit() {
+    if (widget.selectedCount < widget.maxCount) return false;
+    final message = widget.maxSelectionMessage;
+    if (message != null && message.isNotEmpty) {
+      AppToast.show(context, message);
+    }
+    return true;
   }
 
   Future<void> _setup() async {
@@ -253,16 +313,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     }
   }
 
-  Future<void> _flip() async {
-    if (_cameras.length < 2 || _isRec || _isBusy) return;
-    HapticFeedback.mediumImpact();
-    _camIdx = (_camIdx + 1) % _cameras.length;
-    setState(() {
-      _controller = null;
-      _initFuture = _initCam(_cameras[_camIdx]);
-    });
-  }
-
   Future<void> _toggleFlash() async {
     if (_controller == null || !_controller!.value.isInitialized || _isRec || _isBusy) return;
     try {
@@ -274,6 +324,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   void _onPressStart(TapDownDetails d) {
     if (_isBusy) return;
+    if (_hasReachedMediaLimit()) return;
     _startY = d.globalPosition.dy;
     _startZoom = _currZoom;
     _holdTimer = Timer(const Duration(milliseconds: 400), _startRec);
@@ -338,9 +389,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await _controller!.startVideoRecording();
       HapticFeedback.heavyImpact();
       if (mounted) setState(() { _isRec = true; _elapsed = Duration.zero; });
-      _tickTimer = Timer.periodic(const Duration(milliseconds: 100), (t) {
+      _tickTimer = Timer.periodic(const Duration(milliseconds: 250), (t) {
         if (!mounted || !_isRec) { t.cancel(); return; }
-        setState(() => _elapsed += const Duration(milliseconds: 100));
+        setState(() => _elapsed += const Duration(milliseconds: 250));
         if (_elapsed >= _maxDuration) _stopRec();
       });
     } catch (e) { debugPrint('Error starting video recording: $e'); }
@@ -355,7 +406,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       final f = await _controller!.stopVideoRecording();
       HapticFeedback.mediumImpact();
       if (!mounted) return;
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 80));
       final file = File(f.path);
       if (await file.exists()) {
         if (!mounted) return;
@@ -381,7 +432,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
             isReady
                 ? GestureDetector(
                     onTapDown: _onTapFocus,
-                    onDoubleTap: _flip,
                     onScaleUpdate: (d) => _setZoom((_currZoom * d.scale).clamp(_minZoom, _maxZoom)),
                     child: RepaintBoundary(
                       child: Align(
@@ -408,10 +458,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     backgroundColor: Colors.black,
     body: Column(
       children: [
-        SizedBox(
-          height: MediaQuery.viewPaddingOf(context).top,
-          child: const ColoredBox(color: Colors.black),
-        ),
+        const AppStatusBar(),
         Expanded(
           child: Stack(
             children: [
@@ -466,7 +513,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   );
 
   Widget _buildBottomControls() => Positioned(
-    bottom: 0, left: 0, right: 0,
+    bottom: 88, left: 0, right: 0,
     child: SafeArea(
       top: false,
       minimum: const EdgeInsets.only(bottom: 8),
@@ -476,16 +523,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         children: [
           _CircleBtn(icon: Icons.photo_library, onTap: () => Navigator.pop(context, CameraCaptureAction.openGallery)),
           _CaptureBtn(isRec: _isRec, progress: _elapsed.inMilliseconds / _maxDuration.inMilliseconds, onStart: _onPressStart, onEnd: _onPressEnd, onMove: _onMove),
-          _CircleBtn(icon: Icons.flip_camera_android, onTap: _flip),
+          const SizedBox(width: 48, height: 48),
         ],
       )),
-      Visibility(
-        visible: !_isRec,
-        maintainSize: true,
-        maintainAnimation: true,
-        maintainState: true,
-        child: const Text('Hold for video, tap for photo', style: TextStyle(color: Colors.white70, fontSize: 12)),
-      ),
       const SizedBox(height: 6),
     ])),
   );
@@ -548,15 +588,10 @@ class _ImagePreviewPage extends StatefulWidget {
 }
 
 class _ImagePreviewPageState extends State<_ImagePreviewPage> {
-  final _crop = CropController();
-  final _caption = TextEditingController();
-  bool _isCropping = false;
   late File _currFile;
 
   @override
   void initState() { super.initState(); _currFile = widget.file; }
-  @override
-  void dispose() { _caption.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -564,34 +599,19 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
-        Positioned.fill(child: _isCropping 
-          ? Crop(image: _currFile.readAsBytesSync(), controller: _crop, onCropped: (res) async {
-              if (res is CropSuccess) {
-                final f = File('${(await getTemporaryDirectory()).path}/crop_${DateTime.now().millisecondsSinceEpoch}.jpg');
-                await f.writeAsBytes(res.croppedImage);
-                setState(() { _currFile = f; _isCropping = false; });
-              }
-            })
-          : Center(
-              child: AspectRatio(
-                aspectRatio: _CameraCapturePageState._portraitFrameRatio,
-                child: Image.file(_currFile, fit: BoxFit.contain),
-              ),
-            )),
-        Positioned(top: 10, left: 10, child: SafeArea(child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)))),
-        if (!_isCropping) Positioned(top: 10, right: 10, child: SafeArea(child: IconButton(icon: const Icon(Icons.crop, color: Colors.white), onPressed: () => setState(() => _isCropping = true)))),
-        if (!_isCropping) Positioned(
-          bottom: bottomControlsInset, left: 16, right: 84,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(24)),
-            child: TextField(controller: _caption, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Add a caption...', hintStyle: TextStyle(color: Colors.white70), border: InputBorder.none, isDense: true)),
+        Positioned.fill(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: AspectRatio(
+              aspectRatio: _CameraCapturePageState._portraitFrameRatio,
+              child: Image.file(_currFile, fit: BoxFit.contain),
+            ),
           ),
         ),
+        Positioned(top: 10, left: 10, child: SafeArea(child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)))),
         Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: () {
-          if (_isCropping) _crop.crop(); 
-          else Navigator.pop(context, CapturedMedia(file: _currFile, type: 'image', caption: _caption.text));
-        }, child: Icon(_isCropping ? Icons.check : Icons.send))),
+          Navigator.pop(context, CapturedMedia(file: _currFile, type: 'image'));
+        }, child: const Icon(Icons.send))),
       ]),
     );
   }
@@ -606,7 +626,6 @@ class _VideoPreviewPage extends StatefulWidget {
 
 class _VideoPreviewPageState extends State<_VideoPreviewPage> {
   late VideoPlayerController _c;
-  final _caption = TextEditingController();
   Timer? _overlayTimer;
   bool _isInit = false, _isMuted = false;
   bool _showPlaybackIcon = false;
@@ -644,7 +663,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
   }
 
   @override
-  void dispose() { _overlayTimer?.cancel(); _c.removeListener(_checkTrim); _c.dispose(); _caption.dispose(); super.dispose(); }
+  void dispose() { _overlayTimer?.cancel(); _c.removeListener(_checkTrim); _c.dispose(); super.dispose(); }
 
   void _togglePlayback() {
     if (!_isInit) return;
@@ -709,7 +728,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
       if (info?.file != null) finalFile = info!.file!;
     }
     
-    if (mounted) Navigator.pop(context, CapturedMedia(file: finalFile, type: 'video', caption: _caption.text));
+    if (mounted) Navigator.pop(context, CapturedMedia(file: finalFile, type: 'video'));
   }
 
   @override
@@ -722,7 +741,8 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
           behavior: HitTestBehavior.opaque,
           onTap: _togglePlayback,
           child: Stack(alignment: Alignment.center, children: [
-            Center(
+            Align(
+              alignment: Alignment.topCenter,
               child: AspectRatio(
                 aspectRatio: _CameraCapturePageState._portraitFrameRatio,
                 child: Center(child: AspectRatio(aspectRatio: _c.value.aspectRatio, child: VideoPlayer(_c))),
@@ -779,15 +799,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
           )),
         ),
 
-        Positioned(bottom: bottomControlsInset, left: 16, right: 16, child: Row(children: [
-          Expanded(child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(24)),
-            child: TextField(controller: _caption, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(hintText: 'Add a caption...', hintStyle: TextStyle(color: Colors.white70), border: InputBorder.none, isDense: true)),
-          )),
-          const SizedBox(width: 12),
-          FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: _send, child: const Icon(Icons.check, color: Colors.white, size: 34)),
-        ])),
+        Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: _send, child: const Icon(Icons.check, color: Colors.white, size: 34))),
       ]),
     );
   }

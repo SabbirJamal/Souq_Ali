@@ -10,6 +10,7 @@ import 'seller_profile_page.dart';
 import 'seller_session.dart';
 import 'share_listing_page.dart';
 import 'utils/formatters.dart';
+import 'widgets/app_status_bar.dart';
 import 'widgets/detail/detail_media_header.dart';
 import 'widgets/media_carousel.dart';
 
@@ -47,7 +48,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   Future<void> _prepareDetailMedia() async {
     final media = mediaItemsFromMap(widget.itemData);
-    final futures = media.map((m) {
+    final firstItems = media.take(2).map((m) {
       final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : (m.thumbnailUrl?.trim().isNotEmpty == true ? m.thumbnailUrl!.trim() : m.url);
       return url.isEmpty ? Future.value() : precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
     });
@@ -56,8 +57,21 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       _preloadedVideoControllers[first.url]?.play();
     }).catchError((_) {}) : null;
     
-    await Future.any([Future.wait([...futures, if (firstVid != null) firstVid]), Future.delayed(const Duration(milliseconds: 1600))]);
+    await Future.any([Future.wait([...firstItems, ?firstVid]), Future.delayed(const Duration(milliseconds: 900))]);
     if (mounted) setState(() => _isPreparingDetail = false);
+    _precacheRemainingDetailMedia(media.skip(2));
+  }
+
+  void _precacheRemainingDetailMedia(Iterable<MediaItem> media) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      for (final m in media) {
+        final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : (m.thumbnailUrl?.trim().isNotEmpty == true ? m.thumbnailUrl!.trim() : m.url);
+        if (url.isNotEmpty) {
+          precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
+        }
+      }
+    });
   }
 
   void _preloadDetailVideos() {
@@ -67,7 +81,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       if (_preloadedVideoControllers.containsKey(m.url)) continue;
       final c = VideoPlayerController.networkUrl(Uri.parse(m.url));
       _preloadedVideoControllers[m.url] = c;
-      _preloadedVideoInitializers[m.url] = (first?.url == m.url ? c.initialize() : Future.delayed(const Duration(milliseconds: 300), () => c.initialize())).catchError((_) {});
+      _preloadedVideoInitializers[m.url] = (first?.url == m.url ? c.initialize() : Future.delayed(const Duration(milliseconds: 900), () => c.initialize())).catchError((_) {});
     }
   }
 
@@ -106,7 +120,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
             ])),
             _FixedActionBar(phone: phone, onShare: () { _stopDetailPlayback(); Navigator.push(context, MaterialPageRoute(builder: (_) => ShareListingPage(itemId: widget.itemId, itemData: widget.itemData, mediaItems: media))); }),
           ]),
-          Positioned(top: 0, left: 0, right: 0, height: MediaQuery.paddingOf(context).top, child: const ColoredBox(color: Colors.black)),
+          const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
           _DetailHeader(onBack: () => _goToFeed(context)),
         ]),
       ),

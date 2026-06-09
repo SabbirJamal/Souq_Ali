@@ -7,11 +7,20 @@ import 'seller_session.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: SystemUiOverlay.values,
+  );
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.black,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+  ));
+
   // Parallelize Firebase and Session loading
   final firebaseFuture = Firebase.initializeApp();
   final sessionFuture = SellerSession.current();
-  
+
   runApp(SouqaliApp(
     firebaseFuture: firebaseFuture,
     sessionFuture: sessionFuture,

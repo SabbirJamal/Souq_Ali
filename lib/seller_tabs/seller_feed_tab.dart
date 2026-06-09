@@ -102,7 +102,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         viewerId: viewerId,
         status: widget.itemStatus,
         cursor: isInitial ? null : _feedCursor,
-        limit: 60,
+        limit: 30,
       );
       if (!mounted) return;
       setState(() {

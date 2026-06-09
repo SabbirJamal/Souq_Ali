@@ -5,8 +5,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
@@ -14,6 +14,7 @@ import 'seller_session_guard.dart';
 import 'utils/formatters.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/item_add/selected_media_preview_dialog.dart';
+import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
@@ -32,13 +33,14 @@ class ItemEditPage extends StatefulWidget {
 class _ItemEditPageState extends State<ItemEditPage> {
   static const _maxMediaCount = 8;
   static const _maxPriceValue = 1000000.0;
+  static const _maxMediaMessage =
+      '8 Media selected, please delete media to select new media';
 
   late final TextEditingController _nameController;
   late final TextEditingController _priceController;
   late final TextEditingController _locationController;
   final _priceFocusNode = FocusNode();
 
-  final _picker = ImagePicker();
   final List<EditableMedia> _media = [];
   final List<MediaItem> _removedMedia = [];
   final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
@@ -88,7 +90,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   Future<void> _openCamera() async {
     final result = await Navigator.push<Object?>(context, _cameraCaptureRoute());
     if (result == CameraCaptureAction.openGallery) {
-      await _pickGalleryMedia();
+      await _openGallerySheet();
       return;
     }
     if (result is! CapturedMedia) return;
@@ -107,8 +109,28 @@ class _ItemEditPageState extends State<ItemEditPage> {
     await _openCamera();
   }
 
+  Future<void> _openGallerySheet() async {
+    final selection = await CameraCapturePage.openGalleryPicker(
+      context,
+      selectedIds: _media
+          .where((media) => !media.isExisting)
+          .map((media) => media.selected?.assetId)
+          .whereType<String>()
+          .toSet(),
+      selectedCount: _media.length,
+      maxCount: _maxMediaCount,
+      maxSelectionMessage: _maxMediaMessage,
+    );
+    if (selection == null) return;
+    await _addGalleryAssets(selection.assets, selection.selectedIds);
+  }
+
   Route<Object?> _cameraCaptureRoute() => PageRouteBuilder<Object?>(
-    pageBuilder: (context, animation, secondaryAnimation) => const CameraCapturePage(),
+    pageBuilder: (context, animation, secondaryAnimation) => CameraCapturePage(
+      selectedCount: _media.length,
+      maxCount: _maxMediaCount,
+      maxSelectionMessage: _maxMediaMessage,
+    ),
     transitionDuration: const Duration(milliseconds: 260),
     reverseTransitionDuration: const Duration(milliseconds: 220),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -127,33 +149,29 @@ class _ItemEditPageState extends State<ItemEditPage> {
     },
   );
 
-  Future<void> _pickGalleryMedia() async {
-    final remaining = _maxMediaCount - _media.length;
-    if (remaining <= 0) {
-      _showMessage('Maximum $_maxMediaCount media files allowed');
-      return;
+  Future<void> _addGalleryAssets(List<AssetEntity> assets, Set<String> selectedIds) async {
+    final newMedia = <EditableMedia>[];
+    for (final asset in assets) {
+      if (_media.any((media) => media.selected?.assetId == asset.id)) continue;
+      final file = await asset.fileWithSubtype ?? await asset.file;
+      if (file == null) continue;
+      newMedia.add(
+        EditableMedia.newMedia(
+          SelectedMedia(
+            file: file,
+            type: asset.type == AssetType.video ? 'video' : 'image',
+            assetId: asset.id,
+          ),
+        ),
+      );
     }
-
-    final files = await _picker.pickMultipleMedia(
-      imageQuality: 70,
-      maxWidth: 1600,
-      maxHeight: 1600,
-      limit: remaining,
-    );
-    if (files.isEmpty) return;
-
-    final selected = <EditableMedia>[];
-    for (final file in files.take(remaining)) {
-      final media = SelectedMedia.fromXFile(file);
-      if (media.isVideo && !await _isVideoWithinLimit(media.file)) {
-        _showMessage('Video cannot be more than 1 minute');
-        continue;
-      }
-      selected.add(EditableMedia.newMedia(media));
-    }
-
-    if (selected.isEmpty) return;
-    setState(() => _media.addAll(selected));
+    setState(() {
+      _media.removeWhere((media) {
+        final assetId = media.selected?.assetId;
+        return assetId != null && !selectedIds.contains(assetId);
+      });
+      _media.addAll(newMedia);
+    });
   }
 
   bool _canAddMedia() => _media.length < _maxMediaCount;
@@ -399,7 +417,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         backgroundColor: pageColor,
         body: Column(
           children: [
-            Container(height: MediaQuery.paddingOf(context).top, color: Colors.black),
+            const AppStatusBar(),
             Container(height: kToolbarHeight, color: pageColor, alignment: Alignment.centerLeft, child: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back))),
             Expanded(
               child: ListView(

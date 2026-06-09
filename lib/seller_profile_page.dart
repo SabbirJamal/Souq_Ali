@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'seller_home_page.dart';
 import 'seller_session.dart';
+import 'widgets/app_status_bar.dart';
 import 'widgets/item_card.dart';
 
 class SellerProfilePage extends StatelessWidget {
@@ -330,28 +331,29 @@ class _ProfileScrollableHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 56 + MediaQuery.paddingOf(context).top,
-      color: const Color(0xFFF4FBF7),
-      padding: EdgeInsets.fromLTRB(
-        12,
-        MediaQuery.paddingOf(context).top,
-        12,
-        0,
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const SizedBox(
-            height: 56,
-            width: 152,
-            child: Image(
-              image: AssetImage('assets/branding/logo.png'),
-              fit: BoxFit.cover,
-            ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const AppStatusBar(),
+        Container(
+          height: 56,
+          color: const Color(0xFFF4FBF7),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const SizedBox(
+                height: 56,
+                width: 152,
+                child: Image(
+                  image: AssetImage('assets/branding/logo.png'),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

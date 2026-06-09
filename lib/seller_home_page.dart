@@ -9,6 +9,7 @@ import 'seller_tabs/seller_live_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_session.dart';
 import 'seller_session_guard.dart';
+import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 
 class SellerHomePage extends StatefulWidget {
@@ -126,6 +127,18 @@ class _SellerHomePageState extends State<SellerHomePage> {
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: _handleInvalidSellerSession)) return;
     }
 
+    if (index == 2 && widget.isSellerMode) {
+      if (_pageCache[2] == null) {
+        setState(() => _pageCache[2] = _buildPageAt(2));
+        await WidgetsBinding.instance.endOfFrame;
+      }
+      await _addItemKey.currentState?.openMediaFromBottomNav();
+      if (!mounted) return;
+      setState(() => _currentIndex = 2);
+      _setChromeVisible(true);
+      return;
+    }
+
     setState(() {
       _currentIndex = index;
       if (index == 3 && widget.isSellerMode) {
@@ -134,12 +147,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
       }
     });
     _setChromeVisible(true);
-
-    if (index == 2 && widget.isSellerMode) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _addItemKey.currentState?.openMediaSheet();
-      });
-    }
   }
 
   Future<void> _logout() async {
@@ -297,7 +304,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
+        statusBarColor: Colors.black,
         statusBarIconBrightness: Brightness.light,
         statusBarBrightness: Brightness.dark,
         systemNavigationBarColor: bottomBarColor,
@@ -315,11 +322,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
           extendBody: true, // Background flows behind navigation bar
           body: Column(
             children: [
-              // Efficiently handles the status bar height with the brand color
-              Container(
-                height: MediaQuery.viewPaddingOf(context).top,
-                color: Colors.black,
-              ),
+              const AppStatusBar(),
               if (showTabHeader)
                 _SellerTabHeader(
                   rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),

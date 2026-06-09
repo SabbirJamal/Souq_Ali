@@ -9,9 +9,9 @@ initializeApp();
 
 const db = getFirestore();
 const bucket = getStorage().bucket();
-const DEFAULT_FEED_LIMIT = 60;
-const FEED_FETCH_BATCH_SIZE = 200;
-const FEED_MAX_SCANNED_DOCS = 1200;
+const DEFAULT_FEED_LIMIT = 30;
+const FEED_FETCH_BATCH_SIZE = 100;
+const FEED_MAX_SCANNED_DOCS = 600;
 
 exports.getFeedItems = onCall(
   {
@@ -46,6 +46,7 @@ exports.getFeedItems = onCall(
       while (unseen.length < limit && scanned < FEED_MAX_SCANNED_DOCS && hasMore) {
         let query = db
           .collection("items")
+          .where("status", "==", status)
           .orderBy("created_at", "desc")
           .orderBy(FieldPath.documentId(), "desc")
           .limit(FEED_FETCH_BATCH_SIZE);
@@ -66,7 +67,7 @@ exports.getFeedItems = onCall(
           const item = doc.data();
           lastCursor = cursorFromDoc(doc);
 
-          if (stringValue(item.status) !== status || !isItemVisible(item, now)) {
+          if (!isItemVisible(item, now)) {
             continue;
           }
 

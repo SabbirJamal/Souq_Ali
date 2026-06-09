@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
@@ -33,31 +32,6 @@ class ItemCard extends StatefulWidget {
 
 class _ItemCardState extends State<ItemCard>
     with AutomaticKeepAliveClientMixin<ItemCard> {
-  @override
-  void initState() {
-    super.initState();
-    // Pre-cache first image for detail page
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _precacheDetailMedia();
-    });
-  }
-
-  void _precacheDetailMedia() {
-    if (!mounted) {
-      return;
-    }
-    final mediaItems = mediaItemsFromMap(widget.item);
-    if (mediaItems.isNotEmpty) {
-      final firstMedia = mediaItems.first;
-      final url = firstMedia.isVideo
-          ? firstMedia.thumbnailUrl?.trim()
-          : firstMedia.url.trim();
-      if (url != null && url.isNotEmpty) {
-        precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
-      }
-    }
-  }
-
   @override
   void dispose() {
     super.dispose();
@@ -303,17 +277,18 @@ class _ImageFilledDetails extends StatelessWidget {
           children: [
             if (location.isNotEmpty) ...[
               _TextChip(
+                isCompact: isCompact,
                 child: _OverlayInfoRow(
                   text: location,
                   isTransit: isTransit,
                   isCompact: isCompact,
                 ),
-                isCompact: isCompact,
               ),
             ],
             if (price.isNotEmpty) ...[
               SizedBox(height: isCompact ? 5 : 8),
               _TextChip(
+                isCompact: isCompact,
                 child: PriceWithCurrency(
                   price: price,
                   style: TextStyle(
@@ -322,12 +297,12 @@ class _ImageFilledDetails extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                isCompact: isCompact,
               ),
             ],
             if (itemName.isNotEmpty) ...[
               SizedBox(height: isCompact ? 5 : 8),
               _TextChip(
+                isCompact: isCompact,
                 child: Text(
                   itemName,
                   maxLines: isCompact ? 1 : 2,
@@ -338,7 +313,6 @@ class _ImageFilledDetails extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                isCompact: isCompact,
               ),
             ],
           ],

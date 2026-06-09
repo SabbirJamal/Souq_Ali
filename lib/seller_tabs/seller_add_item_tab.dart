@@ -15,7 +15,6 @@ import '../seller_session.dart';
 import '../seller_session_guard.dart';
 import '../upload_status_manager.dart';
 import '../widgets/app_toast.dart';
-import '../widgets/item_add/media_picker_sheet.dart';
 import '../widgets/item_add/selected_media_preview_dialog.dart';
 import '../widgets/item_edit/edit_widgets.dart';
 import '../widgets/price_with_currency.dart';
@@ -77,22 +76,26 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     VideoCompress.cancelCompression(); super.dispose();
   }
 
-  Future<void> _openCamera() async {
-    final res = await Navigator.push<Object?>(context, _cameraCaptureRoute());
-    if (res == CameraCaptureAction.openGallery) { _openGallerySheet(); return; }
+  Future<void> _openCamera({bool useDefaultRoute = false}) async {
+    final res = await Navigator.push<Object?>(
+      context,
+      _cameraCaptureRoute(noAnimation: useDefaultRoute),
+    );
+    if (res == CameraCaptureAction.openGallery) { await _openGallerySheet(); return; }
     if (res is! CapturedMedia) return;
     if (_selectedMedia.length >= _maxMediaCount) return;
     setState(() => _selectedMedia.add(SelectedMedia(file: res.file, type: res.type)));
   }
 
   Future<void> _openGallerySheet() async {
-    await showModalBottomSheet<void>(
-      context: context, isScrollControlled: true, backgroundColor: const Color(0xFF111614),
-      builder: (ctx) => FractionallySizedBox(heightFactor: 0.85, child: MediaPickerSheet(
-        selectedIds: _selectedMedia.map((m) => m.assetId).whereType<String>().toSet(),
-        selectedCount: _selectedMedia.length, maxCount: _maxMediaCount, onAssetsDone: _addGalleryAssets,
-      )),
+    final selection = await CameraCapturePage.openGalleryPicker(
+      context,
+      selectedIds: _selectedMedia.map((m) => m.assetId).whereType<String>().toSet(),
+      selectedCount: _selectedMedia.length,
+      maxCount: _maxMediaCount,
     );
+    if (selection == null) return;
+    await _addGalleryAssets(selection.assets, selection.selectedIds);
   }
 
   Future<void> _addGalleryAssets(List<AssetEntity> assets, Set<String> ids) async {
@@ -110,6 +113,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Future<void> openMediaSheet() async {
     await _openCamera();
+  }
+
+  Future<void> openMediaFromBottomNav() async {
+    await _openCamera(useDefaultRoute: true);
   }
 
   Future<void> _openSelectedMediaPreview(int index) async {
@@ -214,11 +221,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   void _showMessage(String m) => AppToast.show(context, m);
 
-  Route<Object?> _cameraCaptureRoute() => PageRouteBuilder<Object?>(
+  Route<Object?> _cameraCaptureRoute({bool noAnimation = false}) => PageRouteBuilder<Object?>(
     pageBuilder: (context, animation, secondaryAnimation) => const CameraCapturePage(),
-    transitionDuration: const Duration(milliseconds: 260),
-    reverseTransitionDuration: const Duration(milliseconds: 220),
+    transitionDuration: noAnimation ? Duration.zero : const Duration(milliseconds: 260),
+    reverseTransitionDuration: noAnimation ? Duration.zero : const Duration(milliseconds: 220),
     transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      if (noAnimation) return child;
       final curved = CurvedAnimation(
         parent: animation,
         curve: Curves.easeOutCubic,
