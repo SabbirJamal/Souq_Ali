@@ -16,6 +16,7 @@ import '../seller_session_guard.dart';
 import '../upload_status_manager.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_add/media_picker_sheet.dart';
+import '../widgets/item_add/selected_media_preview_dialog.dart';
 import '../widgets/item_edit/edit_widgets.dart';
 import '../widgets/price_with_currency.dart';
 
@@ -109,6 +110,24 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Future<void> openMediaSheet() async {
     await _openCamera();
+  }
+
+  Future<void> _openSelectedMediaPreview(int index) async {
+    if (index < 0 || index >= _selectedMedia.length) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => SelectedMediaPreviewDialog(
+        initialIndex: index,
+        items: _selectedMedia
+            .map(
+              (media) => SelectedMediaPreviewItem(
+                file: media.file,
+                isVideo: media.isVideo,
+              ),
+            )
+            .toList(growable: false),
+      ),
+    );
   }
 
   Future<void> _addItem() async {
@@ -307,7 +326,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           ],
           if (_isLiveItem || !_isTransitPost)
             _field(_locationController, _showLocationError ? 'Location Required' : 'Location', prefix: const Center(widthFactor: 1, child: Text('📍', style: TextStyle(fontSize: 20))), maxLength: 30, hasErrorBorder: _showLocationError, onChanged: (v) => _showLocationError ? setState(() => _showLocationError = false) : null),
-          if (!_isLiveItem) SizedBox(height: _isTransitPost ? 126 : 56),
+          SizedBox(height: _buttonAlignmentSpacerHeight),
           const SizedBox(height: 24),
           FractionallySizedBox(
             widthFactor: 0.75,
@@ -347,6 +366,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     },
   );
 
+  double get _buttonAlignmentSpacerHeight {
+    if (_isLiveItem) return 54;
+    if (_isTransitPost) return 126;
+    return 70;
+  }
+
   Widget _buildTransitToggle() => _AddItemSegmentedSelector(
     leftText: 'IN STOCK',
     rightText: '🚚 TRANSIT',
@@ -379,7 +404,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                 builder: (ctx, cand, _) => LongPressDraggable<int>(
                   data: i,
                   feedback: SizedBox(width: tileSize, height: tileSize, child: Opacity(opacity: 0.8, child: _tile(i, false))),
-                  child: _tile(i, cand.isNotEmpty),
+                  child: GestureDetector(
+                    onTap: () => _openSelectedMediaPreview(i),
+                    child: _tile(i, cand.isNotEmpty),
+                  ),
                 ),
               ),
             ),

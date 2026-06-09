@@ -533,6 +533,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                 key: _formKey,
                 child: TextFormField(
                   controller: _phoneController,
+                  style: const TextStyle(fontSize: 16),
                   keyboardType: TextInputType.number,
                   maxLength: 8,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -544,7 +545,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                         children: [
                           Icon(Icons.phone),
                           SizedBox(width: 8),
-                          Text('+968 '),
+                          Text('+968 ', style: TextStyle(fontSize: 16)),
                         ],
                       ),
                     ),
