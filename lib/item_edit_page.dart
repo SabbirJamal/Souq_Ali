@@ -18,6 +18,9 @@ import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
+import 'widgets/seller_bottom_nav_bar.dart';
+
+void _noopEditCameraNavTap(int index) {}
 
 class ItemEditPage extends StatefulWidget {
   const ItemEditPage({super.key, required this.docId, required this.itemData, this.onSessionInvalid});
@@ -397,14 +400,36 @@ class _ItemEditPageState extends State<ItemEditPage> {
   @override
   Widget build(BuildContext context) {
     if (_showEmbeddedCamera) {
-      return CameraCapturePage(
-        embedded: true,
-        selectedCount: _media.length,
-        maxCount: _maxMediaCount,
-        maxSelectionMessage: _maxMediaMessage,
-        onClose: () => setState(() => _showEmbeddedCamera = false),
-        onOpenGallery: _handleEmbeddedGallery,
-        onCaptured: _handleEmbeddedCapture,
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.black,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: Column(
+            children: [
+              const AppStatusBar(),
+              Expanded(
+                child: CameraCapturePage(
+                  embedded: true,
+                  selectedCount: _media.length,
+                  maxCount: _maxMediaCount,
+                  maxSelectionMessage: _maxMediaMessage,
+                  onClose: () => setState(() => _showEmbeddedCamera = false),
+                  onOpenGallery: _handleEmbeddedGallery,
+                  onCaptured: _handleEmbeddedCapture,
+                ),
+              ),
+            ],
+          ),
+          bottomNavigationBar: const SellerBottomNavBar(
+            currentIndex: 2,
+            onTap: _noopEditCameraNavTap,
+            backgroundColor: Color(0xFFF4FBF7),
+          ),
+        ),
       );
     }
 
