@@ -336,6 +336,37 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                       ],
                   ],
                 ),
+                if (_pendingAssets.isNotEmpty)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 12,
+                    child: SafeArea(
+                      child: Container(
+                        height: 68,
+                        color: Colors.black,
+                        padding: const EdgeInsets.fromLTRB(8, 7, 86, 7),
+                        child: SizedBox(
+                          height: 54,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _pendingAssets.length,
+                            separatorBuilder: (_, _) => const SizedBox(width: 6),
+                            itemBuilder: (context, index) {
+                              final asset = _pendingAssets[index];
+                              return _SelectedAssetPreview(
+                                asset: asset,
+                                thumbnailFuture: _thumbnailFor(
+                                  asset,
+                                  const ThumbnailSize(90, 120),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   right: 18,
                   bottom: 18,
@@ -349,32 +380,6 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                     ),
                   ),
                 ),
-                if (_pendingAssets.isNotEmpty)
-                  Positioned(
-                    left: 8,
-                    right: 86,
-                    bottom: 18,
-                    child: SafeArea(
-                      child: SizedBox(
-                        height: 54,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _pendingAssets.length,
-                          separatorBuilder: (_, _) => const SizedBox(width: 6),
-                          itemBuilder: (context, index) {
-                            final asset = _pendingAssets[index];
-                            return _SelectedAssetPreview(
-                              asset: asset,
-                              thumbnailFuture: _thumbnailFor(
-                                asset,
-                                const ThumbnailSize(90, 120),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
                 Positioned(
                   left: 24,
                   right: 24,

@@ -281,6 +281,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   @override
   Widget build(BuildContext context) {
+    const livePriceFieldHeight = 56.0;
     if (_showEmbeddedCamera) {
       return CameraCapturePage(
         embedded: true,
@@ -307,16 +308,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
           if (_isLiveItem) ...[
             Builder(builder: (context) {
-              return Row(children: [
-                  Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError)),
+              return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(flex: 3, child: SizedBox(height: livePriceFieldHeight, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError))),
                   const SizedBox(width: 10),
                     Expanded(
                       flex: 2,
                       child: SizedBox(
-                        height: 56,
+                        height: livePriceFieldHeight,
                         child: DropdownButtonFormField<String>(
                         initialValue: _priceUnit,
                         isExpanded: true,
+                        isDense: false,
                         items: _priceUnits
                             .map(
                               (u) => DropdownMenuItem(
@@ -329,7 +331,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                          constraints: const BoxConstraints.tightFor(height: livePriceFieldHeight),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
