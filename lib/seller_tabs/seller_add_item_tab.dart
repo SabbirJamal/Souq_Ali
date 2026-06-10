@@ -53,6 +53,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   bool _showPriceError = false;
   bool _isLiveItem = false;
   bool _isTransitPost = false;
+  bool _showEmbeddedCamera = false;
 
   @override
   void initState() {
@@ -76,15 +77,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     VideoCompress.cancelCompression(); super.dispose();
   }
 
-  Future<void> _openCamera({bool useDefaultRoute = false}) async {
-    final res = await Navigator.push<Object?>(
-      context,
-      _cameraCaptureRoute(noAnimation: useDefaultRoute),
-    );
-    if (res == CameraCaptureAction.openGallery) { await _openGallerySheet(); return; }
-    if (res is! CapturedMedia) return;
-    if (_selectedMedia.length >= _maxMediaCount) return;
-    setState(() => _selectedMedia.add(SelectedMedia(file: res.file, type: res.type)));
+  Future<void> _openCamera() async {
+    if (_selectedMedia.length >= _maxMediaCount) {
+      _showMessage('8 Media selected, please delete media to select new media');
+      return;
+    }
+    setState(() => _showEmbeddedCamera = true);
   }
 
   Future<void> _openGallerySheet() async {
@@ -116,7 +114,28 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> openMediaFromBottomNav() async {
-    await _openCamera(useDefaultRoute: true);
+    await _openCamera();
+  }
+
+  void closeEmbeddedCamera() {
+    if (_showEmbeddedCamera) setState(() => _showEmbeddedCamera = false);
+  }
+
+  Future<void> _handleEmbeddedGallery() async {
+    setState(() => _showEmbeddedCamera = false);
+    await _openGallerySheet();
+  }
+
+  void _handleEmbeddedCapture(CapturedMedia media) {
+    if (_selectedMedia.length >= _maxMediaCount) {
+      setState(() => _showEmbeddedCamera = false);
+      _showMessage('8 Media selected, please delete media to select new media');
+      return;
+    }
+    setState(() {
+      _selectedMedia.add(SelectedMedia(file: media.file, type: media.type));
+      _showEmbeddedCamera = false;
+    });
   }
 
   Future<void> _openSelectedMediaPreview(int index) async {
@@ -221,27 +240,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   void _showMessage(String m) => AppToast.show(context, m);
 
-  Route<Object?> _cameraCaptureRoute({bool noAnimation = false}) => PageRouteBuilder<Object?>(
-    pageBuilder: (context, animation, secondaryAnimation) => const CameraCapturePage(),
-    transitionDuration: noAnimation ? Duration.zero : const Duration(milliseconds: 260),
-    reverseTransitionDuration: noAnimation ? Duration.zero : const Duration(milliseconds: 220),
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      if (noAnimation) return child;
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 1),
-          end: Offset.zero,
-        ).animate(curved),
-        child: child,
-      );
-    },
-  );
-
   void _handlePriceChanged(String v) {
     final raw = v.replaceAll(',', '');
     if ('.'.allMatches(raw).length > 1) { _setPriceText(_lastValidPriceText); return; }
@@ -283,6 +281,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showEmbeddedCamera) {
+      return CameraCapturePage(
+        embedded: true,
+        selectedCount: _selectedMedia.length,
+        maxCount: _maxMediaCount,
+        onClose: () => setState(() => _showEmbeddedCamera = false),
+        onOpenGallery: _handleEmbeddedGallery,
+        onCaptured: _handleEmbeddedCapture,
+      );
+    }
+
     final color = _isLiveItem ? const Color(0xFFFFE9EC) : const Color(0xFFF4FBF7);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180), color: color,

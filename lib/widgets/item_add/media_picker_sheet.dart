@@ -398,7 +398,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
 
   Widget _buildHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 18, 24, 8),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 8),
       child: Row(
         children: [
           TextButton(

@@ -101,6 +101,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
   }
 
   Future<void> _onTabTapped(int index) async {
+    if (index != 2) {
+      _addItemKey.currentState?.closeEmbeddedCamera();
+    }
+
     if (index == 0 && _currentIndex == 0) {
       _feedKey.currentState?.scrollToTop();
       _setChromeVisible(true);

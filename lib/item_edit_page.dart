@@ -51,6 +51,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   bool _isSaving = false;
   bool _showLocationError = false;
   bool _showPriceError = false;
+  bool _showEmbeddedCamera = false;
   late final bool _isLiveItem;
   bool _isTransitPost = false;
 
@@ -88,20 +89,29 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _openCamera() async {
-    final result = await Navigator.push<Object?>(context, _cameraCaptureRoute());
-    if (result == CameraCaptureAction.openGallery) {
-      await _openGallerySheet();
+    if (!_canAddMedia()) return;
+    setState(() => _showEmbeddedCamera = true);
+  }
+
+  Future<void> _handleEmbeddedGallery() async {
+    setState(() => _showEmbeddedCamera = false);
+    await _openGallerySheet();
+  }
+
+  Future<void> _handleEmbeddedCapture(CapturedMedia result) async {
+    if (!_canAddMedia()) {
+      setState(() => _showEmbeddedCamera = false);
       return;
     }
-    if (result is! CapturedMedia) return;
-    if (!_canAddMedia()) return;
     if (result.isVideo && !await _isVideoWithinLimit(result.file)) {
+      setState(() => _showEmbeddedCamera = false);
       _showMessage('Video cannot be more than 1 minute');
       return;
     }
 
     setState(() {
       _media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
+      _showEmbeddedCamera = false;
     });
   }
 
@@ -124,30 +134,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
     if (selection == null) return;
     await _addGalleryAssets(selection.assets, selection.selectedIds);
   }
-
-  Route<Object?> _cameraCaptureRoute() => PageRouteBuilder<Object?>(
-    pageBuilder: (context, animation, secondaryAnimation) => CameraCapturePage(
-      selectedCount: _media.length,
-      maxCount: _maxMediaCount,
-      maxSelectionMessage: _maxMediaMessage,
-    ),
-    transitionDuration: const Duration(milliseconds: 260),
-    reverseTransitionDuration: const Duration(milliseconds: 220),
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 1),
-          end: Offset.zero,
-        ).animate(curved),
-        child: child,
-      );
-    },
-  );
 
   Future<void> _addGalleryAssets(List<AssetEntity> assets, Set<String> selectedIds) async {
     final newMedia = <EditableMedia>[];
@@ -410,6 +396,18 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showEmbeddedCamera) {
+      return CameraCapturePage(
+        embedded: true,
+        selectedCount: _media.length,
+        maxCount: _maxMediaCount,
+        maxSelectionMessage: _maxMediaMessage,
+        onClose: () => setState(() => _showEmbeddedCamera = false),
+        onOpenGallery: _handleEmbeddedGallery,
+        onCaptured: _handleEmbeddedCapture,
+      );
+    }
+
     final pageColor = _isLiveItem ? const Color(0xFFFFE9EC) : const Color(0xFFF4FBF7);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(statusBarColor: Colors.black, statusBarIconBrightness: Brightness.light),

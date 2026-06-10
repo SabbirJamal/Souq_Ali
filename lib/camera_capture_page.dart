@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/item_add/media_picker_sheet.dart';
+import 'widgets/seller_bottom_nav_bar.dart';
 
 class CapturedMedia {
   const CapturedMedia({required this.file, required this.type, this.caption});
@@ -134,11 +135,19 @@ class CameraCapturePage extends StatefulWidget {
     this.selectedCount = 0,
     this.maxCount = 8,
     this.maxSelectionMessage,
+    this.embedded = false,
+    this.onClose,
+    this.onOpenGallery,
+    this.onCaptured,
   });
 
   final int selectedCount;
   final int maxCount;
   final String? maxSelectionMessage;
+  final bool embedded;
+  final VoidCallback? onClose;
+  final VoidCallback? onOpenGallery;
+  final ValueChanged<CapturedMedia>? onCaptured;
 
   static Future<GalleryMediaSelection?> openGalleryPicker(
     BuildContext context, {
@@ -155,14 +164,25 @@ class CameraCapturePage extends StatefulWidget {
       builder: (context) => SizedBox(
         height: MediaQuery.sizeOf(context).height -
             MediaQuery.viewPaddingOf(context).top,
-        child: MediaPickerSheet(
-          selectedIds: selectedIds,
-          selectedCount: selectedCount,
-          maxCount: maxCount,
-          maxSelectionMessage: maxSelectionMessage,
-          onAssetsDone: (assets, ids) async {
-            result = GalleryMediaSelection(assets: assets, selectedIds: ids);
-          },
+        child: Column(
+          children: [
+            Expanded(
+              child: MediaPickerSheet(
+                selectedIds: selectedIds,
+                selectedCount: selectedCount,
+                maxCount: maxCount,
+                maxSelectionMessage: maxSelectionMessage,
+                onAssetsDone: (assets, ids) async {
+                  result = GalleryMediaSelection(assets: assets, selectedIds: ids);
+                },
+              ),
+            ),
+            _CameraBottomMenu(
+              onTap: (index) {
+                if (index != 2) Navigator.pop(context);
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -355,6 +375,30 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     setState(() {});
   }
 
+  void _closeCamera() {
+    if (widget.embedded) {
+      widget.onClose?.call();
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  void _openGallery() {
+    if (widget.embedded) {
+      widget.onOpenGallery?.call();
+      return;
+    }
+    Navigator.pop(context, CameraCaptureAction.openGallery);
+  }
+
+  void _finishCaptured(CapturedMedia media) {
+    if (widget.embedded) {
+      widget.onCaptured?.call(media);
+      return;
+    }
+    Navigator.pop(context, media);
+  }
+
   Future<void> _onTapFocus(TapDownDetails d) async {
     if (_controller == null || !_controller!.value.isInitialized || _isRec) return;
     final box = context.findRenderObject() as RenderBox;
@@ -377,7 +421,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       final f = await _controller!.takePicture();
       if (!mounted) return;
       final res = await Navigator.push<CapturedMedia>(context, MaterialPageRoute(builder: (_) => _ImagePreviewPage(file: File(f.path))));
-      if (res != null && mounted) Navigator.pop(context, res);
+      if (res != null && mounted) _finishCaptured(res);
     } catch (_) {} finally { if (mounted) setState(() => _isBusy = false); }
   }
 
@@ -411,7 +455,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       if (await file.exists()) {
         if (!mounted) return;
         final res = await Navigator.push<CapturedMedia>(context, MaterialPageRoute(builder: (_) => _VideoPreviewPage(file: file)));
-        if (res != null && mounted) Navigator.pop(context, res);
+        if (res != null && mounted) _finishCaptured(res);
       }
     } catch (e) { debugPrint('Error stopping video recording: $e'); }
     finally { if (mounted) setState(() => _isBusy = false); }
@@ -419,11 +463,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    if (_isCheckingPermission) return _buildCameraShell(const CircularProgressIndicator(color: Colors.white));
+    if (_isCheckingPermission) return _wrapCameraPage(_buildCameraShell(const CircularProgressIndicator(color: Colors.white)));
     if (!_hasPermission) return _buildPermissionPrompt();
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: FutureBuilder(
+    return _wrapCameraPage(
+      FutureBuilder(
         future: _initFuture,
         builder: (ctx, snap) {
           final controller = _controller;
@@ -454,11 +497,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     );
   }
 
-  Widget _buildCameraShell(Widget preview) => Scaffold(
-    backgroundColor: Colors.black,
-    body: Column(
+  Widget _wrapCameraPage(Widget child) {
+    if (widget.embedded) return child;
+    return Scaffold(backgroundColor: Colors.black, body: child);
+  }
+
+  Widget _buildCameraShell(Widget preview) => ColoredBox(
+    color: Colors.black,
+    child: Column(
       children: [
-        const AppStatusBar(),
+        if (!widget.embedded) const AppStatusBar(),
         Expanded(
           child: Stack(
             children: [
@@ -473,9 +521,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     ),
   );
 
-  Widget _buildPermissionPrompt() => Scaffold(
-    backgroundColor: Colors.black,
-    body: Center(child: Padding(
+  Widget _buildPermissionPrompt() => _wrapCameraPage(Center(child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         const Icon(Icons.camera_alt, color: Colors.white, size: 64),
@@ -488,15 +534,14 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
           child: const Text('Grant Permission', style: TextStyle(fontWeight: FontWeight.bold)),
         ),
       ]),
-    )),
-  );
+    )));
 
   Widget _buildTopBar() => Positioned(
     top: 0, left: 0, right: 0,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        _CircleBtn(icon: Icons.close, onTap: () => Navigator.pop(context)),
+        _CircleBtn(icon: Icons.close, onTap: _closeCamera),
         if (_isRec) _buildRecTimer() else _CircleBtn(icon: _isFlash ? Icons.flash_on : Icons.flash_off, onTap: _toggleFlash),
       ]),
     ),
@@ -521,7 +566,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14), child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _CircleBtn(icon: Icons.photo_library, onTap: () => Navigator.pop(context, CameraCaptureAction.openGallery)),
+          _CircleBtn(icon: Icons.photo_library, onTap: _openGallery),
           _CaptureBtn(isRec: _isRec, progress: _elapsed.inMilliseconds / _maxDuration.inMilliseconds, onStart: _onPressStart, onEnd: _onPressEnd, onMove: _onMove),
           const SizedBox(width: 48, height: 48),
         ],
@@ -595,7 +640,9 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomControlsInset = MediaQuery.viewPaddingOf(context).bottom + 48;
+    const bottomMenuHeight = 48.0;
+    final bottomControlsInset =
+        MediaQuery.viewPaddingOf(context).bottom + bottomMenuHeight;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
@@ -612,6 +659,12 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
         Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: () {
           Navigator.pop(context, CapturedMedia(file: _currFile, type: 'image'));
         }, child: const Icon(Icons.send))),
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _CameraBottomMenu(),
+        ),
       ]),
     );
   }
@@ -733,7 +786,9 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomControlsInset = MediaQuery.viewPaddingOf(context).bottom + 48;
+    const bottomMenuHeight = 48.0;
+    final bottomControlsInset =
+        MediaQuery.viewPaddingOf(context).bottom + bottomMenuHeight;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(children: [
@@ -800,7 +855,26 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
         ),
 
         Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: _send, child: const Icon(Icons.check, color: Colors.white, size: 34))),
+        const Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: _CameraBottomMenu(),
+        ),
       ]),
     );
+  }
+}
+
+void _noopNavTap(int index) {}
+
+class _CameraBottomMenu extends StatelessWidget {
+  const _CameraBottomMenu({this.onTap = _noopNavTap});
+
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SellerBottomNavBar(currentIndex: 2, onTap: onTap);
   }
 }
