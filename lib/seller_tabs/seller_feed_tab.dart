@@ -180,6 +180,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _scrollController.animateTo(0, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
   }
 
+  Future<void> scrollToTopOrRefresh() async {
+    if (!_scrollController.hasClients || _scrollController.offset <= 8) {
+      await reloadItems();
+      return;
+    }
+    scrollToTop();
+  }
+
   Future<void> _refreshFeed() async {
     _markVisibleItemsSeen();
     await _flushSeenItems();

@@ -106,7 +106,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
     }
 
     if (index == 0 && _currentIndex == 0) {
-      _feedKey.currentState?.scrollToTop();
+      await _feedKey.currentState?.scrollToTopOrRefresh();
+      _setChromeVisible(true);
+      return;
+    }
+
+    if (index == 1 && _currentIndex == 1) {
+      await _liveFeedKey.currentState?.scrollToTopOrRefresh();
       _setChromeVisible(true);
       return;
     }
