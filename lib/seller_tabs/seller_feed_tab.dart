@@ -9,6 +9,7 @@ import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
+import '../widgets/pull_down_refresh_area.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -184,6 +185,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     await _flushSeenItems();
     setState(() {
       _refreshTick++;
+      _allDocs.clear();
       _hasMore = true;
       _feedCursor = null;
     });
@@ -342,59 +344,69 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
     return Stack(
       children: [
-        RefreshIndicator(
-          color: const Color(0xFFFF7801),
-          onRefresh: _refreshFeed,
-          child: NotificationListener<ScrollEndNotification>(
-            onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
-            child: CustomScrollView(
-              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
-              controller: _scrollController,
-              cacheExtent: 900,
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                SliverToBoxAdapter(child: _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode)),
-                if (_allDocs.isEmpty && showInlineLoading)
-                  SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
-                    sliver: _isGridView ? const SliverToBoxAdapter(child: _FeedSkeletonGrid()) : SliverList.builder(itemCount: 3, itemBuilder: (c, i) => const ItemCardSkeleton()),
-                  )
-                else if (docs.isEmpty && !_isLoading)
-                  SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))))
-                else ...[
-                  SliverPadding(
-                    padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
-                    sliver: _isGridView
-                        ? SliverGrid.builder(
-                            itemCount: docs.length,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                            itemBuilder: (context, index) {
-                              _maybeLoadMoreFromBuilder(index, docs.length);
-                              return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage));
-                            },
-                          )
-                        : SliverList.builder(
-                            itemCount: docs.length,
-                            itemBuilder: (context, index) {
-                              _maybeLoadMoreFromBuilder(index, docs.length);
-                              return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage));
-                            },
+        Column(
+          children: [
+            _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode),
+            Expanded(
+              child: PullDownRefreshArea(
+                onRefresh: _refreshFeed,
+                child: NotificationListener<ScrollEndNotification>(
+                  onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
+                  child: CustomScrollView(
+                    key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
+                    controller: _scrollController,
+                    cacheExtent: 900,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      if (_allDocs.isEmpty && showInlineLoading)
+                        SliverPadding(
+                          padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
+                          sliver: _isGridView ? const SliverToBoxAdapter(child: _FeedSkeletonGrid()) : SliverList.builder(itemCount: 3, itemBuilder: (c, i) => const ItemCardSkeleton()),
+                        )
+                      else if (docs.isEmpty && !_isLoading)
+                        SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))))
+                      else ...[
+                        SliverPadding(
+                          padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
+                          sliver: _isGridView
+                              ? SliverGrid.builder(
+                                  itemCount: docs.length,
+                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
+                                  itemBuilder: (context, index) {
+                                    _maybeLoadMoreFromBuilder(index, docs.length);
+                                    return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage));
+                                  },
+                                )
+                              : SliverList.builder(
+                                  itemCount: docs.length,
+                                  itemBuilder: (context, index) {
+                                    _maybeLoadMoreFromBuilder(index, docs.length);
+                                    return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage));
+                                  },
+                                ),
+                        ),
+                        if (showInlineLoading && _allDocs.isNotEmpty)
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
+                            sliver: _isGridView
+                                ? const SliverToBoxAdapter(child: _FeedSkeletonGrid())
+                                : SliverList.builder(itemCount: 2, itemBuilder: (c, i) => const ItemCardSkeleton()),
                           ),
+                      ],
+                      if (_hasMore && !_isSearchOpen)
+                        SliverToBoxAdapter(
+                          child: _LoadMoreTrigger(
+                            isLoading: _isLoading,
+                            onVisible: _loadMore,
+                          ),
+                        ),
+                      SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
+                    ],
                   ),
-                  if (showInlineLoading && _allDocs.isNotEmpty)
-                    const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: Color(0xFFFF7801))))),
-                ],
-                if (_hasMore && !_isSearchOpen)
-                  SliverToBoxAdapter(
-                    child: _LoadMoreTrigger(
-                      isLoading: _isLoading,
-                      onVisible: _loadMore,
-                    ),
-                  ),
-                SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
-              ],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
         const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),

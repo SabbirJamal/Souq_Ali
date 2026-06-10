@@ -503,7 +503,7 @@ class _SellerActivePosts extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SliverFillRemaining(
             hasScrollBody: false,
-            child: Center(child: CircularProgressIndicator()),
+            child: _SellerProfilePostsSkeleton(),
           );
         }
         if (snapshot.hasError) {
@@ -575,6 +575,25 @@ class _SellerProfileGrid extends StatelessWidget {
         const SizedBox(width: 4),
         Expanded(child: _SellerProfileColumn(docs: rightDocs)),
       ],
+    );
+  }
+}
+
+class _SellerProfilePostsSkeleton extends StatelessWidget {
+  const _SellerProfilePostsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 8, 2, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Expanded(child: ItemCardSkeleton(isCompact: true)),
+          SizedBox(width: 4),
+          Expanded(child: ItemCardSkeleton(isCompact: true)),
+        ],
+      ),
     );
   }
 }
