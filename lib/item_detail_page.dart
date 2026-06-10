@@ -157,6 +157,20 @@ class _FixedActionBar extends StatelessWidget {
 class _SellerAvatarIcon extends StatelessWidget {
   const _SellerAvatarIcon({required this.name, required this.sellerId, required this.sellerPhone, required this.onOpenProfile});
   final Object? name, sellerId, sellerPhone; final VoidCallback onOpenProfile;
+
+  Route<void> _profileRoute(String sid, String fallbackName) {
+    return PageRouteBuilder<void>(
+      pageBuilder: (context, animation, secondaryAnimation) => SellerProfilePage(
+        sellerId: sid,
+        sellerPhone: sellerPhone?.toString().trim() ?? '',
+        fallbackName: fallbackName,
+        isOwnProfile: false,
+      ),
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sid = sellerId?.toString().trim().isNotEmpty == true ? sellerId!.toString().trim() : sellerPhone?.toString().trim() ?? '';
@@ -168,7 +182,7 @@ class _SellerAvatarIcon extends StatelessWidget {
         final cr = data['cr_number']?.toString().trim() ?? data['crNumber']?.toString().trim() ?? '';
         final ph = formatSellerPhone(sellerPhone);
         final top = [if (n.isNotEmpty) n, if (cr.isNotEmpty) 'CR No. $cr'].join(' | ');
-        return InkWell(borderRadius: BorderRadius.circular(14), onTap: sid.isEmpty ? null : () { onOpenProfile(); Navigator.push(context, MaterialPageRoute(builder: (_) => SellerProfilePage(sellerId: sid, sellerPhone: sellerPhone?.toString().trim() ?? '', fallbackName: n, isOwnProfile: false))); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
+        return InkWell(borderRadius: BorderRadius.circular(14), onTap: sid.isEmpty ? null : () { onOpenProfile(); Navigator.push(context, _profileRoute(sid, n.toString())); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
           if (top.isNotEmpty) FittedBox(child: Text(top, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
           if (ph.isNotEmpty) Text(ph, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         ])));

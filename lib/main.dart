@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart' as permissions;
 
+import 'camera_capture_page.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 
@@ -20,11 +24,24 @@ Future<void> main() async {
   // Parallelize Firebase and Session loading
   final firebaseFuture = Firebase.initializeApp();
   final sessionFuture = SellerSession.current();
+  unawaited(_prewarmCameraIfPermitted());
 
   runApp(SouqaliApp(
     firebaseFuture: firebaseFuture,
     sessionFuture: sessionFuture,
   ));
+}
+
+Future<void> _prewarmCameraIfPermitted() async {
+  final camera = await permissions.Permission.camera.status;
+  final microphone = await permissions.Permission.microphone.status;
+  if (!camera.isGranted || !microphone.isGranted) return;
+
+  try {
+    await CameraCapturePage.preloadCameras();
+  } catch (_) {
+    // Camera warm-up is opportunistic; normal camera open handles failures.
+  }
 }
 
 class SouqaliApp extends StatelessWidget {

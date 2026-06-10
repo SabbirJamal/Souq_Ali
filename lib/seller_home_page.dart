@@ -11,6 +11,7 @@ import 'seller_session.dart';
 import 'seller_session_guard.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
+import 'widgets/seller_bottom_nav_bar.dart';
 
 class SellerHomePage extends StatefulWidget {
   const SellerHomePage({
@@ -354,68 +355,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
               ),
             ],
           ),
-          bottomNavigationBar: ColoredBox(
-            color: bottomBarColor,
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewPaddingOf(context).bottom,
-              ),
-              child: SizedBox(
-                height: 48,
-                child: Row(
-                  children: [
-                    _buildTabItem(0, Icons.home, 33, 'Home'),
-                    _buildTabItem(1, null, 29, 'Live'),
-                    _buildTabItem(2, Icons.add_circle_outline, 29, 'Add'),
-                    _buildTabItem(3, Icons.person, 29, 'Listings'),
-                    _buildTabItem(4, Icons.settings, 29, 'Settings'),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabItem(int index, IconData? icon, double size, String label) {
-    final isSelected = _currentIndex == index;
-    return Expanded(
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkResponse(
-            onTap: () => _onTabTapped(index),
-            containedInkWell: true,
-            customBorder: const CircleBorder(),
-            radius: 52,
-            splashColor: Colors.black12,
-            highlightColor: Colors.black12,
-            child: SizedBox(
-              width: 108,
-              height: 48,
-              child: Center(
-                child: icon == null
-                    ? const Text(
-                        'LIVE',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Color(0xFFFF0000),
-                          fontSize: 19,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0,
-                        ),
-                      )
-                    : Icon(
-                        icon,
-                        size: size,
-                        color: isSelected ? const Color(0xFFFF7801) : Colors.grey,
-                      ),
-              ),
-            ),
+          bottomNavigationBar: SellerBottomNavBar(
+            currentIndex: _currentIndex,
+            backgroundColor: bottomBarColor,
+            onTap: _onTabTapped,
           ),
         ),
       ),

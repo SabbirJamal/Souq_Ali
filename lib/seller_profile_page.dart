@@ -6,6 +6,7 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/item_card.dart';
+import 'widgets/seller_bottom_nav_bar.dart';
 
 class SellerProfilePage extends StatelessWidget {
   const SellerProfilePage({
@@ -147,44 +148,11 @@ class SellerProfilePage extends StatelessWidget {
           onLogout: () => _confirmLogout(context),
           onBack: () => Navigator.pop(context),
         ),
-        bottomNavigationBar: SizedBox(
-          height: 58,
-          child: BottomNavigationBar(
-            currentIndex: 4,
-            onTap: (index) {
-              _openHomeTab(context, index);
-            },
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: const Color(0xFFFF7801),
-            unselectedItemColor: Colors.grey,
-            selectedFontSize: 0,
-            unselectedFontSize: 0,
-            showSelectedLabels: false,
-            showUnselectedLabels: false,
-            iconSize: 24,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.wifi_tethering),
-                label: 'Live',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.add_circle_outline),
-                label: 'Add',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person),
-                label: 'Listings',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: 'Settings',
-              ),
-            ],
-          ),
+        bottomNavigationBar: SellerBottomNavBar(
+          currentIndex: 4,
+          onTap: (index) {
+            _openHomeTab(context, index);
+          },
         ),
       ),
     );
