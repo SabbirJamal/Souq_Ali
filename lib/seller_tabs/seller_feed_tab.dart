@@ -30,9 +30,14 @@ class SellerFeedTab extends StatefulWidget {
 }
 
 class SellerFeedTabState extends State<SellerFeedTab> {
+  static const _initialFetchLimit = 15;
+  static const _nextFetchLimit = 30;
+  static const _mergeLatestLimit = 20;
+
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
+  final _pullExtent = ValueNotifier<double>(0);
   final Map<String, GlobalKey> _itemKeys = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
@@ -61,6 +66,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _onScroll() {
+    _scheduleVisibleSeenCheck();
     if (!_scrollController.hasClients || _isLoading || !_hasMore) return;
     final pos = _scrollController.position.pixels;
     final max = _scrollController.position.maxScrollExtent;
@@ -103,7 +109,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         viewerId: viewerId,
         status: widget.itemStatus,
         cursor: isInitial ? null : _feedCursor,
-        limit: 30,
+        limit: isInitial ? _initialFetchLimit : _nextFetchLimit,
       );
       if (!mounted) return;
       setState(() {
@@ -116,6 +122,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _hasMore = result.hasMore;
         _isLoading = false;
       });
+      _scheduleVisibleSeenCheck();
     } catch (error, stackTrace) {
       debugPrint('Feed load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -132,6 +139,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _seenFlushTimer?.cancel();
     _flushSeenItems();
     _scrollController.dispose();
+    _pullExtent.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
@@ -220,7 +228,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       final result = await FeedService.fetchItems(
         viewerId: viewerId,
         status: widget.itemStatus,
-        limit: 20,
+        limit: _mergeLatestLimit,
       );
       if (!mounted) return;
       setState(() {
@@ -342,18 +350,18 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   Widget build(BuildContext context) {
     final docs = _getFilteredAndRankedDocs();
-    _itemKeys.removeWhere((itemId, _) => !docs.any((d) => d.id == itemId));
+    final docIds = docs.map((doc) => doc.id).toSet();
+    _itemKeys.removeWhere((itemId, _) => !docIds.contains(itemId));
     final isLivePage = widget.itemStatus == 'live';
     final showInlineLoading =
         _isLoading && UploadStatusManager.current.value == null;
     final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 68;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleVisibleSeenCheck());
-
     return Stack(
       children: [
         PullDownRefreshArea(
           onRefresh: _refreshFeed,
+          onPullExtentChanged: (value) => _pullExtent.value = value,
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
             child: CustomScrollView(
@@ -409,6 +417,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                     ],
                   ),
                 ),
+        ),
+        _PullFixedFeedHeader(
+          pullExtent: _pullExtent,
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
         const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),
@@ -590,6 +601,38 @@ class _FeedHeader extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _PullFixedFeedHeader extends StatelessWidget {
+  const _PullFixedFeedHeader({
+    required this.pullExtent,
+  });
+
+  final ValueListenable<double> pullExtent;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: pullExtent,
+      builder: (context, value, child) {
+        if (value <= 0) {
+          return const SizedBox.shrink();
+        }
+        return child!;
+      },
+      child: Positioned(
+        top: 56,
+        left: 0,
+        right: 0,
+        child: IgnorePointer(
+          child: ColoredBox(
+            color: const Color(0xFFF4FBF7),
+            child: const SizedBox(height: 76),
+          ),
+        ),
       ),
     );
   }

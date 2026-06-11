@@ -12,6 +12,23 @@ const bucket = getStorage().bucket();
 const DEFAULT_FEED_LIMIT = 30;
 const FEED_FETCH_BATCH_SIZE = 100;
 const FEED_MAX_SCANNED_DOCS = 600;
+const FEED_ITEM_FIELDS = [
+  "created_at",
+  "expires_at",
+  "image_urls",
+  "is_transit",
+  "item_name",
+  "item_price",
+  "location",
+  "media_files",
+  "price_number",
+  "price_unit",
+  "seller_name",
+  "seller_phone",
+  "seller_uid",
+  "status",
+  "time_period_hours",
+];
 
 exports.getFeedItems = onCall(
   {
@@ -49,6 +66,7 @@ exports.getFeedItems = onCall(
           .where("status", "==", status)
           .orderBy("created_at", "desc")
           .orderBy(FieldPath.documentId(), "desc")
+          .select(...FEED_ITEM_FIELDS)
           .limit(FEED_FETCH_BATCH_SIZE);
 
         if (queryCursor) {
@@ -71,7 +89,7 @@ exports.getFeedItems = onCall(
             continue;
           }
 
-          const entry = { id: doc.id, data: serializeItem(item), cursor: lastCursor };
+          const entry = { id: doc.id, data: serializeFeedItem(item), cursor: lastCursor };
           if (seenIds.has(doc.id)) {
             if (seenFallback.length < limit) {
               seenFallback.push(entry);
@@ -374,24 +392,6 @@ async function loadViewerSeenIds(viewerId) {
     seenIds.add(doc.id);
   }
 
-  try {
-    const legacySeen = await db
-      .collectionGroup("viewers")
-      .where("viewer_id", "==", viewerId)
-      .limit(5000)
-      .get();
-
-    for (const doc of legacySeen.docs) {
-      const itemId = stringValue(doc.get("item_id")) ||
-        (doc.ref.parent.parent ? doc.ref.parent.parent.id : "");
-      if (itemId) {
-        seenIds.add(itemId);
-      }
-    }
-  } catch (error) {
-    logger.warn("Skipping legacy seen lookup.", { viewerId, error });
-  }
-
   return seenIds;
 }
 
@@ -439,6 +439,16 @@ function serializeItem(item) {
   const serialized = {};
   for (const [key, value] of Object.entries(item)) {
     serialized[key] = serializeValue(value);
+  }
+  return serialized;
+}
+
+function serializeFeedItem(item) {
+  const serialized = {};
+  for (const key of FEED_ITEM_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(item, key)) {
+      serialized[key] = serializeValue(item[key]);
+    }
   }
   return serialized;
 }
