@@ -828,11 +828,8 @@ class _InlineVideoPreview extends StatefulWidget {
 class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
   late VideoPlayerController _controller;
   Timer? _overlayTimer;
-  bool _isInit = false, _isMuted = false, _isTrimming = false;
-  bool _wasPlayingBeforeTrim = false, _showPlaybackIcon = false;
+  bool _isInit = false, _isMuted = false, _showPlaybackIcon = false;
   String? _err;
-  RangeValues _trim = const RangeValues(0, 1);
-  Duration _duration = Duration.zero;
 
   @override
   void initState() {
@@ -842,13 +839,10 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
       if (!mounted) return;
       setState(() {
         _isInit = true;
-        _duration = _controller.value.duration;
-        _trim = RangeValues(0, _duration.inMilliseconds.toDouble());
       });
       _controller
         ..setLooping(true)
-        ..play()
-        ..addListener(_checkTrim);
+        ..play();
     }).catchError((e) {
       if (mounted) setState(() => _err = e.toString());
     });
@@ -857,18 +851,8 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
   @override
   void dispose() {
     _overlayTimer?.cancel();
-    _controller.removeListener(_checkTrim);
     _controller.dispose();
     super.dispose();
-  }
-
-  void _checkTrim() {
-    if (!_isInit || _isTrimming) return;
-    final pos = _controller.value.position.inMilliseconds;
-    if (pos < _trim.start || pos > _trim.end) {
-      _controller.seekTo(Duration(milliseconds: _trim.start.toInt()));
-      if (_controller.value.isPlaying) _controller.play();
-    }
   }
 
   void _togglePlayback() {
@@ -879,10 +863,6 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
       setState(() => _showPlaybackIcon = true);
       return;
     }
-    final pos = _controller.value.position.inMilliseconds;
-    if (pos < _trim.start || pos >= _trim.end) {
-      _controller.seekTo(Duration(milliseconds: _trim.start.toInt()));
-    }
     _controller.play();
     setState(() => _showPlaybackIcon = true);
     _overlayTimer = Timer(const Duration(seconds: 1), () {
@@ -892,47 +872,18 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
     });
   }
 
-  void _handleTrimChanged(RangeValues value) {
-    if (value.end - value.start < 1000) return;
-    setState(() => _trim = value);
-  }
-
-  void _handleTrimStart(RangeValues value) {
-    _wasPlayingBeforeTrim = _controller.value.isPlaying;
-    _isTrimming = true;
-    _controller.pause();
-  }
-
-  void _handleTrimEnd(RangeValues value) {
-    _isTrimming = false;
-    _controller.seekTo(Duration(milliseconds: value.start.toInt()));
-    if (_wasPlayingBeforeTrim) {
-      _controller.play();
-      _overlayTimer?.cancel();
-      setState(() => _showPlaybackIcon = true);
-      _overlayTimer = Timer(const Duration(seconds: 1), () {
-        if (mounted && _controller.value.isPlaying) {
-          setState(() => _showPlaybackIcon = false);
-        }
-      });
-    } else {
-      setState(() => _showPlaybackIcon = true);
-    }
-  }
-
   Future<void> _send() async {
     File finalFile = widget.file;
-    final start = _trim.start;
-    final end = _trim.end;
 
-    if (_isMuted || start > 100 || (end < _duration.inMilliseconds - 100)) {
+    if (_isMuted) {
+      _overlayTimer?.cancel();
+      await _controller.pause();
+      await _controller.setVolume(0);
       setState(() => _isInit = false);
       final info = await VideoCompress.compressVideo(
         widget.file.path,
         quality: VideoQuality.MediumQuality,
-        startTime: (start / 1000).floor(),
-        duration: ((end - start) / 1000).ceil(),
-        includeAudio: !_isMuted,
+        includeAudio: false,
       );
       if (info?.file != null) finalFile = info!.file!;
     }
@@ -1009,45 +960,10 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
                   });
                 },
               ),
-              const IconButton(
-                icon: Icon(Icons.content_cut, color: Colors.white),
-                onPressed: null,
-              ),
             ],
           ),
         ),
       ),
-      if (_isInit && _duration.inSeconds > 1)
-        Positioned(
-          top: 60,
-          left: 16,
-          right: 16,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black45,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 3,
-                activeTrackColor: const Color(0xFF25D366),
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-                rangeThumbShape:
-                const RoundRangeSliderThumbShape(enabledThumbRadius: 7),
-              ),
-              child: RangeSlider(
-                values: _trim,
-                min: 0,
-                max: _duration.inMilliseconds.toDouble(),
-                onChanged: _handleTrimChanged,
-                onChangeStart: _handleTrimStart,
-                onChangeEnd: _handleTrimEnd,
-              ),
-            ),
-          ),
-        ),
       _PreviewBottomControls(onConfirm: _send, onClose: widget.onClose),
     ],
   );
@@ -1114,11 +1030,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
   Timer? _overlayTimer;
   bool _isInit = false, _isMuted = false;
   bool _showPlaybackIcon = false;
-  bool _isTrimming = false;
-  bool _wasPlayingBeforeTrim = false;
   String? _err;
-  RangeValues _trim = const RangeValues(0, 1);
-  Duration _dur = Duration.zero;
 
   @override
   void initState() {
@@ -1128,27 +1040,15 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
       if (mounted) {
         setState(() {
           _isInit = true;
-          _dur = _c.value.duration;
-          _trim = RangeValues(0, _dur.inMilliseconds.toDouble());
           _c.play();
           _c.setLooping(true);
         });
-        _c.addListener(_checkTrim);
       }
     }).catchError((e) { if (mounted) setState(() => _err = e.toString()); });
   }
 
-  void _checkTrim() {
-    if (!_isInit || _isTrimming) return;
-    final pos = _c.value.position.inMilliseconds;
-    if (pos < _trim.start || pos > _trim.end) {
-      _c.seekTo(Duration(milliseconds: _trim.start.toInt()));
-      if (_c.value.isPlaying) _c.play();
-    }
-  }
-
   @override
-  void dispose() { _overlayTimer?.cancel(); _c.removeListener(_checkTrim); _c.dispose(); super.dispose(); }
+  void dispose() { _overlayTimer?.cancel(); _c.dispose(); super.dispose(); }
 
   void _togglePlayback() {
     if (!_isInit) return;
@@ -1158,10 +1058,6 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
       setState(() => _showPlaybackIcon = true);
       return;
     }
-    final pos = _c.value.position.inMilliseconds;
-    if (pos < _trim.start || pos >= _trim.end) {
-      _c.seekTo(Duration(milliseconds: _trim.start.toInt()));
-    }
     _c.play();
     setState(() => _showPlaybackIcon = true);
     _overlayTimer = Timer(const Duration(seconds: 1), () {
@@ -1169,46 +1065,18 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
     });
   }
 
-  void _handleTrimChanged(RangeValues value) {
-    if (value.end - value.start < 1000) return;
-    setState(() => _trim = value);
-  }
-
-  void _handleTrimStart(RangeValues value) {
-    _wasPlayingBeforeTrim = _c.value.isPlaying;
-    _isTrimming = true;
-    _c.pause();
-  }
-
-  void _handleTrimEnd(RangeValues value) {
-    _isTrimming = false;
-    _c.seekTo(Duration(milliseconds: value.start.toInt()));
-    if (_wasPlayingBeforeTrim) {
-      _c.play();
-      _overlayTimer?.cancel();
-      setState(() => _showPlaybackIcon = true);
-      _overlayTimer = Timer(const Duration(seconds: 1), () {
-        if (mounted && _c.value.isPlaying) setState(() => _showPlaybackIcon = false);
-      });
-    } else {
-      setState(() => _showPlaybackIcon = true);
-    }
-  }
-
   Future<void> _send() async {
     File finalFile = widget.file;
-    final start = _trim.start;
-    final end = _trim.end;
 
-    // Only compress/trim if needed (mute or significant trim)
-    if (_isMuted || start > 100 || (end < _dur.inMilliseconds - 100)) {
+    if (_isMuted) {
+      _overlayTimer?.cancel();
+      await _c.pause();
+      await _c.setVolume(0);
       setState(() => _isInit = false); // Show loading
       final info = await VideoCompress.compressVideo(
         widget.file.path,
         quality: VideoQuality.MediumQuality,
-        startTime: (start / 1000).floor(),
-        duration: ((end - start) / 1000).ceil(),
-        includeAudio: !_isMuted,
+        includeAudio: false,
       );
       if (info?.file != null) finalFile = info!.file!;
     }
@@ -1256,32 +1124,8 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
                 IconButton(icon: Icon(_isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white), onPressed: () { setState(() { _isMuted = !_isMuted; _c.setVolume(_isMuted ? 0 : 1); }); }),
-                const IconButton(icon: Icon(Icons.content_cut, color: Colors.white), onPressed: null),
               ]),
             )),
-
-            if (_isInit && _dur.inSeconds > 1) Positioned(
-              top: 60, left: 16, right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(12)),
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    activeTrackColor: const Color(0xFF25D366),
-                    inactiveTrackColor: Colors.white24,
-                    thumbColor: Colors.white,
-                    rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 7),
-                  ),
-                  child: RangeSlider(
-                    values: _trim, min: 0, max: _dur.inMilliseconds.toDouble(),
-                    onChanged: _handleTrimChanged,
-                    onChangeStart: _handleTrimStart,
-                    onChangeEnd: _handleTrimEnd,
-                  ),
-                ),
-              ),
-            ),
 
             _PreviewBottomControls(
               onConfirm: _send,
