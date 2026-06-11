@@ -420,6 +420,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         ),
         _PullFixedFeedHeader(
           pullExtent: _pullExtent,
+          isGridView: _isGridView,
+          isSearchOpen: _isSearchOpen,
+          onToggleGrid: _toggleLayoutMode,
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
         const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),
@@ -609,31 +612,52 @@ class _FeedHeader extends StatelessWidget {
 class _PullFixedFeedHeader extends StatelessWidget {
   const _PullFixedFeedHeader({
     required this.pullExtent,
+    required this.isGridView,
+    required this.isSearchOpen,
+    required this.onToggleGrid,
   });
 
   final ValueListenable<double> pullExtent;
+  final bool isGridView;
+  final bool isSearchOpen;
+  final VoidCallback onToggleGrid;
 
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<double>(
       valueListenable: pullExtent,
-      builder: (context, value, child) {
+      builder: (context, value, _) {
         if (value <= 0) {
           return const SizedBox.shrink();
         }
-        return child!;
+        return Stack(
+          children: [
+            Positioned(
+              top: value,
+              left: 0,
+              right: 0,
+              child: const IgnorePointer(
+                child: ColoredBox(
+                  color: Color(0xFFF4FBF7),
+                  child: SizedBox(height: 56),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: _FeedHeader(
+                  isGridView: isGridView,
+                  isSearchOpen: isSearchOpen,
+                  onToggleGrid: onToggleGrid,
+                ),
+              ),
+            ),
+          ],
+        );
       },
-      child: Positioned(
-        top: 56,
-        left: 0,
-        right: 0,
-        child: IgnorePointer(
-          child: ColoredBox(
-            color: const Color(0xFFF4FBF7),
-            child: const SizedBox(height: 76),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -399,10 +399,11 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     if (!_isRec || _startY == null) return;
     final dist = _startY! - e.position.dy;
     final delta = (dist / 160).clamp(0.0, 1.0) * (_maxZoom - _minZoom);
-    _setZoom((_startZoom + delta).clamp(_minZoom, _maxZoom));
+    final nextZoom = (_startZoom + delta).clamp(_minZoom, _maxZoom);
+    _setZoom(nextZoom, updateUI: (nextZoom - _currZoom).abs() >= 0.05);
   }
 
-  void _setZoom(double zoom) {
+  void _setZoom(double zoom, {bool updateUI = true}) {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
     if (_previewFile != null || _isBusy || _isResettingZoom) return;
@@ -410,6 +411,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     _currZoom = zoom;
     if (zoom > _minZoom + 0.01) _hasUserZoomed = true;
     unawaited(controller.setZoomLevel(zoom));
+    if (updateUI && mounted) setState(() {});
   }
 
   Future<void> _resetZoom({bool rebuild = true}) async {
@@ -604,13 +606,15 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                 ? GestureDetector(
               onTapDown: _onTapFocus,
               onScaleStart: (_) => _startZoom = _currZoom,
-              onScaleUpdate: (d) => _setZoom((_startZoom * d.scale).clamp(_minZoom, _maxZoom)),
+              onScaleUpdate: (d) => _setZoom((_startZoom * d.scale).clamp(_minZoom, _maxZoom), updateUI: false),
               child: RepaintBoundary(
                 child: Align(
                   alignment: Alignment.topCenter,
                   child: AspectRatio(
                     aspectRatio: _portraitFrameRatio,
-                    child: ClipRect(child: CameraPreview(controller)),
+                    child: RepaintBoundary(
+                      child: ClipRect(child: CameraPreview(controller)),
+                    ),
                   ),
                 ),
               ),
@@ -717,8 +721,11 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 }
 
 class _CaptureBtn extends StatelessWidget {
-  final bool isRec; final double progress;
-  final ValueChanged<TapDownDetails> onStart; final VoidCallback onEnd; final ValueChanged<PointerMoveEvent> onMove;
+  final bool isRec;
+  final double progress;
+  final ValueChanged<TapDownDetails> onStart;
+  final VoidCallback onEnd;
+  final ValueChanged<PointerMoveEvent> onMove;
   const _CaptureBtn({required this.isRec, required this.progress, required this.onStart, required this.onEnd, required this.onMove});
 
   @override

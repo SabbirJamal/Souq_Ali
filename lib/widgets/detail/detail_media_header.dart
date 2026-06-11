@@ -39,6 +39,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   late final PageController _pageController;
   final ValueNotifier<int> _pauseSignal = ValueNotifier<int>(0);
   final Map<String, Size> _imageSizes = {};
+  final Set<String> _pendingImageSizeUrls = <String>{};
   OverlayEntry? _zoomOverlay;
   Rect? _zoomRect;
   Offset _zoomStartFocal = Offset.zero;
@@ -264,7 +265,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   }
 
   void _rememberImageSize(String url, ImageProvider provider) {
-    if (_imageSizes.containsKey(url)) return;
+    if (_imageSizes.containsKey(url) || !_pendingImageSizeUrls.add(url)) return;
     final stream = provider.resolve(const ImageConfiguration());
     late final ImageStreamListener listener;
     listener = ImageStreamListener((info, _) {
@@ -273,6 +274,9 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
         info.image.width.toDouble(),
         info.image.height.toDouble(),
       );
+    }, onError: (_, _) {
+      stream.removeListener(listener);
+      _pendingImageSizeUrls.remove(url);
     });
     stream.addListener(listener);
   }

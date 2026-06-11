@@ -25,6 +25,7 @@ class ItemDetailPage extends StatefulWidget {
 class _ItemDetailPageState extends State<ItemDetailPage> {
   final Map<String, VideoPlayerController> _preloadedVideoControllers = {};
   final Map<String, Future<void>> _preloadedVideoInitializers = {};
+  late final List<MediaItem> _media = mediaItemsFromMap(widget.itemData);
   bool _isPreparingDetail = true, _didStartPreparingDetail = false, _lockDetailScroll = false;
 
   @override
@@ -47,7 +48,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   Future<void> _prepareDetailMedia() async {
-    final media = mediaItemsFromMap(widget.itemData);
+    final media = _media;
     final firstItems = media.take(2).map((m) {
       final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : (m.thumbnailUrl?.trim().isNotEmpty == true ? m.thumbnailUrl!.trim() : m.url);
       return url.isEmpty ? Future.value() : precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
@@ -75,7 +76,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   void _preloadDetailVideos() {
-    final media = mediaItemsFromMap(widget.itemData);
+    final media = _media;
     final first = media.isEmpty ? null : media.first;
     for (final m in media.where((m) => m.isVideo)) {
       if (_preloadedVideoControllers.containsKey(m.url)) continue;
@@ -100,7 +101,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   @override
   Widget build(BuildContext context) {
     if (_isPreparingDetail) return const _ItemDetailWarmupSkeleton();
-    final media = mediaItemsFromMap(widget.itemData);
+    final media = _media;
     final phone = widget.itemData['seller_phone']?.toString() ?? '';
     return PopScope(
       canPop: false, onPopInvokedWithResult: (d, r) { if (!d) _goToFeed(context); },

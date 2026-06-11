@@ -32,6 +32,16 @@ class ItemCard extends StatefulWidget {
 
 class _ItemCardState extends State<ItemCard>
     with AutomaticKeepAliveClientMixin<ItemCard> {
+  late List<MediaItem> _mediaItems = mediaItemsFromMap(widget.item);
+
+  @override
+  void didUpdateWidget(covariant ItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.item, oldWidget.item)) {
+      _mediaItems = mediaItemsFromMap(widget.item);
+    }
+  }
+
   @override
   void dispose() {
     super.dispose();
@@ -40,7 +50,7 @@ class _ItemCardState extends State<ItemCard>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final mediaItems = mediaItemsFromMap(widget.item);
+    final mediaItems = _mediaItems;
     final uploadedAgo = widget.uploadedAgoOverride ?? _uploadedAgo(widget.item['created_at']);
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
     final videoCount = mediaItems.where((media) => media.isVideo).length;
