@@ -180,9 +180,7 @@ class CameraCapturePage extends StatefulWidget {
       isScrollControlled: true,
       backgroundColor: const Color(0xFF111614),
       builder: (context) => SizedBox(
-        height: MediaQuery.sizeOf(context).height -
-            MediaQuery.viewPaddingOf(context).top -
-            10,
+        height: MediaQuery.sizeOf(context).height * 0.955,
         child: Column(
           children: [
             Expanded(
@@ -669,15 +667,23 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     ]),
   )));
 
-  Widget _buildTopBar() => Positioned(
-    top: 0, right: 0,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (_isRec) _buildRecTimer() else _CircleBtn(icon: _isFlash ? Icons.flash_on : Icons.flash_off, onTap: _toggleFlash),
-      ]),
-    ),
-  );
+  Widget _buildTopBar() => Stack(children: [
+    if (_isRec)
+      Positioned(
+        top: 10,
+        left: 0,
+        right: 0,
+        child: Center(child: _buildRecTimer()),
+      )
+    else
+      Positioned(
+        top: 0, right: 0,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: _CircleBtn(icon: _isFlash ? Icons.flash_on : Icons.flash_off, onTap: _toggleFlash),
+        ),
+      ),
+  ]);
 
   Widget _buildRecTimer() => Container(
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
