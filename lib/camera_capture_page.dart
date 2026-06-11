@@ -946,32 +946,19 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
         Center(child: Text(_err!, style: const TextStyle(color: Colors.white)))
       else
         const Center(child: CircularProgressIndicator(color: Colors.white)),
-      Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              IconButton(
-                icon: Icon(
-                  _isMuted ? Icons.volume_off : Icons.volume_up,
-                  color: Colors.white,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _isMuted = !_isMuted;
-                    _controller.setVolume(_isMuted ? 0 : 1);
-                  });
-                },
-              ),
-            ],
-          ),
+      _PreviewBottomControls(
+        onConfirm: _send,
+        onClose: widget.onClose,
+        leading: _CircleBtn(
+          icon: _isMuted ? Icons.volume_off : Icons.volume_up,
+          onTap: () {
+            setState(() {
+              _isMuted = !_isMuted;
+              _controller.setVolume(_isMuted ? 0 : 1);
+            });
+          },
         ),
       ),
-      _PreviewBottomControls(onConfirm: _send, onClose: widget.onClose),
     ],
   );
 }
@@ -1127,16 +1114,18 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
             else if (_err != null) Center(child: Text(_err!, style: const TextStyle(color: Colors.white)))
             else const Center(child: CircularProgressIndicator(color: Colors.white)),
 
-            Positioned(top: 0, left: 0, right: 0, child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                IconButton(icon: Icon(_isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white), onPressed: () { setState(() { _isMuted = !_isMuted; _c.setVolume(_isMuted ? 0 : 1); }); }),
-              ]),
-            )),
-
             _PreviewBottomControls(
               onConfirm: _send,
               onClose: () => Navigator.pop(context),
+              leading: _CircleBtn(
+                icon: _isMuted ? Icons.volume_off : Icons.volume_up,
+                onTap: () {
+                  setState(() {
+                    _isMuted = !_isMuted;
+                    _c.setVolume(_isMuted ? 0 : 1);
+                  });
+                },
+              ),
             ),
             const Positioned(
               left: 0,
@@ -1155,10 +1144,12 @@ class _PreviewBottomControls extends StatelessWidget {
   const _PreviewBottomControls({
     required this.onConfirm,
     required this.onClose,
+    this.leading,
   });
 
   final VoidCallback onConfirm;
   final VoidCallback onClose;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) => Positioned(
@@ -1176,7 +1167,7 @@ class _PreviewBottomControls extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const SizedBox(width: 48, height: 48),
+                leading ?? const SizedBox(width: 48, height: 48),
                 GestureDetector(
                   onTap: onConfirm,
                   child: Container(

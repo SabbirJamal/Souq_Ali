@@ -9,7 +9,6 @@ import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
-import '../widgets/pull_down_refresh_area.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -37,12 +36,13 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
-  final _pullExtent = ValueNotifier<double>(0);
   final Map<String, GlobalKey> _itemKeys = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
 
   final List<FeedItem> _allDocs = [];
+  List<FeedItem>? _cachedFilteredDocs;
+  String? _cachedQueryForFilter;
   bool _isGridView = true;
   bool _isSearchOpen = false;
   bool _isLoading = false;
@@ -121,6 +121,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _feedCursor = result.cursor;
         _hasMore = result.hasMore;
         _isLoading = false;
+        _cachedFilteredDocs = null;
       });
       _scheduleVisibleSeenCheck();
     } catch (error, stackTrace) {
@@ -139,7 +140,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _seenFlushTimer?.cancel();
     _flushSeenItems();
     _scrollController.dispose();
-    _pullExtent.dispose();
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
@@ -178,7 +178,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 280), () {
       if (mounted) {
-        setState(() => _query = value);
+        setState(() {
+          _query = value;
+          _cachedFilteredDocs = null;
+        });
       }
     });
   }
@@ -204,6 +207,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       _allDocs.clear();
       _hasMore = true;
       _feedCursor = null;
+      _cachedFilteredDocs = null;
     });
     await _fetchPage(isInitial: true);
   }
@@ -237,6 +241,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
             .where((doc) => !existingIds.contains(doc.id))
             .toList(growable: false);
         _allDocs.insertAll(0, newItems);
+        _cachedFilteredDocs = null;
       });
     } catch (error, stackTrace) {
       debugPrint('Feed merge refresh failed: $error');
@@ -266,9 +271,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   List<FeedItem> _getFilteredAndRankedDocs() {
-    final activeDocs = _allDocs.where((doc) => _isItemActive(doc.data, _openedAt)).toList();
-    
     final query = _query.trim().toLowerCase();
+    if (_cachedFilteredDocs != null && _cachedQueryForFilter == query) {
+      return _cachedFilteredDocs!;
+    }
+
+    final activeDocs = _allDocs.where((doc) => _isItemActive(doc.data, _openedAt)).toList();
     var filtered = activeDocs.where((doc) {
       final status = doc.data['status']?.toString();
       return status == widget.itemStatus;
@@ -283,9 +291,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
             .join(' ');
         return searchableText.contains(query);
       }).toList();
-      return filtered;
     }
 
+    _cachedFilteredDocs = filtered;
+    _cachedQueryForFilter = query;
     return filtered;
   }
 
@@ -359,9 +368,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
     return Stack(
       children: [
-        PullDownRefreshArea(
+        RefreshIndicator(
           onRefresh: _refreshFeed,
-          onPullExtentChanged: (value) => _pullExtent.value = value,
+          color: const Color(0xFFFF7801),
+          backgroundColor: Colors.white,
+          edgeOffset: 0,
+          displacement: 42,
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
             child: CustomScrollView(
@@ -417,12 +429,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                     ],
                   ),
                 ),
-        ),
-        _PullFixedFeedHeader(
-          pullExtent: _pullExtent,
-          isGridView: _isGridView,
-          isSearchOpen: _isSearchOpen,
-          onToggleGrid: _toggleLayoutMode,
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
         const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),
@@ -605,59 +611,6 @@ class _FeedHeader extends StatelessWidget {
             ),
         ],
       ),
-    );
-  }
-}
-
-class _PullFixedFeedHeader extends StatelessWidget {
-  const _PullFixedFeedHeader({
-    required this.pullExtent,
-    required this.isGridView,
-    required this.isSearchOpen,
-    required this.onToggleGrid,
-  });
-
-  final ValueListenable<double> pullExtent;
-  final bool isGridView;
-  final bool isSearchOpen;
-  final VoidCallback onToggleGrid;
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<double>(
-      valueListenable: pullExtent,
-      builder: (context, value, _) {
-        if (value <= 0) {
-          return const SizedBox.shrink();
-        }
-        return Stack(
-          children: [
-            Positioned(
-              top: value,
-              left: 0,
-              right: 0,
-              child: const IgnorePointer(
-                child: ColoredBox(
-                  color: Color(0xFFF4FBF7),
-                  child: SizedBox(height: 56),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: _FeedHeader(
-                  isGridView: isGridView,
-                  isSearchOpen: isSearchOpen,
-                  onToggleGrid: onToggleGrid,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

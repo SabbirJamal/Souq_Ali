@@ -49,22 +49,26 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   Future<void> _prepareDetailMedia() async {
     final media = _media;
-    final firstItems = media.take(2).map((m) {
-      final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : (m.thumbnailUrl?.trim().isNotEmpty == true ? m.thumbnailUrl!.trim() : m.url);
-      return url.isEmpty ? Future.value() : precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
-    });
-    final first = media.isEmpty ? null : media.first;
-    final firstVid = first?.isVideo == true ? _preloadedVideoInitializers[first!.url]?.then((_) {
+    if (media.isEmpty) {
+      if (mounted) setState(() => _isPreparingDetail = false);
+      return;
+    }
+    final first = media.first;
+    final firstVid = first.isVideo ? _preloadedVideoInitializers[first.url]?.then((_) {
       _preloadedVideoControllers[first.url]?.play();
     }).catchError((_) {}) : null;
-    
-    await Future.any([Future.wait([...firstItems, ?firstVid]), Future.delayed(const Duration(milliseconds: 900))]);
+
+    final firstImage = !first.isVideo ? Future.value() : first.thumbnailUrl?.trim().isNotEmpty == true
+        ? precacheImage(CachedNetworkImageProvider(first.thumbnailUrl!), context).catchError((_) {})
+        : Future.value();
+
+    await Future.any([Future.wait([firstImage, ?firstVid]), Future.delayed(const Duration(milliseconds: 900))]);
     if (mounted) setState(() => _isPreparingDetail = false);
-    _precacheRemainingDetailMedia(media.skip(2));
+    _precacheRemainingDetailMedia(media.skip(1));
   }
 
   void _precacheRemainingDetailMedia(Iterable<MediaItem> media) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    Future.delayed(const Duration(milliseconds: 200), () {
       if (!mounted) return;
       for (final m in media) {
         final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : (m.thumbnailUrl?.trim().isNotEmpty == true ? m.thumbnailUrl!.trim() : m.url);
@@ -77,12 +81,29 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   void _preloadDetailVideos() {
     final media = _media;
-    final first = media.isEmpty ? null : media.first;
-    for (final m in media.where((m) => m.isVideo)) {
+    MediaItem? firstVideo;
+    for (final m in media) {
+      if (m.isVideo) {
+        firstVideo = m;
+        break;
+      }
+    }
+    if (firstVideo != null && !_preloadedVideoControllers.containsKey(firstVideo.url)) {
+      final c = VideoPlayerController.networkUrl(Uri.parse(firstVideo.url));
+      _preloadedVideoControllers[firstVideo.url] = c;
+      _preloadedVideoInitializers[firstVideo.url] = c.initialize().catchError((_) {});
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _preloadRemainingVideos(media, firstVideo);
+    });
+  }
+
+  void _preloadRemainingVideos(List<MediaItem> media, MediaItem? firstVideo) {
+    for (final m in media.where((m) => m.isVideo && m.url != firstVideo?.url)) {
       if (_preloadedVideoControllers.containsKey(m.url)) continue;
       final c = VideoPlayerController.networkUrl(Uri.parse(m.url));
       _preloadedVideoControllers[m.url] = c;
-      _preloadedVideoInitializers[m.url] = (first?.url == m.url ? c.initialize() : Future.delayed(const Duration(milliseconds: 900), () => c.initialize())).catchError((_) {});
+      _preloadedVideoInitializers[m.url] = Future.delayed(const Duration(milliseconds: 500), () => c.initialize()).catchError((_) {});
     }
   }
 
