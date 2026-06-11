@@ -352,20 +352,17 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
     return Stack(
       children: [
-        Column(
-          children: [
-            _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode),
-            Expanded(
-              child: PullDownRefreshArea(
-                onRefresh: _refreshFeed,
-                child: NotificationListener<ScrollEndNotification>(
-                  onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
-                  child: CustomScrollView(
-                    key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
-                    controller: _scrollController,
-                    cacheExtent: 900,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
+        PullDownRefreshArea(
+          onRefresh: _refreshFeed,
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
+            child: CustomScrollView(
+              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
+              controller: _scrollController,
+              cacheExtent: 900,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                      SliverToBoxAdapter(child: _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode)),
                       if (_allDocs.isEmpty && showInlineLoading)
                         SliverPadding(
                           padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
@@ -412,9 +409,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                     ],
                   ),
                 ),
-              ),
-            ),
-          ],
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
         const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),

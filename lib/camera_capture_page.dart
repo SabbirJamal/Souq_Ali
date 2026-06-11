@@ -127,6 +127,24 @@ class _CameraControllerCache {
     _preparingVideo = null;
     await current?.dispose();
   }
+
+  static Future<void> resetCurrent() async {
+    _releaseTimer?.cancel();
+    final pending = _initializing;
+    CameraController? current = _controller;
+    if (pending != null) {
+      try {
+        current = await pending;
+      } catch (_) {
+        current = null;
+      }
+    }
+    _controller = null;
+    _description = null;
+    _initializing = null;
+    _preparingVideo = null;
+    await current?.dispose();
+  }
 }
 
 class CameraCapturePage extends StatefulWidget {
@@ -150,12 +168,12 @@ class CameraCapturePage extends StatefulWidget {
   final ValueChanged<CapturedMedia>? onCaptured;
 
   static Future<GalleryMediaSelection?> openGalleryPicker(
-    BuildContext context, {
-    required Set<String> selectedIds,
-    required int selectedCount,
-    required int maxCount,
-    String maxSelectionMessage = 'Only 8 media can be selected',
-  }) async {
+      BuildContext context, {
+        required Set<String> selectedIds,
+        required int selectedCount,
+        required int maxCount,
+        String maxSelectionMessage = 'Only 8 media can be selected',
+      }) async {
     GalleryMediaSelection? result;
     await showModalBottomSheet<void>(
       context: context,
@@ -163,7 +181,8 @@ class CameraCapturePage extends StatefulWidget {
       backgroundColor: const Color(0xFF111614),
       builder: (context) => SizedBox(
         height: MediaQuery.sizeOf(context).height -
-            MediaQuery.viewPaddingOf(context).top,
+            MediaQuery.viewPaddingOf(context).top -
+            10,
         child: Column(
           children: [
             Expanded(
@@ -209,6 +228,7 @@ class CameraCapturePage extends StatefulWidget {
 
 class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindingObserver {
   static const _maxDuration = Duration(seconds: 60);
+  static const _minVideoDuration = Duration(milliseconds: 800);
   static const _portraitFrameRatio = 9 / 16;
   CameraController? _controller;
   Future<void>? _initFuture;
@@ -217,11 +237,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   bool _isFlash = false, _isRec = false, _isBusy = false;
   Timer? _holdTimer, _tickTimer;
   Duration _elapsed = Duration.zero;
+  DateTime? _recordStartedAt;
+  bool _isResettingZoom = false;
+  bool _hasUserZoomed = false;
   double _minZoom = 1.0, _maxZoom = 1.0, _currZoom = 1.0, _startZoom = 1.0;
   double? _startY;
   Offset? _focusPoint;
   bool _hasPermission = false;
   bool _isCheckingPermission = true;
+  File? _previewFile;
+  String? _previewType;
 
   @override
   void initState() {
@@ -237,6 +262,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     WidgetsBinding.instance.removeObserver(this);
     _setImmersive(false);
     _holdTimer?.cancel(); _tickTimer?.cancel();
+    unawaited(_resetCameraState(rebuild: false));
     _CameraControllerCache.release();
     super.dispose();
   }
@@ -246,6 +272,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
       _holdTimer?.cancel();
       _tickTimer?.cancel();
+      unawaited(_resetCameraState(rebuild: false));
       unawaited(_CameraControllerCache.releaseNow());
     }
   }
@@ -323,7 +350,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         _minZoom = await c.getMinZoomLevel();
         _maxZoom = await c.getMaxZoomLevel();
         _currZoom = _minZoom;
-        await c.setZoomLevel(_currZoom);
+        await _resetZoom(rebuild: false);
         setState(() {});
         unawaited(_CameraControllerCache.prepareVideo(c));
         return;
@@ -340,6 +367,16 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await _controller!.setFlashMode(next ? FlashMode.torch : FlashMode.off);
       setState(() => _isFlash = next);
     } catch (_) {}
+  }
+
+  Future<void> _resetFlash({bool rebuild = true}) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    _isFlash = false;
+    try {
+      await controller.setFlashMode(FlashMode.off);
+    } catch (_) {}
+    if (rebuild && mounted) setState(() {});
   }
 
   void _onPressStart(TapDownDetails d) {
@@ -368,14 +405,61 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   }
 
   void _setZoom(double zoom) {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (_previewFile != null || _isBusy || _isResettingZoom) return;
     if ((zoom - _currZoom).abs() < 0.01) return;
     _currZoom = zoom;
-    _controller!.setZoomLevel(zoom);
-    setState(() {});
+    if (zoom > _minZoom + 0.01) _hasUserZoomed = true;
+    unawaited(controller.setZoomLevel(zoom));
   }
 
-  void _closeCamera() {
+  Future<void> _resetZoom({bool rebuild = true}) async {
+    // Cancel any queued zoom immediately — don't wait for in-flight ops.
+    await _forceResetZoom(rebuild: rebuild);
+  }
+
+  Future<void> _forceResetZoom({bool rebuild = true}) async {
+    _isResettingZoom = true;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      _isResettingZoom = false;
+      return;
+    }
+    final zoom = _minZoom;
+    _currZoom = zoom;
+    _startZoom = zoom;
+    try {
+      await controller.setZoomLevel(zoom);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await controller.setZoomLevel(zoom);
+    } catch (_) {
+    } finally {
+      _isResettingZoom = false;
+    }
+    if (rebuild && mounted) setState(() {});
+  }
+
+  Future<void> _resetCameraState({bool rebuild = true}) async {
+    await _resetFlash(rebuild: false);
+    await _resetZoom(rebuild: false);
+    if (rebuild && mounted) setState(() {});
+  }
+
+  Future<void> _resetCachedControllerAfterZoom({bool reopen = false}) async {
+    if (!_hasUserZoomed) return;
+    _hasUserZoomed = false;
+    _controller = null;
+    await _CameraControllerCache.resetCurrent();
+    if (reopen && mounted) {
+      _initFuture = _setup();
+    }
+  }
+
+  Future<void> _closeCamera() async {
+    await _resetCameraState(rebuild: false);
+    await _resetCachedControllerAfterZoom();
+    if (!mounted) return;
     if (widget.embedded) {
       widget.onClose?.call();
       return;
@@ -391,12 +475,33 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     Navigator.pop(context, CameraCaptureAction.openGallery);
   }
 
-  void _finishCaptured(CapturedMedia media) {
+  Future<void> _finishCaptured(CapturedMedia media) async {
+    await _resetCameraState(rebuild: false);
+    await _resetCachedControllerAfterZoom();
+    if (!mounted) return;
     if (widget.embedded) {
       widget.onCaptured?.call(media);
       return;
     }
     Navigator.pop(context, media);
+  }
+
+  void _showPreview(File file, String type) {
+    setState(() {
+      _previewFile = file;
+      _previewType = type;
+      _isBusy = false;
+    });
+  }
+
+  Future<void> _closePreview() async {
+    await _resetCameraState(rebuild: false);
+    await _resetCachedControllerAfterZoom(reopen: true);
+    if (!mounted) return;
+    setState(() {
+      _previewFile = null;
+      _previewType = null;
+    });
   }
 
   Future<void> _onTapFocus(TapDownDetails d) async {
@@ -420,8 +525,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     try {
       final f = await _controller!.takePicture();
       if (!mounted) return;
-      final res = await Navigator.push<CapturedMedia>(context, MaterialPageRoute(builder: (_) => _ImagePreviewPage(file: File(f.path))));
-      if (res != null && mounted) _finishCaptured(res);
+      await _resetCameraState(rebuild: false);
+      if (!mounted) return;
+      _showPreview(File(f.path), 'image');
     } catch (_) {} finally { if (mounted) setState(() => _isBusy = false); }
   }
 
@@ -432,6 +538,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await _CameraControllerCache.prepareVideo(_controller!);
       await _controller!.startVideoRecording();
       HapticFeedback.heavyImpact();
+      _recordStartedAt = DateTime.now();
       if (mounted) setState(() { _isRec = true; _elapsed = Duration.zero; });
       _tickTimer = Timer.periodic(const Duration(milliseconds: 250), (t) {
         if (!mounted || !_isRec) { t.cancel(); return; }
@@ -444,18 +551,28 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   Future<void> _stopRec() async {
     if (!_isRec || _isBusy || _controller == null) return;
     _tickTimer?.cancel();
+    final recordedFor = _recordStartedAt == null
+        ? _elapsed
+        : DateTime.now().difference(_recordStartedAt!);
+    _recordStartedAt = null;
     setState(() { _isRec = false; _isBusy = true; });
     try {
       if (!_controller!.value.isRecordingVideo) { setState(() => _isBusy = false); return; }
       final f = await _controller!.stopVideoRecording();
       HapticFeedback.mediumImpact();
       if (!mounted) return;
+      await _resetCameraState(rebuild: false);
+      if (!mounted) return;
       await Future.delayed(const Duration(milliseconds: 80));
       final file = File(f.path);
       if (await file.exists()) {
+        if (recordedFor < _minVideoDuration) {
+          try { await file.delete(); } catch (_) {}
+          if (mounted) AppToast.show(context, 'Hold longer to record video');
+          return;
+        }
         if (!mounted) return;
-        final res = await Navigator.push<CapturedMedia>(context, MaterialPageRoute(builder: (_) => _VideoPreviewPage(file: file)));
-        if (res != null && mounted) _finishCaptured(res);
+        _showPreview(file, 'video');
       }
     } catch (e) { debugPrint('Error stopping video recording: $e'); }
     finally { if (mounted) setState(() => _isBusy = false); }
@@ -463,7 +580,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    if (_isCheckingPermission) return _wrapCameraPage(_buildCameraShell(const CircularProgressIndicator(color: Colors.white)));
+    if (_isCheckingPermission) return _wrapCameraPage(_buildCameraShell(const SizedBox.shrink()));
     if (!_hasPermission) return _buildPermissionPrompt();
     return _wrapCameraPage(
       FutureBuilder(
@@ -471,26 +588,40 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         builder: (ctx, snap) {
           final controller = _controller;
           final isReady = controller != null && controller.value.isInitialized;
+          final previewFile = _previewFile;
           return _buildCameraShell(
-            isReady
+            previewFile != null
+                ? (_previewType == 'video'
+                ? _InlineVideoPreview(
+              file: previewFile,
+              onConfirm: _finishCaptured,
+              onClose: _closePreview,
+            )
+                : _InlineImagePreview(
+              file: previewFile,
+              onConfirm: _finishCaptured,
+              onClose: _closePreview,
+            ))
+                : isReady
                 ? GestureDetector(
-                    onTapDown: _onTapFocus,
-                    onScaleUpdate: (d) => _setZoom((_currZoom * d.scale).clamp(_minZoom, _maxZoom)),
-                    child: RepaintBoundary(
-                      child: Align(
-                        alignment: Alignment.topCenter,
-                        child: AspectRatio(
-                          aspectRatio: _portraitFrameRatio,
-                          child: ClipRect(child: CameraPreview(controller)),
-                        ),
-                      ),
-                    ),
-                  )
-                : Center(
-                    child: snap.connectionState == ConnectionState.done
-                        ? const Text('Camera error', style: TextStyle(color: Colors.white))
-                        : const CircularProgressIndicator(color: Colors.white),
+              onTapDown: _onTapFocus,
+              onScaleStart: (_) => _startZoom = _currZoom,
+              onScaleUpdate: (d) => _setZoom((_startZoom * d.scale).clamp(_minZoom, _maxZoom)),
+              child: RepaintBoundary(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: AspectRatio(
+                    aspectRatio: _portraitFrameRatio,
+                    child: ClipRect(child: CameraPreview(controller)),
                   ),
+                ),
+              ),
+            )
+                : Center(
+              child: snap.connectionState == ConnectionState.done
+                  ? const Text('Camera error', style: TextStyle(color: Colors.white))
+                  : const SizedBox.shrink(),
+            ),
           );
         },
       ),
@@ -511,9 +642,11 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
           child: Stack(
             children: [
               Positioned.fill(child: preview),
-              if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
-              _buildTopBar(),
-              _buildBottomControls(),
+              if (_previewFile == null) ...[
+                if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
+                _buildTopBar(),
+                _buildBottomControls(),
+              ],
             ],
           ),
         ),
@@ -522,26 +655,25 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   );
 
   Widget _buildPermissionPrompt() => _wrapCameraPage(Center(child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.camera_alt, color: Colors.white, size: 64),
-        const SizedBox(height: 24),
-        const Text('Camera and Microphone access needed.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 16)),
-        const SizedBox(height: 32),
-        ElevatedButton(
-          onPressed: _requestPermission,
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
-          child: const Text('Grant Permission', style: TextStyle(fontWeight: FontWeight.bold)),
-        ),
-      ]),
-    )));
+    padding: const EdgeInsets.all(32),
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.camera_alt, color: Colors.white, size: 64),
+      const SizedBox(height: 24),
+      const Text('Camera and Microphone access needed.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 16)),
+      const SizedBox(height: 32),
+      ElevatedButton(
+        onPressed: _requestPermission,
+        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
+        child: const Text('Grant Permission', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    ]),
+  )));
 
   Widget _buildTopBar() => Positioned(
-    top: 0, left: 0, right: 0,
+    top: 0, right: 0,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        _CircleBtn(icon: Icons.close, onTap: _closeCamera),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (_isRec) _buildRecTimer() else _CircleBtn(icon: _isFlash ? Icons.flash_on : Icons.flash_off, onTap: _toggleFlash),
       ]),
     ),
@@ -558,21 +690,21 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   );
 
   Widget _buildBottomControls() => Positioned(
-    bottom: 88, left: 0, right: 0,
+    bottom: 52, left: 0, right: 0,
     child: SafeArea(
-      top: false,
-      minimum: const EdgeInsets.only(bottom: 8),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14), child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _CircleBtn(icon: Icons.photo_library, onTap: _openGallery),
-          _CaptureBtn(isRec: _isRec, progress: _elapsed.inMilliseconds / _maxDuration.inMilliseconds, onStart: _onPressStart, onEnd: _onPressEnd, onMove: _onMove),
-          const SizedBox(width: 48, height: 48),
-        ],
-      )),
-      const SizedBox(height: 6),
-    ])),
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14), child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _CircleBtn(icon: Icons.photo_library, onTap: _openGallery),
+              _CaptureBtn(isRec: _isRec, progress: _elapsed.inMilliseconds / _maxDuration.inMilliseconds, onStart: _onPressStart, onEnd: _onPressEnd, onMove: _onMove),
+              _CircleBtn(icon: Icons.close, onTap: _closeCamera),
+            ],
+          )),
+          const SizedBox(height: 6),
+        ])),
   );
 
   String _formatDur(Duration d) => '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
@@ -593,10 +725,26 @@ class _CaptureBtn extends StatelessWidget {
         decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 4)),
         child: Stack(alignment: Alignment.center, children: [
           if (isRec) SizedBox(width: 74, height: 74, child: CircularProgressIndicator(value: progress, color: Colors.red, strokeWidth: 4)),
-          AnimatedContainer(
+          AnimatedSwitcher(
             duration: const Duration(milliseconds: 150),
-            width: isRec ? 30 : 64, height: isRec ? 30 : 64,
-            decoration: BoxDecoration(color: isRec ? Colors.red : Colors.white, shape: isRec ? BoxShape.rectangle : BoxShape.circle, borderRadius: isRec ? BorderRadius.circular(4) : null),
+            transitionBuilder: (child, animation) => ScaleTransition(
+              scale: animation,
+              child: child,
+            ),
+            child: Container(
+              key: ValueKey(isRec),
+              width: isRec ? 30 : 64,
+              height: isRec ? 30 : 64,
+              decoration: isRec
+                  ? BoxDecoration(
+                color: Colors.red,
+                borderRadius: BorderRadius.circular(4),
+              )
+                  : const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
         ]),
       ),
@@ -625,6 +773,280 @@ class _FocusRing extends StatelessWidget {
   );
 }
 
+class _InlineImagePreview extends StatelessWidget {
+  const _InlineImagePreview({
+    required this.file,
+    required this.onConfirm,
+    required this.onClose,
+  });
+
+  final File file;
+  final ValueChanged<CapturedMedia> onConfirm;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      Positioned.fill(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: AspectRatio(
+            aspectRatio: _CameraCapturePageState._portraitFrameRatio,
+            child: Image.file(file, fit: BoxFit.contain),
+          ),
+        ),
+      ),
+      _PreviewBottomControls(
+        onConfirm: () => onConfirm(CapturedMedia(file: file, type: 'image')),
+        onClose: onClose,
+      ),
+    ],
+  );
+}
+
+class _InlineVideoPreview extends StatefulWidget {
+  const _InlineVideoPreview({
+    required this.file,
+    required this.onConfirm,
+    required this.onClose,
+  });
+
+  final File file;
+  final ValueChanged<CapturedMedia> onConfirm;
+  final VoidCallback onClose;
+
+  @override
+  State<_InlineVideoPreview> createState() => _InlineVideoPreviewState();
+}
+
+class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
+  late VideoPlayerController _controller;
+  Timer? _overlayTimer;
+  bool _isInit = false, _isMuted = false, _isTrimming = false;
+  bool _wasPlayingBeforeTrim = false, _showPlaybackIcon = false;
+  String? _err;
+  RangeValues _trim = const RangeValues(0, 1);
+  Duration _duration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.file(widget.file);
+    _controller.initialize().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _isInit = true;
+        _duration = _controller.value.duration;
+        _trim = RangeValues(0, _duration.inMilliseconds.toDouble());
+      });
+      _controller
+        ..setLooping(true)
+        ..play()
+        ..addListener(_checkTrim);
+    }).catchError((e) {
+      if (mounted) setState(() => _err = e.toString());
+    });
+  }
+
+  @override
+  void dispose() {
+    _overlayTimer?.cancel();
+    _controller.removeListener(_checkTrim);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _checkTrim() {
+    if (!_isInit || _isTrimming) return;
+    final pos = _controller.value.position.inMilliseconds;
+    if (pos < _trim.start || pos > _trim.end) {
+      _controller.seekTo(Duration(milliseconds: _trim.start.toInt()));
+      if (_controller.value.isPlaying) _controller.play();
+    }
+  }
+
+  void _togglePlayback() {
+    if (!_isInit) return;
+    _overlayTimer?.cancel();
+    if (_controller.value.isPlaying) {
+      _controller.pause();
+      setState(() => _showPlaybackIcon = true);
+      return;
+    }
+    final pos = _controller.value.position.inMilliseconds;
+    if (pos < _trim.start || pos >= _trim.end) {
+      _controller.seekTo(Duration(milliseconds: _trim.start.toInt()));
+    }
+    _controller.play();
+    setState(() => _showPlaybackIcon = true);
+    _overlayTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && _controller.value.isPlaying) {
+        setState(() => _showPlaybackIcon = false);
+      }
+    });
+  }
+
+  void _handleTrimChanged(RangeValues value) {
+    if (value.end - value.start < 1000) return;
+    setState(() => _trim = value);
+  }
+
+  void _handleTrimStart(RangeValues value) {
+    _wasPlayingBeforeTrim = _controller.value.isPlaying;
+    _isTrimming = true;
+    _controller.pause();
+  }
+
+  void _handleTrimEnd(RangeValues value) {
+    _isTrimming = false;
+    _controller.seekTo(Duration(milliseconds: value.start.toInt()));
+    if (_wasPlayingBeforeTrim) {
+      _controller.play();
+      _overlayTimer?.cancel();
+      setState(() => _showPlaybackIcon = true);
+      _overlayTimer = Timer(const Duration(seconds: 1), () {
+        if (mounted && _controller.value.isPlaying) {
+          setState(() => _showPlaybackIcon = false);
+        }
+      });
+    } else {
+      setState(() => _showPlaybackIcon = true);
+    }
+  }
+
+  Future<void> _send() async {
+    File finalFile = widget.file;
+    final start = _trim.start;
+    final end = _trim.end;
+
+    if (_isMuted || start > 100 || (end < _duration.inMilliseconds - 100)) {
+      setState(() => _isInit = false);
+      final info = await VideoCompress.compressVideo(
+        widget.file.path,
+        quality: VideoQuality.MediumQuality,
+        startTime: (start / 1000).floor(),
+        duration: ((end - start) / 1000).ceil(),
+        includeAudio: !_isMuted,
+      );
+      if (info?.file != null) finalFile = info!.file!;
+    }
+
+    widget.onConfirm(CapturedMedia(file: finalFile, type: 'video'));
+  }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      if (_isInit)
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _togglePlayback,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: AspectRatio(
+                  aspectRatio: _CameraCapturePageState._portraitFrameRatio,
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio,
+                      child: VideoPlayer(_controller),
+                    ),
+                  ),
+                ),
+              ),
+              if (_showPlaybackIcon || !_controller.value.isPlaying)
+                AnimatedOpacity(
+                  opacity: 1,
+                  duration: const Duration(milliseconds: 120),
+                  child: DecoratedBox(
+                    decoration: const BoxDecoration(
+                      color: Colors.black45,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Icon(
+                        _controller.value.isPlaying ? Icons.play_arrow : Icons.pause,
+                        color: Colors.white,
+                        size: 46,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        )
+      else if (_err != null)
+        Center(child: Text(_err!, style: const TextStyle(color: Colors.white)))
+      else
+        const Center(child: CircularProgressIndicator(color: Colors.white)),
+      Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              IconButton(
+                icon: Icon(
+                  _isMuted ? Icons.volume_off : Icons.volume_up,
+                  color: Colors.white,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isMuted = !_isMuted;
+                    _controller.setVolume(_isMuted ? 0 : 1);
+                  });
+                },
+              ),
+              const IconButton(
+                icon: Icon(Icons.content_cut, color: Colors.white),
+                onPressed: null,
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (_isInit && _duration.inSeconds > 1)
+        Positioned(
+          top: 60,
+          left: 16,
+          right: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black45,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                activeTrackColor: const Color(0xFF25D366),
+                inactiveTrackColor: Colors.white24,
+                thumbColor: Colors.white,
+                rangeThumbShape:
+                const RoundRangeSliderThumbShape(enabledThumbRadius: 7),
+              ),
+              child: RangeSlider(
+                values: _trim,
+                min: 0,
+                max: _duration.inMilliseconds.toDouble(),
+                onChanged: _handleTrimChanged,
+                onChangeStart: _handleTrimStart,
+                onChangeEnd: _handleTrimEnd,
+              ),
+            ),
+          ),
+        ),
+      _PreviewBottomControls(onConfirm: _send, onClose: widget.onClose),
+    ],
+  );
+}
+
 class _ImagePreviewPage extends StatefulWidget {
   final File file;
   const _ImagePreviewPage({required this.file});
@@ -640,30 +1062,34 @@ class _ImagePreviewPageState extends State<_ImagePreviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    const bottomMenuHeight = 48.0;
-    final bottomControlsInset =
-        MediaQuery.viewPaddingOf(context).bottom + bottomMenuHeight;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(children: [
-        Positioned.fill(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: AspectRatio(
-              aspectRatio: _CameraCapturePageState._portraitFrameRatio,
-              child: Image.file(_currFile, fit: BoxFit.contain),
+      body: Column(children: [
+        const AppStatusBar(),
+        Expanded(
+          child: Stack(children: [
+            Positioned.fill(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: AspectRatio(
+                  aspectRatio: _CameraCapturePageState._portraitFrameRatio,
+                  child: Image.file(_currFile, fit: BoxFit.contain),
+                ),
+              ),
             ),
-          ),
-        ),
-        Positioned(top: 10, left: 10, child: SafeArea(child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)))),
-        Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: () {
-          Navigator.pop(context, CapturedMedia(file: _currFile, type: 'image'));
-        }, child: const Icon(Icons.send))),
-        const Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _CameraBottomMenu(),
+            _PreviewBottomControls(
+              onConfirm: () {
+                Navigator.pop(context, CapturedMedia(file: _currFile, type: 'image'));
+              },
+              onClose: () => Navigator.pop(context),
+            ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _CameraBottomMenu(),
+            ),
+          ]),
         ),
       ]),
     );
@@ -767,7 +1193,7 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
     File finalFile = widget.file;
     final start = _trim.start;
     final end = _trim.end;
-    
+
     // Only compress/trim if needed (mute or significant trim)
     if (_isMuted || start > 100 || (end < _dur.inMilliseconds - 100)) {
       setState(() => _isInit = false); // Show loading
@@ -780,90 +1206,146 @@ class _VideoPreviewPageState extends State<_VideoPreviewPage> {
       );
       if (info?.file != null) finalFile = info!.file!;
     }
-    
+
     if (mounted) Navigator.pop(context, CapturedMedia(file: finalFile, type: 'video'));
   }
 
   @override
   Widget build(BuildContext context) {
-    const bottomMenuHeight = 48.0;
-    final bottomControlsInset =
-        MediaQuery.viewPaddingOf(context).bottom + bottomMenuHeight;
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(children: [
-        if (_isInit) GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _togglePlayback,
-          child: Stack(alignment: Alignment.center, children: [
-            Align(
-              alignment: Alignment.topCenter,
-              child: AspectRatio(
-                aspectRatio: _CameraCapturePageState._portraitFrameRatio,
-                child: Center(child: AspectRatio(aspectRatio: _c.value.aspectRatio, child: VideoPlayer(_c))),
-              ),
-            ),
-            if (_showPlaybackIcon || !_c.value.isPlaying)
-              AnimatedOpacity(
-                opacity: 1,
-                duration: const Duration(milliseconds: 120),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Icon(_c.value.isPlaying ? Icons.play_arrow : Icons.pause, color: Colors.white, size: 46),
+      body: Column(children: [
+        const AppStatusBar(),
+        Expanded(
+          child: Stack(children: [
+            if (_isInit) GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _togglePlayback,
+              child: Stack(alignment: Alignment.center, children: [
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: AspectRatio(
+                    aspectRatio: _CameraCapturePageState._portraitFrameRatio,
+                    child: Center(child: AspectRatio(aspectRatio: _c.value.aspectRatio, child: VideoPlayer(_c))),
+                  ),
+                ),
+                if (_showPlaybackIcon || !_c.value.isPlaying)
+                  AnimatedOpacity(
+                    opacity: 1,
+                    duration: const Duration(milliseconds: 120),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Icon(_c.value.isPlaying ? Icons.play_arrow : Icons.pause, color: Colors.white, size: 46),
+                      ),
+                    ),
+                  ),
+              ]),
+            )
+            else if (_err != null) Center(child: Text(_err!, style: const TextStyle(color: Colors.white)))
+            else const Center(child: CircularProgressIndicator(color: Colors.white)),
+
+            Positioned(top: 0, left: 0, right: 0, child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                IconButton(icon: Icon(_isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white), onPressed: () { setState(() { _isMuted = !_isMuted; _c.setVolume(_isMuted ? 0 : 1); }); }),
+                const IconButton(icon: Icon(Icons.content_cut, color: Colors.white), onPressed: null),
+              ]),
+            )),
+
+            if (_isInit && _dur.inSeconds > 1) Positioned(
+              top: 60, left: 16, right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(12)),
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3,
+                    activeTrackColor: const Color(0xFF25D366),
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: Colors.white,
+                    rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 7),
+                  ),
+                  child: RangeSlider(
+                    values: _trim, min: 0, max: _dur.inMilliseconds.toDouble(),
+                    onChanged: _handleTrimChanged,
+                    onChangeStart: _handleTrimStart,
+                    onChangeEnd: _handleTrimEnd,
                   ),
                 ),
               ),
-          ]),
-        )
-        else if (_err != null) Center(child: Text(_err!, style: const TextStyle(color: Colors.white)))
-        else const Center(child: CircularProgressIndicator(color: Colors.white)),
-        
-        Positioned(top: 0, left: 0, right: 0, child: SafeArea(child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-            Row(children: [
-              IconButton(icon: Icon(_isMuted ? Icons.volume_off : Icons.volume_up, color: Colors.white), onPressed: () { setState(() { _isMuted = !_isMuted; _c.setVolume(_isMuted ? 0 : 1); }); }),
-              const IconButton(icon: Icon(Icons.content_cut, color: Colors.white), onPressed: null),
-            ]),
-          ]),
-        ))),
-
-        if (_isInit && _dur.inSeconds > 1) Positioned(
-          top: 60, left: 16, right: 16,
-          child: SafeArea(child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(12)),
-            child: SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: 3,
-                activeTrackColor: const Color(0xFF25D366),
-                inactiveTrackColor: Colors.white24,
-                thumbColor: Colors.white,
-                rangeThumbShape: const RoundRangeSliderThumbShape(enabledThumbRadius: 7),
-              ),
-              child: RangeSlider(
-                values: _trim, min: 0, max: _dur.inMilliseconds.toDouble(),
-                onChanged: _handleTrimChanged,
-                onChangeStart: _handleTrimStart,
-                onChangeEnd: _handleTrimEnd,
-              ),
             ),
-          )),
-        ),
 
-        Positioned(bottom: bottomControlsInset, right: 20, child: FloatingActionButton(backgroundColor: const Color(0xFF25D366), onPressed: _send, child: const Icon(Icons.check, color: Colors.white, size: 34))),
-        const Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: _CameraBottomMenu(),
+            _PreviewBottomControls(
+              onConfirm: _send,
+              onClose: () => Navigator.pop(context),
+            ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _CameraBottomMenu(),
+            ),
+          ]),
         ),
       ]),
     );
   }
+}
+
+class _PreviewBottomControls extends StatelessWidget {
+  const _PreviewBottomControls({
+    required this.onConfirm,
+    required this.onClose,
+  });
+
+  final VoidCallback onConfirm;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) => Positioned(
+    bottom: 52,
+    left: 0,
+    right: 0,
+    child: SafeArea(
+      top: false,
+      minimum: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const SizedBox(width: 48, height: 48),
+                GestureDetector(
+                  onTap: onConfirm,
+                  child: Container(
+                    width: 84,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                    child: const Icon(
+                      Icons.check_rounded,
+                      color: Color(0xFF25D366),
+                      size: 48,
+                      weight: 900,
+                    ),
+                  ),
+                ),
+                _CircleBtn(icon: Icons.close, onTap: onClose),
+              ],
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
+      ),
+    ),
+  );
 }
 
 void _noopNavTap(int index) {}
