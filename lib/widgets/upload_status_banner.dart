@@ -32,42 +32,44 @@ class _UploadStatusBannerState extends State<UploadStatusBanner> {
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.14),
-                      blurRadius: 16,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var i = 0; i < visibleUploads.length; i++) ...[
-                        _UploadStatusRow(
-                          status: visibleUploads[i],
-                          hiddenCount: !_expanded && uploads.length > 1 ? uploads.length - 1 : 0,
-                        ),
-                        if (i != visibleUploads.length - 1) const SizedBox(height: 7),
-                      ],
-                      if (_expanded && uploads.length > visibleUploads.length) ...[
-                        const SizedBox(height: 7),
-                        Text(
-                          '+${uploads.length - visibleUploads.length} more uploading',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black54,
-                          ),
-                        ),
-                      ],
+              child: RepaintBoundary(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.14),
+                        blurRadius: 16,
+                        offset: const Offset(0, 5),
+                      ),
                     ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var i = 0; i < visibleUploads.length; i++) ...[
+                          _UploadStatusRow(
+                            status: visibleUploads[i],
+                            hiddenCount: !_expanded && uploads.length > 1 ? uploads.length - 1 : 0,
+                          ),
+                          if (i != visibleUploads.length - 1) const SizedBox(height: 7),
+                        ],
+                        if (_expanded && uploads.length > visibleUploads.length) ...[
+                          const SizedBox(height: 7),
+                          Text(
+                            '+${uploads.length - visibleUploads.length} more uploading',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -96,32 +98,42 @@ class _UploadStatusRow extends StatelessWidget {
           _UploadThumbnail(status: status),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Text(
-                  hiddenCount > 0 ? '${status.message}  +$hiddenCount' : status.message,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
-                  ),
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(end: progress),
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, child) {
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        minHeight: 6,
+                        value: status.type == UploadStatusType.error ? null : value,
+                        backgroundColor: const Color(0xFFE9E9E9),
+                        color: status.type == UploadStatusType.error
+                            ? Colors.red
+                            : const Color(0xFF25D366),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    minHeight: 5,
-                    value: status.type == UploadStatusType.error ? null : progress,
-                    backgroundColor: const Color(0xFFE9E9E9),
-                    color: status.type == UploadStatusType.error
-                        ? Colors.red
-                        : const Color(0xFF25D366),
+                if (hiddenCount > 0)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Text(
+                        '+$hiddenCount',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

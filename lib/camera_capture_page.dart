@@ -538,9 +538,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     try {
       final f = await _controller!.takePicture();
       if (!mounted) return;
-      await _resetCameraState(rebuild: false);
-      if (!mounted) return;
       _showPreview(File(f.path), 'image');
+      unawaited(_resetCameraState(rebuild: false));
     } catch (_) {} finally { if (mounted) setState(() => _isBusy = false); }
   }
 
@@ -580,9 +579,6 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       final f = await _controller!.stopVideoRecording();
       HapticFeedback.mediumImpact();
       if (!mounted) return;
-      await _resetCameraState(rebuild: false);
-      if (!mounted) return;
-      await Future.delayed(const Duration(milliseconds: 80));
       final file = File(f.path);
       if (await file.exists()) {
         if (recordedFor < _minVideoDuration) {
@@ -592,6 +588,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         }
         if (!mounted) return;
         _showPreview(file, 'video');
+        unawaited(_resetCameraState(rebuild: false));
       }
     } catch (e) { debugPrint('Error stopping video recording: $e'); }
     finally { if (mounted) setState(() => _isBusy = false); }

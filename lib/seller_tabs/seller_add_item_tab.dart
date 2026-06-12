@@ -48,7 +48,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
   String _lastValidPriceText = '';
   String _priceUnit = '/ kg';
-  bool _isUploading = false;
+  bool _isSubmitting = false;
   bool _showLocationError = false;
   bool _showPriceError = false;
   bool _isLiveItem = false;
@@ -173,7 +173,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       priceUnit: _priceUnit,
     );
 
-    setState(() => _isUploading = true);
+    setState(() => _isSubmitting = true);
     String? uploadId;
     try {
       final s = await SellerSession.current();
@@ -183,6 +183,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       uploadId = UploadStatusManager.uploading(thumbnail: draft.media.first.file);
       _clearForm();
       widget.onItemAddedDone?.call(draft.isLive);
+      if (mounted) setState(() => _isSubmitting = false);
 
       final uploaded = await _uploadMedia(s.sellerId, draft.media, uploadId);
       final price = draft.isLive ? 'OMR ${_formatPriceWithCommas(draft.normalizedPrice)} ${draft.priceUnit}' : '';
@@ -204,7 +205,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         UploadStatusManager.error(failedUploadId, 'Upload failed: $e');
       }
     }
-    finally { if (mounted) setState(() => _isUploading = false); }
+    finally { if (mounted && _isSubmitting) setState(() => _isSubmitting = false); }
   }
 
   Future<List<_UploadedMedia>> _uploadMedia(String uid, List<SelectedMedia> media, String uploadId) async {
@@ -378,7 +379,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
                               ),
                             )
                             .toList(),
-                        onChanged: _isUploading ? null : (v) => setState(() => _priceUnit = v!),
+                        onChanged: _isSubmitting ? null : (v) => setState(() => _priceUnit = v!),
                         decoration: InputDecoration(
                           filled: true,
                           fillColor: Colors.white,
@@ -404,9 +405,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             child: SizedBox(
               height: 40,
               child: ElevatedButton(
-                onPressed: _isUploading ? null : _addItem,
+                onPressed: _isSubmitting ? null : _addItem,
                 style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: _isUploading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+                child: _isSubmitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
               ),
             ),
           ),
@@ -422,12 +423,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     isRightSelected: _isLiveItem,
     leftSelectedColor: const Color(0xFF001341),
     rightSelectedColor: const Color(0xFFFF7801),
-    onLeftTap: _isUploading ? null : () {
+    onLeftTap: _isSubmitting ? null : () {
       if (!_isLiveItem) return;
       setState(() => _isLiveItem = false);
       widget.onLiveModeChanged?.call(false);
     },
-    onRightTap: _isUploading ? null : () {
+    onRightTap: _isSubmitting ? null : () {
       if (_isLiveItem) return;
       setState(() {
         _isLiveItem = true;
@@ -449,8 +450,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     isRightSelected: _isTransitPost,
     leftSelectedColor: const Color(0xFF001341),
     rightSelectedColor: const Color(0xFFFF7801),
-    onLeftTap: _isUploading ? null : () => setState(() => _isTransitPost = false),
-    onRightTap: _isUploading ? null : () => setState(() {
+    onLeftTap: _isSubmitting ? null : () => setState(() => _isTransitPost = false),
+    onRightTap: _isSubmitting ? null : () => setState(() {
       _isTransitPost = true;
       _showLocationError = false;
     }),
@@ -509,7 +510,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   );
 
   Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, bool hasErrorBorder = false, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => TextField(
-    controller: ctrl, focusNode: focus, readOnly: _isUploading, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
+    controller: ctrl, focusNode: focus, readOnly: _isSubmitting, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
     decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, floatingLabelBehavior: hasErrorBorder ? FloatingLabelBehavior.always : null, prefixIcon: prefix, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
   );
 }
