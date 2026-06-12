@@ -280,7 +280,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
               onItemAddedDone: _showItemAddedTab,
               onItemUploadSuccess: _handleItemUploadSuccess,
               onLiveModeChanged: _handleAddLiveModeChanged,
-              onNavigateFromPicker: _onTabTapped,
               onSessionInvalid: _handleInvalidSellerSession,
             )
           : const _SellerAccessPrompt(),

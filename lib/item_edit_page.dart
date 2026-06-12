@@ -133,7 +133,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _openGallerySheet() async {
-    final result = await CameraCapturePage.openGalleryPicker(
+    final selection = await CameraCapturePage.openGalleryPicker(
       context,
       selectedIds: _media
           .where((media) => !media.isExisting)
@@ -144,7 +144,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
       maxCount: _maxMediaCount,
       maxSelectionMessage: _maxMediaMessage,
     );
-    final selection = result?.selection;
     if (selection == null) return;
     await _addGalleryAssets(selection.assets, selection.selectedIds);
   }

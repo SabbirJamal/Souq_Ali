@@ -12,7 +12,6 @@ import 'package:video_player/video_player.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/item_add/media_picker_sheet.dart';
-import 'widgets/seller_bottom_nav_bar.dart';
 
 class CapturedMedia {
   const CapturedMedia({required this.file, required this.type, this.caption});
@@ -29,14 +28,6 @@ class GalleryMediaSelection {
 
   final List<AssetEntity> assets;
   final Set<String> selectedIds;
-}
-
-class GalleryPickerResult {
-  const GalleryPickerResult.selection(this.selection) : navIndex = null;
-  const GalleryPickerResult.navigation(this.navIndex) : selection = null;
-
-  final GalleryMediaSelection? selection;
-  final int? navIndex;
 }
 
 class _CameraControllerCache {
@@ -184,14 +175,14 @@ class CameraCapturePage extends StatefulWidget {
   final ValueChanged<CapturedMedia>? onCaptured;
   final ValueChanged<CapturedMedia>? onCapturedAndContinue;
 
-  static Future<GalleryPickerResult?> openGalleryPicker(
+  static Future<GalleryMediaSelection?> openGalleryPicker(
       BuildContext context, {
         required Set<String> selectedIds,
         required int selectedCount,
         required int maxCount,
         String maxSelectionMessage = 'Only 8 media can be selected',
       }) async {
-    GalleryPickerResult? result;
+    GalleryMediaSelection? result;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -207,19 +198,9 @@ class CameraCapturePage extends StatefulWidget {
                 maxCount: maxCount,
                 maxSelectionMessage: maxSelectionMessage,
                 onAssetsDone: (assets, ids) async {
-                  result = GalleryPickerResult.selection(
-                    GalleryMediaSelection(assets: assets, selectedIds: ids),
-                  );
+                  result = GalleryMediaSelection(assets: assets, selectedIds: ids);
                 },
               ),
-            ),
-            _CameraBottomMenu(
-              onTap: (index) {
-                if (index != 2) {
-                  result = GalleryPickerResult.navigation(index);
-                  Navigator.pop(context);
-                }
-              },
             ),
           ],
         ),
@@ -1123,18 +1104,5 @@ class _CameraContinueButton extends StatelessWidget {
         child: Icon(Icons.add_a_photo, color: Colors.white, size: 26),
       ),
     );
-  }
-}
-
-void _noopNavTap(int index) {}
-
-class _CameraBottomMenu extends StatelessWidget {
-  const _CameraBottomMenu({this.onTap = _noopNavTap});
-
-  final ValueChanged<int> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SellerBottomNavBar(currentIndex: 2, onTap: onTap);
   }
 }

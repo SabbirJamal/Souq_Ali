@@ -52,7 +52,6 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
   bool _hasMoreAssets = true;
   bool _hasPermission = true;
   bool _hasLimitedPermission = false;
-  bool _maxSelectionMessageShown = false;
   bool _isMaxSelectionMessageVisible = false;
   int _currentPage = 0;
   int _loadToken = 0;
@@ -227,9 +226,6 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
       setState(() {
         _selectedIds.remove(asset.id);
         _pendingAssets.removeWhere((pending) => pending.id == asset.id);
-        if (_currentTotalSelectionCount < widget.maxCount) {
-          _maxSelectionMessageShown = false;
-        }
         _rebuildSelectedOrder();
       });
       return;
@@ -247,24 +243,19 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
     setState(() {
       _selectedIds.add(asset.id);
       _pendingAssets.add(asset);
-      if (_currentTotalSelectionCount < widget.maxCount) {
-        _maxSelectionMessageShown = false;
-      }
       _rebuildSelectedOrder();
     });
   }
 
   void _showMaxSelectionMessage() {
-    if (_maxSelectionMessageShown) {
+    if (_isMaxSelectionMessageVisible) {
       return;
     }
-    _maxSelectionMessageShown = true;
     _maxSelectionMessageTimer?.cancel();
-    setState(() => _isMaxSelectionMessageVisible = true);
+    _isMaxSelectionMessageVisible = true;
+    AppToast.show(context, widget.maxSelectionMessage);
     _maxSelectionMessageTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() => _isMaxSelectionMessageVisible = false);
-      }
+      _isMaxSelectionMessageVisible = false;
     });
   }
 
@@ -341,7 +332,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 0,
+                    bottom: 72,
                     child: SafeArea(
                       bottom: false,
                       child: Container(
@@ -371,7 +362,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                   ),
                 Positioned(
                   right: 18,
-                  bottom: 8,
+                  bottom: 80,
                   child: SafeArea(
                     bottom: false,
                     child: FloatingActionButton(
@@ -380,19 +371,6 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                       foregroundColor: Colors.black,
                       onPressed: _finishSelection,
                       child: const Icon(Icons.check),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 24,
-                  right: 24,
-                  bottom: _pendingAssets.isEmpty ? 92 : 84,
-                  child: SafeArea(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: _isMaxSelectionMessageVisible
-                          ? _PickerLimitMessage(widget.maxSelectionMessage)
-                          : const SizedBox.shrink(),
                     ),
                   ),
                 ),
@@ -624,32 +602,3 @@ class _SelectedAssetPreview extends StatelessWidget {
   }
 }
 
-class _PickerLimitMessage extends StatelessWidget {
-  const _PickerLimitMessage(this.message);
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.82),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
