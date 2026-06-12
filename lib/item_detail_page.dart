@@ -99,11 +99,14 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   }
 
   void _preloadRemainingVideos(List<MediaItem> media, MediaItem? firstVideo) {
+    // Stagger init 400ms apart so multiple videos don't spin up decoders at once.
+    var delayMs = 500;
     for (final m in media.where((m) => m.isVideo && m.url != firstVideo?.url)) {
       if (_preloadedVideoControllers.containsKey(m.url)) continue;
       final c = VideoPlayerController.networkUrl(Uri.parse(m.url));
       _preloadedVideoControllers[m.url] = c;
-      _preloadedVideoInitializers[m.url] = Future.delayed(const Duration(milliseconds: 500), () => c.initialize()).catchError((_) {});
+      _preloadedVideoInitializers[m.url] = Future.delayed(Duration(milliseconds: delayMs), () => c.initialize()).catchError((_) {});
+      delayMs += 400;
     }
   }
 
@@ -176,9 +179,24 @@ class _FixedActionBar extends StatelessWidget {
   );
 }
 
-class _SellerAvatarIcon extends StatelessWidget {
+class _SellerAvatarIcon extends StatefulWidget {
   const _SellerAvatarIcon({required this.name, required this.sellerId, required this.sellerPhone, required this.onOpenProfile});
   final Object? name, sellerId, sellerPhone; final VoidCallback onOpenProfile;
+
+  @override
+  State<_SellerAvatarIcon> createState() => _SellerAvatarIconState();
+}
+
+class _SellerAvatarIconState extends State<_SellerAvatarIcon> {
+  Object? get name => widget.name;
+  Object? get sellerPhone => widget.sellerPhone;
+  VoidCallback get onOpenProfile => widget.onOpenProfile;
+
+  late final String _sid = widget.sellerId?.toString().trim().isNotEmpty == true
+      ? widget.sellerId!.toString().trim()
+      : widget.sellerPhone?.toString().trim() ?? '';
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>>? _sellerStream =
+      _sid.isEmpty ? null : FirebaseFirestore.instance.collection('sellers').doc(_sid).snapshots();
 
   Route<void> _profileRoute(String sid, String fallbackName) {
     return PageRouteBuilder<void>(
@@ -195,9 +213,9 @@ class _SellerAvatarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sid = sellerId?.toString().trim().isNotEmpty == true ? sellerId!.toString().trim() : sellerPhone?.toString().trim() ?? '';
+    final sid = _sid;
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: sid.isEmpty ? null : FirebaseFirestore.instance.collection('sellers').doc(sid).snapshots(),
+      stream: _sellerStream,
       builder: (ctx, snap) {
         final data = snap.data?.data() ?? {};
         final n = data['name']?.toString().trim().isNotEmpty == true ? data['name'] : name?.toString().trim() ?? '';

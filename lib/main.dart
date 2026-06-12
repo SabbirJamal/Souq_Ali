@@ -44,7 +44,7 @@ Future<void> _prewarmCameraIfPermitted() async {
   }
 }
 
-class SouqaliApp extends StatelessWidget {
+class SouqaliApp extends StatefulWidget {
   const SouqaliApp({
     super.key,
     required this.firebaseFuture,
@@ -53,6 +53,15 @@ class SouqaliApp extends StatelessWidget {
 
   final Future<void> firebaseFuture;
   final Future<SellerSession?> sessionFuture;
+
+  @override
+  State<SouqaliApp> createState() => _SouqaliAppState();
+}
+
+class _SouqaliAppState extends State<SouqaliApp> {
+  // Hoisted so a root rebuild can't recreate the future and re-show the splash.
+  late final Future<List<dynamic>> _readyFuture =
+      Future.wait([widget.firebaseFuture, widget.sessionFuture]);
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +93,7 @@ class SouqaliApp extends StatelessWidget {
         ),
       ),
       home: FutureBuilder(
-        future: Future.wait([firebaseFuture, sessionFuture]),
+        future: _readyFuture,
         builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
           // While waiting, show a clean background shell
           if (snapshot.connectionState == ConnectionState.waiting) {

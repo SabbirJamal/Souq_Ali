@@ -154,7 +154,9 @@ class _SellerHomePageState extends State<SellerHomePage> {
       _currentIndex = index;
       if (index == 3 && widget.isSellerMode) {
         _listingsRefreshTick++;
-        _pageCache[3] = null;
+        // Rebuild widget with new tick; GlobalKey keeps the state alive so the
+        // tab refreshes in place instead of tearing down and re-querying cold.
+        _pageCache[3] = _buildPageAt(3);
       }
     });
     _setChromeVisible(true);

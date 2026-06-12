@@ -22,12 +22,18 @@ class _PullDownRefreshAreaState extends State<PullDownRefreshArea> {
   static const _triggerExtent = 54.0;
   static const _maxExtent = 76.0;
 
-  double _pullExtent = 0;
+  final ValueNotifier<double> _pullExtent = ValueNotifier<double>(0);
   bool _isRefreshing = false;
 
+  @override
+  void dispose() {
+    _pullExtent.dispose();
+    super.dispose();
+  }
+
   void _setPullExtent(double value) {
-    if (_pullExtent == value) return;
-    setState(() => _pullExtent = value);
+    if (_pullExtent.value == value) return;
+    _pullExtent.value = value;
     widget.onPullExtentChanged?.call(value);
   }
 
@@ -41,31 +47,31 @@ class _PullDownRefreshAreaState extends State<PullDownRefreshArea> {
         atTop &&
         notification.overscroll < 0) {
       _setPullExtent(
-        (_pullExtent + (-notification.overscroll * 0.55)).clamp(0, _maxExtent),
+        (_pullExtent.value + (-notification.overscroll * 0.55)).clamp(0, _maxExtent),
       );
       return false;
     }
 
     if (notification is OverscrollNotification &&
-        _pullExtent > 0 &&
+        _pullExtent.value > 0 &&
         notification.overscroll > 0) {
       _setPullExtent(
-        (_pullExtent - (notification.overscroll * 0.9)).clamp(0, _maxExtent),
+        (_pullExtent.value - (notification.overscroll * 0.9)).clamp(0, _maxExtent),
       );
       return false;
     }
 
     if (notification is ScrollUpdateNotification &&
-        _pullExtent > 0 &&
+        _pullExtent.value > 0 &&
         (notification.scrollDelta ?? 0) > 0) {
       _setPullExtent(
-        (_pullExtent - ((notification.scrollDelta ?? 0) * 1.2)).clamp(0, _maxExtent),
+        (_pullExtent.value - ((notification.scrollDelta ?? 0) * 1.2)).clamp(0, _maxExtent),
       );
       return false;
     }
 
-    if (notification is ScrollEndNotification && _pullExtent > 0) {
-      if (_pullExtent >= _triggerExtent) {
+    if (notification is ScrollEndNotification && _pullExtent.value > 0) {
+      if (_pullExtent.value >= _triggerExtent) {
         _refresh();
       } else {
         _setPullExtent(0);
@@ -76,18 +82,12 @@ class _PullDownRefreshAreaState extends State<PullDownRefreshArea> {
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _isRefreshing = true;
-      _pullExtent = 0;
-    });
-    widget.onPullExtentChanged?.call(0);
+    _isRefreshing = true;
+    _setPullExtent(0);
     await widget.onRefresh();
     if (mounted) {
-      setState(() {
-        _isRefreshing = false;
-        _pullExtent = 0;
-      });
-      widget.onPullExtentChanged?.call(0);
+      _isRefreshing = false;
+      _setPullExtent(0);
     }
   }
 
@@ -95,10 +95,16 @@ class _PullDownRefreshAreaState extends State<PullDownRefreshArea> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        AnimatedContainer(
-          transform: Matrix4.translationValues(0, _pullExtent, 0),
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
+        ValueListenableBuilder<double>(
+          valueListenable: _pullExtent,
+          builder: (context, value, child) {
+            return AnimatedContainer(
+              transform: Matrix4.translationValues(0, value, 0),
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOutCubic,
+              child: child,
+            );
+          },
           child: NotificationListener<ScrollNotification>(
             onNotification: _handleScroll,
             child: widget.child,

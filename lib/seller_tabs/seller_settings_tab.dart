@@ -16,6 +16,7 @@ class SellerSettingsTab extends StatefulWidget {
 
 class _SellerSettingsTabState extends State<SellerSettingsTab> {
   late final Future<SellerSession?> _sessionFuture;
+  Stream<DocumentSnapshot<Map<String, dynamic>>>? _sellerStream;
 
   @override
   void initState() {
@@ -36,11 +37,12 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
           return const Center(child: Text('Please login again'));
         }
 
+        _sellerStream ??= FirebaseFirestore.instance
+            .collection('sellers')
+            .doc(session.sellerId)
+            .snapshots();
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: FirebaseFirestore.instance
-              .collection('sellers')
-              .doc(session.sellerId)
-              .snapshots(),
+          stream: _sellerStream,
           builder: (context, sellerSnapshot) {
             final seller = sellerSnapshot.data?.data() ?? {};
             final sellerName = seller['name']?.toString() ?? session.name;

@@ -30,8 +30,7 @@ class ItemCard extends StatefulWidget {
   State<ItemCard> createState() => _ItemCardState();
 }
 
-class _ItemCardState extends State<ItemCard>
-    with AutomaticKeepAliveClientMixin<ItemCard> {
+class _ItemCardState extends State<ItemCard> {
   late List<MediaItem> _mediaItems = mediaItemsFromMap(widget.item);
 
   @override
@@ -43,13 +42,7 @@ class _ItemCardState extends State<ItemCard>
   }
 
   @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    super.build(context);
     final mediaItems = _mediaItems;
     final uploadedAgo = widget.uploadedAgoOverride ?? _uploadedAgo(widget.item['created_at']);
     final imageCount = mediaItems.where((media) => !media.isVideo).length;
@@ -153,9 +146,6 @@ class _ItemCardState extends State<ItemCard>
       ),
     );
   }
-
-  @override
-  bool get wantKeepAlive => true;
 
   String _uploadedAgo(Object? value) {
     DateTime? uploadedAt;
@@ -277,56 +267,53 @@ class _ImageFilledDetails extends StatelessWidget {
     final location = _displayLocation(rawLocation, isTransit);
     final price = isTransit ? '' : formatPrice(item['item_price']);
 
-    return IntrinsicWidth(
-      stepWidth: 1,
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (location.isNotEmpty) ...[
-              _TextChip(
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (location.isNotEmpty) ...[
+            _TextChip(
+              isCompact: isCompact,
+              child: _OverlayInfoRow(
+                text: location,
+                isTransit: isTransit,
                 isCompact: isCompact,
-                child: _OverlayInfoRow(
-                  text: location,
-                  isTransit: isTransit,
-                  isCompact: isCompact,
-                ),
               ),
-            ],
-            if (price.isNotEmpty) ...[
-              SizedBox(height: isCompact ? 5 : 8),
-              _TextChip(
-                isCompact: isCompact,
-                child: PriceWithCurrency(
-                  price: price,
-                  style: TextStyle(
-                    color: const Color(0xFFD00000),
-                    fontSize: isCompact ? 13 : 19,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-            if (itemName.isNotEmpty) ...[
-              SizedBox(height: isCompact ? 5 : 8),
-              _TextChip(
-                isCompact: isCompact,
-                child: Text(
-                  itemName,
-                  maxLines: isCompact ? 1 : 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.black,
-                    fontSize: isCompact ? 14 : 23,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ],
-        ),
+          if (price.isNotEmpty) ...[
+            SizedBox(height: isCompact ? 5 : 8),
+            _TextChip(
+              isCompact: isCompact,
+              child: PriceWithCurrency(
+                price: price,
+                style: TextStyle(
+                  color: const Color(0xFFD00000),
+                  fontSize: isCompact ? 13 : 19,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+          if (itemName.isNotEmpty) ...[
+            SizedBox(height: isCompact ? 5 : 8),
+            _TextChip(
+              isCompact: isCompact,
+              child: Text(
+                itemName,
+                maxLines: isCompact ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: isCompact ? 14 : 23,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

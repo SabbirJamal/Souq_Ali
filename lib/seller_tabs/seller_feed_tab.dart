@@ -305,12 +305,15 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   void _markVisibleItemsSeen() {
     final viewerId = _viewerId;
-    if (viewerId == null || viewerId.isEmpty || !_scrollController.hasClients) return;
+    if (viewerId == null || viewerId.isEmpty || !_scrollController.hasClients || !mounted) return;
+
+    final viewportTop = MediaQuery.paddingOf(context).top + 56;
+    final viewportBottom = MediaQuery.sizeOf(context).height - 58;
 
     for (final entry in _itemKeys.entries) {
       final itemId = entry.key;
       if (_seenItemIds.contains(itemId) || _pendingSeenItemIds.contains(itemId)) continue;
-      if (_isItemCardMostlyVisible(entry.value)) {
+      if (_isItemCardMostlyVisible(entry.value, viewportTop, viewportBottom)) {
         _seenItemIds.add(itemId);
         _pendingSeenItemIds.add(itemId);
       }
@@ -321,7 +324,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     }
   }
 
-  bool _isItemCardMostlyVisible(GlobalKey key) {
+  bool _isItemCardMostlyVisible(GlobalKey key, double viewportTop, double viewportBottom) {
     final context = key.currentContext;
     if (context == null) return false;
     final renderBox = context.findRenderObject() as RenderBox?;
@@ -329,8 +332,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final top = renderBox.localToGlobal(Offset.zero).dy;
     final height = renderBox.size.height;
     final bottom = top + height;
-    final viewportTop = MediaQuery.paddingOf(context).top + 56;
-    final viewportBottom = MediaQuery.sizeOf(context).height - 58;
     final visibleHeight = bottom.clamp(viewportTop, viewportBottom) - top.clamp(viewportTop, viewportBottom);
     return visibleHeight > 0 && visibleHeight / height >= 0.35;
   }
@@ -399,14 +400,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
                                   itemBuilder: (context, index) {
                                     _maybeLoadMoreFromBuilder(index, docs.length);
-                                    return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage));
+                                    return ItemCard(key: _keyForItem(docs[index].id), docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage);
                                   },
                                 )
                               : SliverList.builder(
                                   itemCount: docs.length,
                                   itemBuilder: (context, index) {
                                     _maybeLoadMoreFromBuilder(index, docs.length);
-                                    return _KeepAliveItem(key: _keyForItem(docs[index].id), child: ItemCard(docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage));
+                                    return ItemCard(key: _keyForItem(docs[index].id), docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage);
                                   },
                                 ),
                         ),
@@ -462,7 +463,7 @@ class _LoadMoreTriggerState extends State<_LoadMoreTrigger> {
   @override
   void didUpdateWidget(covariant _LoadMoreTrigger oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _scheduleLoad();
+    if (oldWidget.isLoading && !widget.isLoading) _scheduleLoad();
   }
 
   void _scheduleLoad() {
@@ -545,27 +546,6 @@ class _FloatingFeedSearchControl extends StatelessWidget {
               ),
       ),
     );
-  }
-}
-
-class _KeepAliveItem extends StatefulWidget {
-  const _KeepAliveItem({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  State<_KeepAliveItem> createState() => _KeepAliveItemState();
-}
-
-class _KeepAliveItemState extends State<_KeepAliveItem>
-    with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return widget.child;
   }
 }
 

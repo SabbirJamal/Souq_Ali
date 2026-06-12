@@ -98,24 +98,14 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       final snapshot = await query.get();
       if (!mounted) return;
 
-      var newDocs = snapshot.docs.toList()
-        ..sort((a, b) {
-          final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-          return bTime.compareTo(aTime);
-        });
+      var newDocs = _sortedByCreatedAtDesc(snapshot.docs);
       if (newDocs.isEmpty && isInitial) {
         final legacySnapshot = await FirebaseFirestore.instance
             .collection('items')
             .where('seller_phone', isEqualTo: session.phoneNumber)
             .limit(_pageSize * 4)
             .get();
-        newDocs = legacySnapshot.docs.toList()
-          ..sort((a, b) {
-            final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return bTime.compareTo(aTime);
-          });
+        newDocs = _sortedByCreatedAtDesc(legacySnapshot.docs);
       }
       setState(() {
         if (isInitial) _allDocs.clear();
@@ -132,24 +122,14 @@ class SellerListingsTabState extends State<SellerListingsTab> {
 
         final snapshot = await fallbackQuery.get();
         if (!mounted) return;
-        var newDocs = snapshot.docs.toList()
-          ..sort((a, b) {
-            final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-            return bTime.compareTo(aTime);
-          });
+        var newDocs = _sortedByCreatedAtDesc(snapshot.docs);
         if (newDocs.isEmpty && isInitial) {
           final legacySnapshot = await FirebaseFirestore.instance
               .collection('items')
               .where('seller_phone', isEqualTo: session.phoneNumber)
               .limit(_pageSize * 4)
               .get();
-          newDocs = legacySnapshot.docs.toList()
-            ..sort((a, b) {
-              final aTime = _createdAt(a.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-              final bTime = _createdAt(b.data()) ?? DateTime.fromMillisecondsSinceEpoch(0);
-              return bTime.compareTo(aTime);
-            });
+          newDocs = _sortedByCreatedAtDesc(legacySnapshot.docs);
         }
         setState(() {
           if (isInitial) _allDocs.clear();
@@ -161,6 +141,16 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         if (mounted) setState(() => _isLoading = false);
       }
     }
+  }
+
+  // Precompute sort keys once instead of converting Timestamps per comparison.
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortedByCreatedAtDesc(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    final keyed = [
+      for (final doc in docs)
+        MapEntry(_createdAt(doc.data()) ?? DateTime.fromMillisecondsSinceEpoch(0), doc),
+    ]..sort((a, b) => b.key.compareTo(a.key));
+    return [for (final entry in keyed) entry.value];
   }
 
   @override
@@ -175,6 +165,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     super.didUpdateWidget(oldWidget);
     if (widget.refreshTick != oldWidget.refreshTick) {
       _nowNotifier.value = DateTime.now();
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
       _loadInitial();
     }
   }
@@ -534,15 +525,25 @@ class _FloatingShareButton extends StatelessWidget {
   }
 }
 
-class _SellerInfoHeader extends StatelessWidget {
+class _SellerInfoHeader extends StatefulWidget {
   const _SellerInfoHeader({required this.session});
 
   final SellerSession session;
 
   @override
+  State<_SellerInfoHeader> createState() => _SellerInfoHeaderState();
+}
+
+class _SellerInfoHeaderState extends State<_SellerInfoHeader> {
+  SellerSession get session => widget.session;
+
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _sellerStream =
+      FirebaseFirestore.instance.collection('sellers').doc(widget.session.sellerId).snapshots();
+
+  @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance.collection('sellers').doc(session.sellerId).snapshots(),
+      stream: _sellerStream,
       builder: (context, snapshot) {
         final seller = snapshot.data?.data() ?? {};
         final sellerName = seller['name']?.toString().trim() ?? session.name;

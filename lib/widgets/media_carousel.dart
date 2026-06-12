@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
 
 class MediaItem {
@@ -672,31 +673,57 @@ class MediaSkeletonPlaceholder extends StatefulWidget {
       _MediaSkeletonPlaceholderState();
 }
 
-class _MediaSkeletonPlaceholderState extends State<MediaSkeletonPlaceholder>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+// One shared shimmer controller for every skeleton placeholder on screen,
+// instead of one AnimationController per placeholder. Refcounted: ticks only
+// while at least one placeholder is mounted.
+class _SharedShimmer {
+  static AnimationController? _controller;
+  static int _clients = 0;
+
+  static Animation<double> acquire() {
+    _clients++;
+    final controller = _controller ??= AnimationController(
+      vsync: const _ShimmerTickerProvider(),
+      duration: const Duration(milliseconds: 1150),
+    );
+    if (!controller.isAnimating) controller.repeat();
+    return controller;
+  }
+
+  static void release() {
+    if (_clients > 0) _clients--;
+    if (_clients == 0) _controller?.stop();
+  }
+}
+
+class _ShimmerTickerProvider extends TickerProvider {
+  const _ShimmerTickerProvider();
+
+  @override
+  Ticker createTicker(TickerCallback onTick) => Ticker(onTick);
+}
+
+class _MediaSkeletonPlaceholderState extends State<MediaSkeletonPlaceholder> {
+  late final Animation<double> _shimmer;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1150),
-    )..repeat();
+    _shimmer = _SharedShimmer.acquire();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _SharedShimmer.release();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _shimmer,
       builder: (context, child) {
-        final value = _controller.value;
+        final value = _shimmer.value;
         return RepaintBoundary(
           child: Container(
             decoration: BoxDecoration(

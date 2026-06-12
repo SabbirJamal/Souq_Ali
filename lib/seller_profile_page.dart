@@ -159,7 +159,7 @@ class SellerProfilePage extends StatelessWidget {
   }
 }
 
-class _SellerProfileBody extends StatelessWidget {
+class _SellerProfileBody extends StatefulWidget {
   const _SellerProfileBody({
     required this.sellerId,
     required this.sellerPhone,
@@ -179,19 +179,36 @@ class _SellerProfileBody extends StatelessWidget {
   final VoidCallback? onBack;
 
   @override
+  State<_SellerProfileBody> createState() => _SellerProfileBodyState();
+}
+
+class _SellerProfileBodyState extends State<_SellerProfileBody> {
+  String get sellerPhone => widget.sellerPhone;
+  String get fallbackName => widget.fallbackName;
+  bool get isOwnProfile => widget.isOwnProfile;
+  VoidCallback get onSettings => widget.onSettings;
+  VoidCallback get onLogout => widget.onLogout;
+  VoidCallback? get onBack => widget.onBack;
+
+  late final String _sellerDocId =
+      widget.sellerId.isNotEmpty ? widget.sellerId : widget.sellerPhone;
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>>? _sellerStream =
+      _sellerDocId.isEmpty
+          ? null
+          : FirebaseFirestore.instance
+              .collection('sellers')
+              .doc(_sellerDocId)
+              .snapshots();
+
+  @override
   Widget build(BuildContext context) {
-    final sellerDocId = sellerId.isNotEmpty ? sellerId : sellerPhone;
+    final sellerDocId = _sellerDocId;
     final topInset = MediaQuery.paddingOf(context).top;
 
     return Stack(
       children: [
         StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: sellerDocId.isEmpty
-              ? null
-              : FirebaseFirestore.instance
-                    .collection('sellers')
-                    .doc(sellerDocId)
-                    .snapshots(),
+          stream: _sellerStream,
           builder: (context, sellerSnapshot) {
             final seller = sellerSnapshot.data?.data() ?? {};
             final sellerName =
@@ -485,20 +502,28 @@ String _formatSellerPhone(Object? value) {
   return '+968 $digits';
 }
 
-class _SellerActivePosts extends StatelessWidget {
+class _SellerActivePosts extends StatefulWidget {
   const _SellerActivePosts({required this.sellerId});
 
   final String sellerId;
+
+  @override
+  State<_SellerActivePosts> createState() => _SellerActivePostsState();
+}
+
+class _SellerActivePostsState extends State<_SellerActivePosts> {
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
+      FirebaseFirestore.instance
+          .collection('items')
+          .where('seller_uid', isEqualTo: widget.sellerId)
+          .snapshots();
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
 
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: FirebaseFirestore.instance
-          .collection('items')
-          .where('seller_uid', isEqualTo: sellerId)
-          .snapshots(),
+      stream: _itemsStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const SliverFillRemaining(
