@@ -368,7 +368,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _isLoading && UploadStatusManager.current.value == null;
     final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 68;
 
-    return Stack(
+    final content = Stack(
       children: [
         RefreshIndicator(
           onRefresh: _refreshFeed,
@@ -435,6 +435,17 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
         const Positioned(top: 62, left: 0, right: 0, child: Center(child: UploadStatusBanner())),
       ],
+    );
+    if (!isLivePage) return content;
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
+        ),
+      ),
+      child: content,
     );
   }
 

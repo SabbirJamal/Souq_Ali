@@ -365,9 +365,18 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       );
     }
 
-    final color = _isLiveItem ? const Color(0xFFFFE9EC) : const Color(0xFFF4FBF7);
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180), color: color,
+      duration: const Duration(milliseconds: 180),
+      decoration: BoxDecoration(
+        color: _isLiveItem ? null : const Color(0xFFF4FBF7),
+        gradient: _isLiveItem
+            ? const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
+              )
+            : null,
+      ),
       child: LayoutBuilder(builder: (context, constraints) {
         final minHeight = constraints.hasBoundedHeight && constraints.maxHeight > 20 ? constraints.maxHeight - 20 : 0.0;
         return SingleChildScrollView(

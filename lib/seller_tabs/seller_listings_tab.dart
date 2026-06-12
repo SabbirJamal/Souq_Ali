@@ -431,42 +431,54 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                         },
                       ),
                     Expanded(
-                      child: PullDownRefreshArea(
-                        onRefresh: reloadItems,
-                        child: CustomScrollView(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          slivers: [
-                            if (docs.isEmpty && !_isLoading)
-                              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(_selectedStatus == 'live' ? 'No live items listed yet' : 'No items listed yet', style: const TextStyle(fontSize: 16, color: Colors.grey))))
-                            else ...[
-                              SliverPadding(
-                                padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-                                sliver: SliverGrid.builder(
-                                  key: ValueKey(_selectedStatus + widget.refreshTick.toString()),
-                                  itemCount: docs.length,
-                                  addAutomaticKeepAlives: false,
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                  itemBuilder: (context, index) {
-                                    final doc = docs[index];
-                                    final data = doc.data();
-                                    return _ListingManageCard(
-                                      key: ValueKey(doc.id),
-                                      docId: doc.id,
-                                      item: data,
-                                      uploadedAgo: _uploadedAgo(data['created_at'], now),
-                                      expiryText: _expiryText(data, now),
-                                      formatPrice: formatPrice,
-                                      onEdit: _openEdit,
-                                      onRenew: _confirmRenew,
-                                      onDelete: _confirmDelete,
-                                    );
-                                  },
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _selectedStatus == 'live' ? null : const Color(0xFFF4FBF7),
+                          gradient: _selectedStatus == 'live'
+                              ? const LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
+                                )
+                              : null,
+                        ),
+                        child: PullDownRefreshArea(
+                          onRefresh: reloadItems,
+                          child: CustomScrollView(
+                            controller: _scrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            slivers: [
+                              if (docs.isEmpty && !_isLoading)
+                                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(_selectedStatus == 'live' ? 'No live items listed yet' : 'No items listed yet', style: const TextStyle(fontSize: 16, color: Colors.grey))))
+                              else ...[
+                                SliverPadding(
+                                  padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+                                  sliver: SliverGrid.builder(
+                                    key: ValueKey(_selectedStatus + widget.refreshTick.toString()),
+                                    itemCount: docs.length,
+                                    addAutomaticKeepAlives: false,
+                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
+                                    itemBuilder: (context, index) {
+                                      final doc = docs[index];
+                                      final data = doc.data();
+                                      return _ListingManageCard(
+                                        key: ValueKey(doc.id),
+                                        docId: doc.id,
+                                        item: data,
+                                        uploadedAgo: _uploadedAgo(data['created_at'], now),
+                                        expiryText: _expiryText(data, now),
+                                        formatPrice: formatPrice,
+                                        onEdit: _openEdit,
+                                        onRenew: _confirmRenew,
+                                        onDelete: _confirmDelete,
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
-                              if (_isLoading) const SliverToBoxAdapter(child: _ListingsSkeletonGrid()),
+                                if (_isLoading) const SliverToBoxAdapter(child: _ListingsSkeletonGrid()),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),

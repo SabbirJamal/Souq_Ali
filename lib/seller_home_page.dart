@@ -310,9 +310,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   Widget build(BuildContext context) {
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
-    final bottomBarColor = _currentIndex == 2 && _isAddLiveMode
-        ? const Color(0xFFFFE9EC)
-        : const Color(0xFFF4FBF7);
+    const bottomBarColor = Color(0xFFF4FBF7);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
@@ -350,14 +348,14 @@ class _SellerHomePageState extends State<SellerHomePage> {
                         // Only build the page if it's currently selected or was previously cached
                         final isPageInitialized = _pageCache[index] != null;
                         final isCurrentPage = index == _currentIndex;
-                        
+
                         if (isCurrentPage || isPageInitialized) {
                           return TickerMode(
                             enabled: isCurrentPage,
                             child: _pageAt(index),
                           );
                         }
-                        
+
                         return const SizedBox.shrink();
                       },
                     ),
