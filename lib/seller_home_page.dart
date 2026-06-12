@@ -63,7 +63,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
   void _handleItemUploadSuccess(bool isLiveItem) {
     if (isLiveItem) {
-      setState(() => _currentIndex = 1);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _liveFeedKey.currentState?.mergeLatestItems();
       });

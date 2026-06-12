@@ -2,105 +2,132 @@ import 'package:flutter/material.dart';
 
 import '../upload_status_manager.dart';
 
-class UploadStatusBanner extends StatelessWidget {
+class UploadStatusBanner extends StatefulWidget {
   const UploadStatusBanner({super.key});
 
   @override
+  State<UploadStatusBanner> createState() => _UploadStatusBannerState();
+}
+
+class _UploadStatusBannerState extends State<UploadStatusBanner> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<UploadStatus?>(
-      valueListenable: UploadStatusManager.current,
-      builder: (context, status, child) {
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeOutCubic,
+    return ValueListenableBuilder<List<UploadStatus>>(
+      valueListenable: UploadStatusManager.active,
+      builder: (context, uploads, child) {
+        if (uploads.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final visibleUploads = _expanded ? uploads.take(4).toList() : uploads.take(1).toList();
+        return FractionallySizedBox(
+          widthFactor: 0.95,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: uploads.length > 1
+                ? () => setState(() => _expanded = !_expanded)
+                : null,
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      blurRadius: 16,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < visibleUploads.length; i++) ...[
+                        _UploadStatusRow(
+                          status: visibleUploads[i],
+                          hiddenCount: !_expanded && uploads.length > 1 ? uploads.length - 1 : 0,
+                        ),
+                        if (i != visibleUploads.length - 1) const SizedBox(height: 7),
+                      ],
+                      if (_expanded && uploads.length > visibleUploads.length) ...[
+                        const SizedBox(height: 7),
+                        Text(
+                          '+${uploads.length - visibleUploads.length} more uploading',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-              child: child,
             ),
           ),
-          child: status == null
-              ? const SizedBox.shrink()
-              : _UploadStatusContent(
-                  key: ValueKey(status.type),
-                  status: status,
-                ),
         );
       },
     );
   }
 }
 
-class _UploadStatusContent extends StatelessWidget {
-  const _UploadStatusContent({super.key, required this.status});
+class _UploadStatusRow extends StatelessWidget {
+  const _UploadStatusRow({required this.status, this.hiddenCount = 0});
 
   final UploadStatus status;
+  final int hiddenCount;
 
   @override
   Widget build(BuildContext context) {
     final progress = status.progress.clamp(0.0, 1.0);
     final percent = (progress * 100).round().clamp(1, 100);
-    return FractionallySizedBox(
-      widthFactor: 0.95,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.14),
-              blurRadius: 16,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          child: SizedBox(
-            height: 44,
-            child: Row(
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          _UploadThumbnail(status: status),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _UploadThumbnail(status: status),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        status.message,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: LinearProgressIndicator(
-                          minHeight: 5,
-                          value: status.type == UploadStatusType.error ? null : progress,
-                          backgroundColor: const Color(0xFFE9E9E9),
-                          color: status.type == UploadStatusType.error
-                              ? Colors.red
-                              : const Color(0xFF25D366),
-                        ),
-                      ),
-                    ],
+                Text(
+                  hiddenCount > 0 ? '${status.message}  +$hiddenCount' : status.message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
                   ),
                 ),
-                const SizedBox(width: 10),
-                _UploadTrailing(status: status, percent: percent),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    minHeight: 5,
+                    value: status.type == UploadStatusType.error ? null : progress,
+                    backgroundColor: const Color(0xFFE9E9E9),
+                    color: status.type == UploadStatusType.error
+                        ? Colors.red
+                        : const Color(0xFF25D366),
+                  ),
+                ),
               ],
             ),
           ),
-        ),
+          const SizedBox(width: 10),
+          _UploadTrailing(status: status, percent: percent),
+        ],
       ),
     );
   }

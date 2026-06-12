@@ -163,40 +163,55 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if (loc.isEmpty) { setState(() => _showLocationError = true); return; }
     final normPrice = _isLiveItem ? _normalizePrice(_priceController.text) : '';
     if (_isLiveItem && (normPrice == null || double.parse(normPrice) <= 0)) { setState(() => _showPriceError = true); _priceFocusNode.requestFocus(); return; }
+    final draft = _ItemUploadDraft(
+      media: List<SelectedMedia>.of(_selectedMedia),
+      name: name,
+      location: loc,
+      isLive: _isLiveItem,
+      isTransit: _isTransitPost,
+      normalizedPrice: normPrice ?? '',
+      priceUnit: _priceUnit,
+    );
 
     setState(() => _isUploading = true);
+    String? uploadId;
     try {
       final s = await SellerSession.current();
       if (s == null) return;
       if (!mounted) return;
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
-      UploadStatusManager.uploading(thumbnail: _selectedMedia.first.file);
-      widget.onItemAddedDone?.call(_isLiveItem);
+      uploadId = UploadStatusManager.uploading(thumbnail: draft.media.first.file);
+      _clearForm();
+      widget.onItemAddedDone?.call(draft.isLive);
 
-      final uploaded = await _uploadMedia(s.sellerId);
-      final price = _isLiveItem ? 'OMR ${_formatPriceWithCommas(normPrice!)} $_priceUnit' : '';
-      UploadStatusManager.progress(0.96);
+      final uploaded = await _uploadMedia(s.sellerId, draft.media, uploadId);
+      final price = draft.isLive ? 'OMR ${_formatPriceWithCommas(draft.normalizedPrice)} ${draft.priceUnit}' : '';
+      UploadStatusManager.progress(uploadId, 0.96);
       
       await FirebaseFirestore.instance.collection('items').add({
         'seller_uid': s.sellerId, 'seller_name': s.name, 'seller_phone': s.phoneNumber,
-        'status': _isLiveItem ? 'live' : 'post', 'is_transit': _isTransitPost, 'item_name': name,
-        'item_price': price, 'price_number': normPrice, 'price_unit': _isLiveItem ? _priceUnit : '',
-        'location': loc, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),
+        'status': draft.isLive ? 'live' : 'post', 'is_transit': draft.isTransit, 'item_name': draft.name,
+        'item_price': price, 'price_number': draft.normalizedPrice, 'price_unit': draft.isLive ? draft.priceUnit : '',
+        'location': draft.location, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),
         'media_files': uploaded.map((m) => m.toMap()).toList(),
-        'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: _isLiveItem ? 2 : 18))),
+        'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: draft.isLive ? 2 : 18))),
       });
-      widget.onItemUploadSuccess?.call(_isLiveItem);
-      UploadStatusManager.success();
-      if (mounted) _clearForm();
-    } catch (e) { UploadStatusManager.error('Upload failed: $e'); }
+      widget.onItemUploadSuccess?.call(draft.isLive);
+      UploadStatusManager.success(uploadId);
+    } catch (e) {
+      final failedUploadId = uploadId;
+      if (failedUploadId != null) {
+        UploadStatusManager.error(failedUploadId, 'Upload failed: $e');
+      }
+    }
     finally { if (mounted) setState(() => _isUploading = false); }
   }
 
-  Future<List<_UploadedMedia>> _uploadMedia(String uid) async {
+  Future<List<_UploadedMedia>> _uploadMedia(String uid, List<SelectedMedia> media, String uploadId) async {
     final res = <_UploadedMedia>[];
-    final total = _selectedMedia.length;
-    for (var i = 0; i < _selectedMedia.length; i++) {
-      final m = _selectedMedia[i];
+    final total = media.length;
+    for (var i = 0; i < media.length; i++) {
+      final m = media[i];
       final comp = m.isVideo ? await _compressVideo(m.file) : await _compressImage(m.file);
       final name = '${DateTime.now().millisecondsSinceEpoch}_$i';
       final ref = FirebaseStorage.instance.ref().child('items/$uid/$name.${m.isVideo ? 'mp4' : 'jpg'}');
@@ -204,11 +219,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         ref,
         comp,
         SettableMetadata(contentType: m.isVideo ? 'video/mp4' : 'image/jpeg'),
+        uploadId: uploadId,
         start: (i / total) * 0.86,
         span: 0.74 / total,
       );
       final thumb = m.isVideo ? await _uploadThumb(comp, uid, name, i, true) : await _uploadThumb(comp, uid, name, i, false);
-      UploadStatusManager.progress(((i + 1) / total) * 0.86);
+      UploadStatusManager.progress(uploadId, ((i + 1) / total) * 0.86);
       res.add(_UploadedMedia(url: await snap.ref.getDownloadURL(), type: m.type, thumbnailUrl: thumb));
     }
     return res;
@@ -218,6 +234,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     Reference ref,
     File file,
     SettableMetadata metadata, {
+    required String uploadId,
     required double start,
     required double span,
   }) async {
@@ -230,7 +247,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final percent = ((start + (uploaded * span)) * 100).floor();
       if (percent == lastPercent) return;
       lastPercent = percent;
-      UploadStatusManager.progress(start + (uploaded * span));
+      UploadStatusManager.progress(uploadId, start + (uploaded * span));
     });
     try {
       return await task;
@@ -598,4 +615,24 @@ class _UploadedMedia {
   const _UploadedMedia({required this.url, required this.type, this.thumbnailUrl});
   final String url, type; final String? thumbnailUrl;
   Map<String, dynamic> toMap() => {'url': url, 'type': type, if (thumbnailUrl != null) 'thumbnail_url': thumbnailUrl};
+}
+
+class _ItemUploadDraft {
+  const _ItemUploadDraft({
+    required this.media,
+    required this.name,
+    required this.location,
+    required this.isLive,
+    required this.isTransit,
+    required this.normalizedPrice,
+    required this.priceUnit,
+  });
+
+  final List<SelectedMedia> media;
+  final String name;
+  final String location;
+  final bool isLive;
+  final bool isTransit;
+  final String normalizedPrice;
+  final String priceUnit;
 }
