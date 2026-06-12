@@ -29,10 +29,12 @@ class SelectedMediaPreviewDialog extends StatefulWidget {
     super.key,
     required this.items,
     required this.initialIndex,
+    this.onDelete,
   });
 
   final List<SelectedMediaPreviewItem> items;
   final int initialIndex;
+  final ValueChanged<int>? onDelete;
 
   @override
   State<SelectedMediaPreviewDialog> createState() =>
@@ -41,15 +43,21 @@ class SelectedMediaPreviewDialog extends StatefulWidget {
 
 class _SelectedMediaPreviewDialogState
     extends State<SelectedMediaPreviewDialog> {
-  late int _currentIndex = widget.initialIndex;
+  late final List<_PreviewEntry> _items;
+  late int _currentIndex;
   VideoPlayerController? _videoController;
   bool _showVideoControl = false;
 
-  SelectedMediaPreviewItem get _current => widget.items[_currentIndex];
+  SelectedMediaPreviewItem get _current => _items[_currentIndex].item;
 
   @override
   void initState() {
     super.initState();
+    _items = [
+      for (var i = 0; i < widget.items.length; i++)
+        _PreviewEntry(index: i, item: widget.items[i]),
+    ];
+    _currentIndex = widget.initialIndex.clamp(0, _items.length - 1);
     _prepareVideoIfNeeded();
   }
 
@@ -92,6 +100,25 @@ class _SelectedMediaPreviewDialogState
     _prepareVideoIfNeeded();
   }
 
+  Future<void> _deleteCurrent() async {
+    if (_items.isEmpty) return;
+    final removed = _items.removeAt(_currentIndex);
+    widget.onDelete?.call(removed.index);
+    for (var i = 0; i < _items.length; i++) {
+      final entry = _items[i];
+      if (entry.index > removed.index) {
+        _items[i] = _PreviewEntry(index: entry.index - 1, item: entry.item);
+      }
+    }
+    if (_items.isEmpty) {
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+    if (_currentIndex >= _items.length) _currentIndex = _items.length - 1;
+    setState(() => _showVideoControl = false);
+    await _prepareVideoIfNeeded();
+  }
+
   Future<void> _toggleVideo() async {
     final controller = _videoController;
     if (controller == null || !controller.value.isInitialized) return;
@@ -121,12 +148,18 @@ class _SelectedMediaPreviewDialogState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close, color: Colors.white),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
+                IconButton(
+                  onPressed: _deleteCurrent,
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                ),
+              ],
             ),
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: maxPreviewHeight),
@@ -148,10 +181,10 @@ class _SelectedMediaPreviewDialogState
               height: 62,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: widget.items.length,
+                itemCount: _items.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, index) => _PreviewThumb(
-                  item: widget.items[index],
+                  item: _items[index].item,
                   isSelected: index == _currentIndex,
                   onTap: () => _selectIndex(index),
                 ),
@@ -162,6 +195,13 @@ class _SelectedMediaPreviewDialogState
       ),
     );
   }
+}
+
+class _PreviewEntry {
+  const _PreviewEntry({required this.index, required this.item});
+
+  final int index;
+  final SelectedMediaPreviewItem item;
 }
 
 class _MediaPreview extends StatelessWidget {
@@ -181,8 +221,8 @@ class _MediaPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!item.isVideo) {
       return item.isNetwork
-          ? Image.network(item.url!, fit: BoxFit.cover)
-          : Image.file(item.file!, fit: BoxFit.cover);
+          ? Image.network(item.url!, fit: BoxFit.contain)
+          : Image.file(item.file!, fit: BoxFit.contain);
     }
 
     final controller = videoController;
@@ -194,7 +234,7 @@ class _MediaPreview extends StatelessWidget {
         children: [
           if (ready)
             FittedBox(
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
               child: SizedBox(
                 width: controller.value.size.width,
                 height: controller.value.size.height,

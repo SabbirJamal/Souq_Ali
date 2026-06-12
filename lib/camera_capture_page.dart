@@ -247,6 +247,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   double _minZoom = 1.0, _maxZoom = 1.0, _currZoom = 1.0, _startZoom = 1.0;
   double? _startY;
   Offset? _focusPoint;
+  int _focusToken = 0;
+  Timer? _focusApplyTimer;
   bool _hasPermission = false;
   bool _isCheckingPermission = true;
   File? _previewFile;
@@ -267,6 +269,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     _setImmersive(false);
     _holdTimer?.cancel();
     _tickTimer?.cancel();
+    _focusApplyTimer?.cancel();
     _recordingListenable.dispose();
     _elapsedListenable.dispose();
     unawaited(_resetCameraState(rebuild: false));
@@ -354,6 +357,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         }
         _controller = c;
         await c.lockCaptureOrientation(DeviceOrientation.portraitUp);
+        unawaited(_prepareFocusModes(c));
         _minZoom = await c.getMinZoomLevel();
         _maxZoom = await c.getMaxZoomLevel();
         _currZoom = _minZoom;
@@ -523,17 +527,60 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   }
 
   Future<void> _onTapFocus(TapDownDetails d) async {
-    if (_controller == null || !_controller!.value.isInitialized || _isRec) return;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized || _isRec) return;
     final box = context.findRenderObject() as RenderBox;
     final point = box.globalToLocal(d.globalPosition);
     final size = box.size;
-    final norm = Offset(point.dx / size.width, point.dy / size.height);
+    final norm = Offset(
+      (point.dx / size.width).clamp(0.0, 1.0).toDouble(),
+      (point.dy / size.height).clamp(0.0, 1.0).toDouble(),
+    );
+    final token = ++_focusToken;
+    setState(() => _focusPoint = point);
+    _focusApplyTimer?.cancel();
+    _focusApplyTimer = Timer(const Duration(milliseconds: 35), () {
+      if (mounted && token == _focusToken) {
+        unawaited(_applyTapFocus(controller, norm, token));
+      }
+    });
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted && token == _focusToken) setState(() => _focusPoint = null);
+    });
+  }
+
+  Future<void> _prepareFocusModes(CameraController controller) async {
     try {
-      await _controller!.setFocusPoint(norm);
-      await _controller!.setExposurePoint(norm);
-      setState(() => _focusPoint = point);
-      Future.delayed(const Duration(seconds: 1), () { if (mounted) setState(() => _focusPoint = null); });
+      await controller.setFocusMode(FocusMode.auto);
     } catch (_) {}
+    try {
+      await controller.setExposureMode(ExposureMode.auto);
+    } catch (_) {}
+  }
+
+  Future<void> _applyTapFocus(
+    CameraController controller,
+    Offset point,
+    int token,
+  ) async {
+    if (!_isActiveFocusRequest(controller, token)) return;
+    try {
+      await controller.setFocusPoint(point);
+    } catch (_) {}
+    if (!_isActiveFocusRequest(controller, token)) return;
+    await Future<void>.delayed(const Duration(milliseconds: 45));
+    if (!_isActiveFocusRequest(controller, token)) return;
+    try {
+      await controller.setExposurePoint(point);
+    } catch (_) {}
+  }
+
+  bool _isActiveFocusRequest(CameraController controller, int token) {
+    return mounted &&
+        token == _focusToken &&
+        identical(controller, _controller) &&
+        controller.value.isInitialized &&
+        !_isRec;
   }
 
   Future<void> _takePhoto() async {

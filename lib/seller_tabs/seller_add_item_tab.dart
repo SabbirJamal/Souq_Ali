@@ -163,6 +163,14 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               ),
             )
             .toList(growable: false),
+        onDelete: (deleteIndex) {
+          if (!mounted ||
+              deleteIndex < 0 ||
+              deleteIndex >= _selectedMedia.length) {
+            return;
+          }
+          setState(() => _selectedMedia.removeAt(deleteIndex));
+        },
       ),
     );
   }

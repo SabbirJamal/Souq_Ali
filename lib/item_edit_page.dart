@@ -180,8 +180,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
     return (info.duration ?? 0) <= 60000;
   }
 
-  bool _canRemoveMedia() => _media.length > 1;
-
   void _moveMedia(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
     setState(() {
@@ -210,6 +208,17 @@ class _ItemEditPageState extends State<ItemEditPage> {
                     ),
             )
             .toList(growable: false),
+        onDelete: (deleteIndex) {
+          if (!mounted ||
+              deleteIndex < 0 ||
+              deleteIndex >= _media.length) {
+            return;
+          }
+          setState(() {
+            final removed = _media.removeAt(deleteIndex);
+            if (removed.isExisting) _removedMedia.add(removed.existing!);
+          });
+        },
       ),
     );
   }
@@ -229,6 +238,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _save() async {
+    if (_media.isEmpty) {
+      _showMessage('Minimum 1 media required');
+      return;
+    }
     final isLiveItem = _isLiveItem;
     final isTransitPost = !isLiveItem && _isTransitPost;
     final name = _nameController.text.trim();
@@ -548,7 +561,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   feedback: SizedBox(width: tileSize, height: tileSize, child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: false, onRemove: null)),
                   child: GestureDetector(
                     onTap: () => _openSelectedMediaPreview(i),
-                    child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: cand.isNotEmpty, onRemove: () { if (_canRemoveMedia()) setState(() { final r = _media.removeAt(i); if (r.isExisting) _removedMedia.add(r.existing!); }); }),
+                    child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: cand.isNotEmpty, onRemove: () => setState(() { final r = _media.removeAt(i); if (r.isExisting) _removedMedia.add(r.existing!); })),
                   ),
                 ),
               ),
