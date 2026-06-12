@@ -118,12 +118,22 @@ class _ItemEditPageState extends State<ItemEditPage> {
     });
   }
 
+  void _handleEmbeddedCaptureAndContinue(CapturedMedia result) {
+    if (!_canAddMedia()) {
+      return;
+    }
+    setState(() {
+      _media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
+      _showEmbeddedCamera = true;
+    });
+  }
+
   Future<void> _openMediaSheet() async {
     await _openCamera();
   }
 
   Future<void> _openGallerySheet() async {
-    final selection = await CameraCapturePage.openGalleryPicker(
+    final result = await CameraCapturePage.openGalleryPicker(
       context,
       selectedIds: _media
           .where((media) => !media.isExisting)
@@ -134,6 +144,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
       maxCount: _maxMediaCount,
       maxSelectionMessage: _maxMediaMessage,
     );
+    final selection = result?.selection;
     if (selection == null) return;
     await _addGalleryAssets(selection.assets, selection.selectedIds);
   }
@@ -420,6 +431,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   onClose: () => setState(() => _showEmbeddedCamera = false),
                   onOpenGallery: _handleEmbeddedGallery,
                   onCaptured: _handleEmbeddedCapture,
+                  onCapturedAndContinue: _handleEmbeddedCaptureAndContinue,
                 ),
               ),
             ],

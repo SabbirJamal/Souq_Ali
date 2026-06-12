@@ -25,12 +25,14 @@ class SellerAddItemTab extends StatefulWidget {
     this.onItemAddedDone,
     this.onItemUploadSuccess,
     this.onLiveModeChanged,
+    this.onNavigateFromPicker,
     this.onSessionInvalid,
     this.isLive = false,
   });
   final ValueChanged<bool>? onItemAddedDone;
   final ValueChanged<bool>? onItemUploadSuccess;
   final ValueChanged<bool>? onLiveModeChanged;
+  final ValueChanged<int>? onNavigateFromPicker;
   final VoidCallback? onSessionInvalid;
   final bool isLive;
   @override
@@ -86,12 +88,18 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<void> _openGallerySheet() async {
-    final selection = await CameraCapturePage.openGalleryPicker(
+    final result = await CameraCapturePage.openGalleryPicker(
       context,
       selectedIds: _selectedMedia.map((m) => m.assetId).whereType<String>().toSet(),
       selectedCount: _selectedMedia.length,
       maxCount: _maxMediaCount,
     );
+    final navIndex = result?.navIndex;
+    if (navIndex != null) {
+      widget.onNavigateFromPicker?.call(navIndex);
+      return;
+    }
+    final selection = result?.selection;
     if (selection == null) return;
     await _addGalleryAssets(selection.assets, selection.selectedIds);
   }
@@ -135,6 +143,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     setState(() {
       _selectedMedia.add(SelectedMedia(file: media.file, type: media.type));
       _showEmbeddedCamera = false;
+    });
+  }
+
+  void _handleEmbeddedCaptureAndContinue(CapturedMedia media) {
+    if (_selectedMedia.length >= _maxMediaCount) {
+      _showMessage('8 Media selected, please delete media to select new media');
+      return;
+    }
+    setState(() {
+      _selectedMedia.add(SelectedMedia(file: media.file, type: media.type));
+      _showEmbeddedCamera = true;
     });
   }
 
@@ -342,6 +361,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         onClose: () => setState(() => _showEmbeddedCamera = false),
         onOpenGallery: _handleEmbeddedGallery,
         onCaptured: _handleEmbeddedCapture,
+        onCapturedAndContinue: _handleEmbeddedCaptureAndContinue,
       );
     }
 

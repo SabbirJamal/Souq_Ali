@@ -279,6 +279,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
   Widget build(BuildContext context) {
     return SafeArea(
       top: true,
+      bottom: false,
       child: Column(
         children: [
           _buildHeader(context),
@@ -300,7 +301,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                             child: _buildLimitedAccessNotice(),
                           ),
                         SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 92),
+                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
                           sliver: SliverGrid(
                             gridDelegate:
                                 const SliverGridDelegateWithFixedCrossAxisCount(
@@ -329,7 +330,7 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                         if (_isLoadingMore)
                           const SliverToBoxAdapter(
                             child: Padding(
-                              padding: EdgeInsets.only(bottom: 96),
+                              padding: EdgeInsets.only(bottom: 16),
                               child: Center(child: CircularProgressIndicator()),
                             ),
                           ),
@@ -340,8 +341,9 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                   Positioned(
                     left: 0,
                     right: 0,
-                    bottom: 12,
+                    bottom: 0,
                     child: SafeArea(
+                      bottom: false,
                       child: Container(
                         height: 68,
                         color: Colors.black,
@@ -369,8 +371,9 @@ class _MediaPickerSheetState extends State<MediaPickerSheet> {
                   ),
                 Positioned(
                   right: 18,
-                  bottom: 18,
+                  bottom: 8,
                   child: SafeArea(
+                    bottom: false,
                     child: FloatingActionButton(
                       heroTag: 'media_done',
                       backgroundColor: const Color(0xFF25D366),

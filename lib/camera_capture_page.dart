@@ -31,6 +31,14 @@ class GalleryMediaSelection {
   final Set<String> selectedIds;
 }
 
+class GalleryPickerResult {
+  const GalleryPickerResult.selection(this.selection) : navIndex = null;
+  const GalleryPickerResult.navigation(this.navIndex) : selection = null;
+
+  final GalleryMediaSelection? selection;
+  final int? navIndex;
+}
+
 class _CameraControllerCache {
   static const _keepAlive = Duration(minutes: 2);
   static CameraController? _controller;
@@ -164,6 +172,7 @@ class CameraCapturePage extends StatefulWidget {
     this.onClose,
     this.onOpenGallery,
     this.onCaptured,
+    this.onCapturedAndContinue,
   });
 
   final int selectedCount;
@@ -173,15 +182,16 @@ class CameraCapturePage extends StatefulWidget {
   final VoidCallback? onClose;
   final VoidCallback? onOpenGallery;
   final ValueChanged<CapturedMedia>? onCaptured;
+  final ValueChanged<CapturedMedia>? onCapturedAndContinue;
 
-  static Future<GalleryMediaSelection?> openGalleryPicker(
+  static Future<GalleryPickerResult?> openGalleryPicker(
       BuildContext context, {
         required Set<String> selectedIds,
         required int selectedCount,
         required int maxCount,
         String maxSelectionMessage = 'Only 8 media can be selected',
       }) async {
-    GalleryMediaSelection? result;
+    GalleryPickerResult? result;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -197,13 +207,18 @@ class CameraCapturePage extends StatefulWidget {
                 maxCount: maxCount,
                 maxSelectionMessage: maxSelectionMessage,
                 onAssetsDone: (assets, ids) async {
-                  result = GalleryMediaSelection(assets: assets, selectedIds: ids);
+                  result = GalleryPickerResult.selection(
+                    GalleryMediaSelection(assets: assets, selectedIds: ids),
+                  );
                 },
               ),
             ),
             _CameraBottomMenu(
               onTap: (index) {
-                if (index != 2) Navigator.pop(context);
+                if (index != 2) {
+                  result = GalleryPickerResult.navigation(index);
+                  Navigator.pop(context);
+                }
               },
             ),
           ],
@@ -499,6 +514,15 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     Navigator.pop(context, media);
   }
 
+  void _finishCapturedAndContinue(CapturedMedia media) {
+    widget.onCapturedAndContinue?.call(media);
+    if (!mounted) return;
+    setState(() {
+      _previewFile = null;
+      _previewType = null;
+    });
+  }
+
   void _showPreview(File file, String type) {
     setState(() {
       _previewFile = file;
@@ -616,6 +640,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                 : _InlineImagePreview(
               file: previewFile,
               onConfirm: _finishCaptured,
+              onConfirmAndContinue: widget.embedded ? _finishCapturedAndContinue : null,
               onClose: _closePreview,
             ))
                 : isReady
@@ -845,11 +870,13 @@ class _InlineImagePreview extends StatelessWidget {
   const _InlineImagePreview({
     required this.file,
     required this.onConfirm,
+    this.onConfirmAndContinue,
     required this.onClose,
   });
 
   final File file;
   final ValueChanged<CapturedMedia> onConfirm;
+  final ValueChanged<CapturedMedia>? onConfirmAndContinue;
   final VoidCallback onClose;
 
   @override
@@ -867,6 +894,13 @@ class _InlineImagePreview extends StatelessWidget {
       _PreviewBottomControls(
         onConfirm: () => onConfirm(CapturedMedia(file: file, type: 'image')),
         onClose: onClose,
+        leading: onConfirmAndContinue == null
+            ? null
+            : _CameraContinueButton(
+                onTap: () => onConfirmAndContinue!(
+                  CapturedMedia(file: file, type: 'image'),
+                ),
+              ),
       ),
     ],
   );
@@ -1072,6 +1106,24 @@ class _PreviewBottomControls extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _CameraContinueButton extends StatelessWidget {
+  const _CameraContinueButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: const CircleAvatar(
+        backgroundColor: Colors.black38,
+        radius: 24,
+        child: Icon(Icons.add_a_photo, color: Colors.white, size: 26),
+      ),
+    );
+  }
 }
 
 void _noopNavTap(int index) {}
