@@ -92,7 +92,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<void> _openCamera() async {
-    if (!_canAddMedia()) return;
+    if (!_canAddMedia()) {
+      _showMessage(_maxMediaMessage);
+      return;
+    }
     setState(() => _showEmbeddedCamera = true);
   }
 

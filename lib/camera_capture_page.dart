@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/item_add/media_picker_sheet.dart';
+import 'widgets/video_seek_bar.dart';
 
 class CapturedMedia {
   const CapturedMedia({required this.file, required this.type, this.caption});
@@ -1058,6 +1059,13 @@ class _InlineVideoPreviewState extends State<_InlineVideoPreview> {
                 ),
             ],
           ),
+        ),
+      if (_isInit)
+        Positioned(
+          top: 14,
+          left: 18,
+          right: 18,
+          child: AppVideoSeekBar(controller: _controller),
         )
       else if (_err != null)
         Center(child: Text(_err!, style: const TextStyle(color: Colors.white)))

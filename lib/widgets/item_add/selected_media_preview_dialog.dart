@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../video_seek_bar.dart';
+
 class SelectedMediaPreviewItem {
   const SelectedMediaPreviewItem.file({
     required this.file,
@@ -44,6 +46,7 @@ class SelectedMediaPreviewDialog extends StatefulWidget {
 class _SelectedMediaPreviewDialogState
     extends State<SelectedMediaPreviewDialog> {
   late final List<_PreviewEntry> _items;
+  late final PageController _pageController;
   late int _currentIndex;
   VideoPlayerController? _videoController;
   bool _showVideoControl = false;
@@ -58,11 +61,13 @@ class _SelectedMediaPreviewDialogState
         _PreviewEntry(index: i, item: widget.items[i]),
     ];
     _currentIndex = widget.initialIndex.clamp(0, _items.length - 1);
+    _pageController = PageController(initialPage: _currentIndex);
     _prepareVideoIfNeeded();
   }
 
   @override
   void dispose() {
+    _pageController.dispose();
     _disposeVideo();
     super.dispose();
   }
@@ -93,6 +98,15 @@ class _SelectedMediaPreviewDialogState
 
   void _selectIndex(int index) {
     if (index == _currentIndex) return;
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _onPageChanged(int index) {
+    if (index == _currentIndex) return;
     setState(() {
       _currentIndex = index;
       _showVideoControl = false;
@@ -115,6 +129,7 @@ class _SelectedMediaPreviewDialogState
       return;
     }
     if (_currentIndex >= _items.length) _currentIndex = _items.length - 1;
+    _pageController.jumpToPage(_currentIndex);
     setState(() => _showVideoControl = false);
     await _prepareVideoIfNeeded();
   }
@@ -167,11 +182,19 @@ class _SelectedMediaPreviewDialogState
                 aspectRatio: 9 / 16,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: _MediaPreview(
-                    item: _current,
-                    videoController: _videoController,
-                    showVideoControl: _showVideoControl,
-                    onToggleVideo: _toggleVideo,
+                  child: PageView.builder(
+                    controller: _pageController,
+                    onPageChanged: _onPageChanged,
+                    itemCount: _items.length,
+                    itemBuilder: (context, index) {
+                      final isCurrent = index == _currentIndex;
+                      return _MediaPreview(
+                        item: _items[index].item,
+                        videoController: isCurrent ? _videoController : null,
+                        showVideoControl: isCurrent && _showVideoControl,
+                        onToggleVideo: isCurrent ? _toggleVideo : () {},
+                      );
+                    },
                   ),
                 ),
               ),
@@ -263,6 +286,13 @@ class _MediaPreview extends StatelessWidget {
                   size: 28,
                 ),
               ),
+            ),
+          if (ready)
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: AppVideoSeekBar(controller: controller),
             ),
         ],
       ),
