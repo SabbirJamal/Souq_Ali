@@ -14,6 +14,8 @@ import 'widgets/app_status_bar.dart';
 import 'widgets/detail/detail_media_header.dart';
 import 'widgets/media_carousel.dart';
 
+const _itemDetailSurfaceColor = Color(0xFFF4FBF7);
+
 class ItemDetailPage extends StatefulWidget {
   const ItemDetailPage({super.key, required this.itemData, required this.itemId});
   final Map<String, dynamic> itemData;
@@ -130,6 +132,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
     return PopScope(
       canPop: false, onPopInvokedWithResult: (d, r) { if (!d) _goToFeed(context); },
       child: Scaffold(
+        backgroundColor: _itemDetailSurfaceColor,
         body: Stack(children: [
           Column(children: [
             Expanded(child: ListView(padding: EdgeInsets.zero, physics: _lockDetailScroll ? const NeverScrollableScrollPhysics() : null, children: [
@@ -167,16 +170,13 @@ class _FixedActionBar extends StatelessWidget {
   const _FixedActionBar({required this.phone, required this.onShare});
   final String phone; final VoidCallback onShare;
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(color: Colors.black, boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 16, offset: const Offset(0, -4))]),
-    child: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(28, 7, 28, 8), child: Row(children: [
+  Widget build(BuildContext context) => SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(8, 7, 8, 8), child: Row(children: [
       Expanded(child: ElevatedButton(onPressed: phone.isEmpty ? null : () => launchUrl(Uri(scheme: 'tel', path: phone)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0A84FF), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const Icon(Icons.phone, size: 27))),
-      const SizedBox(width: 12),
+      const SizedBox(width: 6),
       Expanded(child: ElevatedButton(onPressed: phone.isEmpty ? null : () => launchUrl(Uri.parse('https://wa.me/${phone.replaceAll(RegExp(r'[^0-9]'), '')}'), mode: LaunchMode.externalApplication), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const FaIcon(FontAwesomeIcons.whatsapp, size: 26))),
-      const SizedBox(width: 12),
-      Expanded(child: ElevatedButton(onPressed: onShare, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF7801), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const Text('Share', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)))),
-    ]))),
-  );
+      const SizedBox(width: 6),
+      Expanded(child: ElevatedButton(onPressed: onShare, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF7801), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const Text('Share', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)))),
+    ])));
 }
 
 class _SellerAvatarIcon extends StatefulWidget {

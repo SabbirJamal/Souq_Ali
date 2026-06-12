@@ -40,6 +40,7 @@ class SellerAddItemTab extends StatefulWidget {
 class SellerAddItemTabState extends State<SellerAddItemTab> {
   static const _maxMediaCount = 8;
   static const _maxPriceValue = 1000000.0;
+  static const _fieldHeight = 56.0;
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
@@ -385,8 +386,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
             constraints: BoxConstraints(minHeight: minHeight),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _buildPostTypeSelector(), const SizedBox(height: 16), _buildMediaEditor(), const SizedBox(height: 15),
-          if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           _field(_nameController, 'Item Name', maxLength: 80), const SizedBox(height: 14),
+          if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
           if (_isLiveItem) ...[
             Builder(builder: (context) {
               return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -449,6 +450,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   Widget _buildPostTypeSelector() => _AddItemSegmentedSelector(
     leftText: 'POST',
     rightText: 'LIVE',
+    height: 40,
     isRightSelected: _isLiveItem,
     leftSelectedColor: const Color(0xFF001341),
     rightSelectedColor: const Color(0xFFFF7801),
@@ -469,8 +471,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   double get _buttonAlignmentSpacerHeight {
     if (_isLiveItem) return 4;
-    if (_isTransitPost) return 76;
-    return 20;
+    if (_isTransitPost) return 60;
+    return 4;
   }
 
   Widget _buildTransitToggle() => _AddItemSegmentedSelector(
@@ -538,9 +540,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     ]),
   );
 
-  Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, bool hasErrorBorder = false, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => TextField(
-    controller: ctrl, focusNode: focus, readOnly: _isSubmitting, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
-    decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, floatingLabelBehavior: hasErrorBorder ? FloatingLabelBehavior.always : null, prefixIcon: prefix, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
+  Widget _field(TextEditingController ctrl, String label, {Widget? prefix, int? maxLength, bool hasErrorBorder = false, TextInputType? keyboard, List<TextInputFormatter>? input, VoidCallback? onTap, ValueChanged<String>? onChanged, FocusNode? focus}) => SizedBox(
+    height: _fieldHeight,
+    child: TextField(
+      controller: ctrl, focusNode: focus, readOnly: _isSubmitting, maxLength: maxLength, keyboardType: keyboard, inputFormatters: input, onTap: onTap, onChanged: onChanged,
+      decoration: InputDecoration(filled: true, fillColor: Colors.white, labelText: label, floatingLabelBehavior: hasErrorBorder ? FloatingLabelBehavior.always : null, prefixIcon: prefix, counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), enabledBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null, focusedBorder: hasErrorBorder ? OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.red, width: 2)) : null),
+    ),
   );
 }
 
@@ -548,6 +553,7 @@ class _AddItemSegmentedSelector extends StatelessWidget {
   const _AddItemSegmentedSelector({
     required this.leftText,
     required this.rightText,
+    this.height = SellerAddItemTabState._fieldHeight,
     required this.isRightSelected,
     required this.leftSelectedColor,
     required this.rightSelectedColor,
@@ -557,6 +563,7 @@ class _AddItemSegmentedSelector extends StatelessWidget {
 
   final String leftText;
   final String rightText;
+  final double height;
   final bool isRightSelected;
   final Color leftSelectedColor;
   final Color rightSelectedColor;
@@ -568,7 +575,7 @@ class _AddItemSegmentedSelector extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
-      height: 40,
+      height: height,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
