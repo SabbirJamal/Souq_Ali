@@ -153,7 +153,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     }
     setState(() {
       _selectedMedia.add(SelectedMedia(file: media.file, type: media.type));
-      _showEmbeddedCamera = true;
+      _showEmbeddedCamera = _selectedMedia.length < _maxMediaCount;
     });
   }
 

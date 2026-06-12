@@ -124,7 +124,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     }
     setState(() {
       _media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
-      _showEmbeddedCamera = true;
+      _showEmbeddedCamera = _media.length < _maxMediaCount;
     });
   }
 
