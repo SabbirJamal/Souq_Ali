@@ -9,6 +9,7 @@ import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
+import '../widgets/upload_status_banner.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -432,7 +433,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                 ),
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
-        const Positioned(top: 62, left: 0, right: 0, child: Center(child: _UploadStatusBanner())),
+        const Positioned(top: 62, left: 0, right: 0, child: Center(child: UploadStatusBanner())),
       ],
     );
   }
@@ -624,81 +625,6 @@ class _FeedSkeletonGrid extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _UploadStatusBanner extends StatelessWidget {
-  const _UploadStatusBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<UploadStatus?>(
-      valueListenable: UploadStatusManager.current,
-      builder: (context, status, child) {
-        return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 260),
-          transitionBuilder: (child, animation) {
-            return ScaleTransition(
-              scale: CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-              child: FadeTransition(opacity: animation, child: child),
-            );
-          },
-          child: status == null
-              ? const SizedBox.shrink()
-              : SizedBox(
-                  key: ValueKey(status.type),
-                  width: 64,
-                  height: 64,
-                  child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.14),
-                          blurRadius: 18,
-                          offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                    child: Center(
-                      child: _UploadStatusIcon(type: status.type),
-                    ),
-                  ),
-                ),
-        );
-      },
-    );
-  }
-}
-
-class _UploadStatusIcon extends StatelessWidget {
-  const _UploadStatusIcon({required this.type});
-
-  final UploadStatusType type;
-
-  @override
-  Widget build(BuildContext context) {
-    return switch (type) {
-      UploadStatusType.uploading => const SizedBox(
-        width: 28,
-        height: 28,
-        child: CircularProgressIndicator(
-          strokeWidth: 3,
-          color: Color(0xFFFF7801),
-        ),
-      ),
-      UploadStatusType.success => const Icon(
-        Icons.check_circle_rounded,
-        color: Color(0xFF25D366),
-        size: 46,
-      ),
-      UploadStatusType.error => const Icon(
-        Icons.error_rounded,
-        color: Colors.red,
-        size: 34,
-      ),
-    };
   }
 }
 

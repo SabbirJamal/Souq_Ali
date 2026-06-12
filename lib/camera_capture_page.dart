@@ -37,6 +37,7 @@ class _CameraControllerCache {
   static CameraDescription? _description;
   static Future<CameraController>? _initializing;
   static Future<void>? _preparingVideo;
+  static CameraController? _videoPreparedController;
   static Timer? _releaseTimer;
   static int _activePages = 0;
 
@@ -76,6 +77,7 @@ class _CameraControllerCache {
     try {
       final old = _controller;
       _controller = null;
+      _videoPreparedController = null;
       await old?.dispose();
       _description = description;
       final controller = CameraController(
@@ -98,7 +100,10 @@ class _CameraControllerCache {
 
   static Future<void> prepareVideo(CameraController controller) {
     if (!controller.value.isInitialized) return Future.value();
-    return _preparingVideo ??= controller.prepareForVideoRecording().catchError((_) {}).whenComplete(() {
+    if (identical(_videoPreparedController, controller)) return Future.value();
+    return _preparingVideo ??= controller.prepareForVideoRecording().then((_) {
+      _videoPreparedController = controller;
+    }).catchError((_) {}).whenComplete(() {
       _preparingVideo = null;
     });
   }
@@ -125,6 +130,7 @@ class _CameraControllerCache {
     _description = null;
     _initializing = null;
     _preparingVideo = null;
+    _videoPreparedController = null;
     await current?.dispose();
   }
 
@@ -143,6 +149,7 @@ class _CameraControllerCache {
     _description = null;
     _initializing = null;
     _preparingVideo = null;
+    _videoPreparedController = null;
     await current?.dispose();
   }
 }
@@ -216,7 +223,8 @@ class CameraCapturePage extends StatefulWidget {
       final cameras = await preloadCameras();
       if (cameras.isEmpty) return;
       final index = cameras.indexWhere((c) => c.lensDirection == CameraLensDirection.back);
-      await _CameraControllerCache.controllerFor(cameras[index == -1 ? 0 : index]);
+      final controller = await _CameraControllerCache.controllerFor(cameras[index == -1 ? 0 : index]);
+      await _CameraControllerCache.prepareVideo(controller);
     } catch (_) {}
   }
 
@@ -235,6 +243,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   bool _isFlash = false, _isRec = false, _isBusy = false;
   Timer? _holdTimer, _tickTimer;
   Duration _elapsed = Duration.zero;
+  final ValueNotifier<bool> _recordingListenable = ValueNotifier(false);
+  final ValueNotifier<Duration> _elapsedListenable = ValueNotifier(Duration.zero);
   DateTime? _recordStartedAt;
   bool _isResettingZoom = false;
   bool _hasUserZoomed = false;
@@ -259,7 +269,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _setImmersive(false);
-    _holdTimer?.cancel(); _tickTimer?.cancel();
+    _holdTimer?.cancel();
+    _tickTimer?.cancel();
+    _recordingListenable.dispose();
+    _elapsedListenable.dispose();
     unawaited(_resetCameraState(rebuild: false));
     _CameraControllerCache.release();
     super.dispose();
@@ -349,8 +362,8 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         _maxZoom = await c.getMaxZoomLevel();
         _currZoom = _minZoom;
         await _resetZoom(rebuild: false);
-        setState(() {});
         unawaited(_CameraControllerCache.prepareVideo(c));
+        setState(() {});
         return;
       } catch (_) {
         if (attempt == 1) rethrow;
@@ -539,10 +552,14 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       await _controller!.startVideoRecording();
       HapticFeedback.heavyImpact();
       _recordStartedAt = DateTime.now();
-      if (mounted) setState(() { _isRec = true; _elapsed = Duration.zero; });
+      _isRec = true;
+      _elapsed = Duration.zero;
+      _recordingListenable.value = true;
+      _elapsedListenable.value = Duration.zero;
       _tickTimer = Timer.periodic(const Duration(milliseconds: 250), (t) {
         if (!mounted || !_isRec) { t.cancel(); return; }
-        setState(() => _elapsed += const Duration(milliseconds: 250));
+        _elapsed += const Duration(milliseconds: 250);
+        _elapsedListenable.value = _elapsed;
         if (_elapsed >= _maxDuration) _stopRec();
       });
     } catch (e) { debugPrint('Error starting video recording: $e'); }
@@ -555,7 +572,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         ? _elapsed
         : DateTime.now().difference(_recordStartedAt!);
     _recordStartedAt = null;
-    setState(() { _isRec = false; _isBusy = true; });
+    _isRec = false;
+    _recordingListenable.value = false;
+    setState(() { _isBusy = true; });
     try {
       if (!_controller!.value.isRecordingVideo) { setState(() => _isBusy = false); return; }
       final f = await _controller!.stopVideoRecording();
@@ -671,32 +690,48 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     ]),
   )));
 
-  Widget _buildTopBar() => Stack(children: [
-    if (_isRec)
-      Positioned(
-        top: 10,
-        left: 0,
-        right: 0,
-        child: Center(child: _buildRecTimer()),
-      )
-    else
-      Positioned(
-        top: 0, right: 0,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: _CircleBtn(icon: _isFlash ? Icons.flash_on : Icons.flash_off, onTap: _toggleFlash),
+  Widget _buildTopBar() => ValueListenableBuilder<bool>(
+    valueListenable: _recordingListenable,
+    builder: (context, isRec, _) => Stack(children: [
+      if (isRec)
+        Positioned(
+          top: 10,
+          left: 0,
+          right: 0,
+          child: Center(child: _buildRecTimer()),
+        )
+      else
+        Positioned(
+          top: 0, right: 0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: _CircleBtn(
+              icon: _isFlash ? Icons.flash_on : Icons.flash_off,
+              onTap: _toggleFlash,
+            ),
+          ),
         ),
-      ),
-  ]);
-
-  Widget _buildRecTimer() => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
-      const SizedBox(width: 8),
-      Text(_formatDur(_elapsed), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
     ]),
+  );
+
+  Widget _buildRecTimer() => ValueListenableBuilder<Duration>(
+    valueListenable: _elapsedListenable,
+    builder: (context, elapsed, _) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: Colors.red,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(_formatDur(elapsed), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ]),
+    ),
   );
 
   Widget _buildBottomControls() => Positioned(
@@ -705,14 +740,31 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14), child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _CircleBtn(icon: Icons.photo_library, onTap: _openGallery),
-              _CaptureBtn(isRec: _isRec, progress: _elapsed.inMilliseconds / _maxDuration.inMilliseconds, onStart: _onPressStart, onEnd: _onPressEnd, onMove: _onMove),
-              _CircleBtn(icon: Icons.close, onTap: _closeCamera),
-            ],
-          )),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _CircleBtn(icon: Icons.photo_library, onTap: _openGallery),
+                ValueListenableBuilder<bool>(
+                  valueListenable: _recordingListenable,
+                  builder: (context, isRec, _) =>
+                      ValueListenableBuilder<Duration>(
+                    valueListenable: _elapsedListenable,
+                    builder: (context, elapsed, _) => _CaptureBtn(
+                      isRec: isRec,
+                      progress:
+                          elapsed.inMilliseconds / _maxDuration.inMilliseconds,
+                      onStart: _onPressStart,
+                      onEnd: _onPressEnd,
+                      onMove: _onMove,
+                    ),
+                  ),
+                ),
+                _CircleBtn(icon: Icons.close, onTap: _closeCamera),
+              ],
+            ),
+          ),
           const SizedBox(height: 6),
         ])),
   );
@@ -726,7 +778,13 @@ class _CaptureBtn extends StatelessWidget {
   final ValueChanged<TapDownDetails> onStart;
   final VoidCallback onEnd;
   final ValueChanged<PointerMoveEvent> onMove;
-  const _CaptureBtn({required this.isRec, required this.progress, required this.onStart, required this.onEnd, required this.onMove});
+  const _CaptureBtn({
+    required this.isRec,
+    required this.progress,
+    required this.onStart,
+    required this.onEnd,
+    required this.onMove,
+  });
 
   @override
   Widget build(BuildContext context) => Listener(

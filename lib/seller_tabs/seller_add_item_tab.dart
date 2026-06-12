@@ -170,11 +170,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       if (s == null) return;
       if (!mounted) return;
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
-      UploadStatusManager.uploading();
+      UploadStatusManager.uploading(thumbnail: _selectedMedia.first.file);
       widget.onItemAddedDone?.call(_isLiveItem);
 
       final uploaded = await _uploadMedia(s.sellerId);
       final price = _isLiveItem ? 'OMR ${_formatPriceWithCommas(normPrice!)} $_priceUnit' : '';
+      UploadStatusManager.progress(0.96);
       
       await FirebaseFirestore.instance.collection('items').add({
         'seller_uid': s.sellerId, 'seller_name': s.name, 'seller_phone': s.phoneNumber,
@@ -193,16 +194,49 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   Future<List<_UploadedMedia>> _uploadMedia(String uid) async {
     final res = <_UploadedMedia>[];
+    final total = _selectedMedia.length;
     for (var i = 0; i < _selectedMedia.length; i++) {
       final m = _selectedMedia[i];
       final comp = m.isVideo ? await _compressVideo(m.file) : await _compressImage(m.file);
       final name = '${DateTime.now().millisecondsSinceEpoch}_$i';
       final ref = FirebaseStorage.instance.ref().child('items/$uid/$name.${m.isVideo ? 'mp4' : 'jpg'}');
-      final snap = await ref.putFile(comp, SettableMetadata(contentType: m.isVideo ? 'video/mp4' : 'image/jpeg'));
+      final snap = await _uploadFileWithProgress(
+        ref,
+        comp,
+        SettableMetadata(contentType: m.isVideo ? 'video/mp4' : 'image/jpeg'),
+        start: (i / total) * 0.86,
+        span: 0.74 / total,
+      );
       final thumb = m.isVideo ? await _uploadThumb(comp, uid, name, i, true) : await _uploadThumb(comp, uid, name, i, false);
+      UploadStatusManager.progress(((i + 1) / total) * 0.86);
       res.add(_UploadedMedia(url: await snap.ref.getDownloadURL(), type: m.type, thumbnailUrl: thumb));
     }
     return res;
+  }
+
+  Future<TaskSnapshot> _uploadFileWithProgress(
+    Reference ref,
+    File file,
+    SettableMetadata metadata, {
+    required double start,
+    required double span,
+  }) async {
+    var lastPercent = -1;
+    final task = ref.putFile(file, metadata);
+    final sub = task.snapshotEvents.listen((snapshot) {
+      final totalBytes = snapshot.totalBytes;
+      if (totalBytes <= 0) return;
+      final uploaded = snapshot.bytesTransferred / totalBytes;
+      final percent = ((start + (uploaded * span)) * 100).floor();
+      if (percent == lastPercent) return;
+      lastPercent = percent;
+      UploadStatusManager.progress(start + (uploaded * span));
+    });
+    try {
+      return await task;
+    } finally {
+      await sub.cancel();
+    }
   }
 
   Future<String?> _uploadThumb(File f, String uid, String name, int i, bool isVid) async {
