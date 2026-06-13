@@ -6,6 +6,20 @@ class AppStatusBar extends StatelessWidget {
 
   final Color color;
 
+  static double heightOf(BuildContext context) {
+    final view = View.of(context);
+    final viewPaddingTop = view.viewPadding.top / view.devicePixelRatio;
+    final mediaViewPaddingTop = MediaQuery.viewPaddingOf(context).top;
+    final mediaPaddingTop = MediaQuery.paddingOf(context).top;
+    final height = [
+      viewPaddingTop,
+      mediaViewPaddingTop,
+      mediaPaddingTop,
+      24.0,
+    ].reduce((value, element) => value > element ? value : element);
+    return height;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isLightBackground = color.computeLuminance() > 0.5;
@@ -19,7 +33,7 @@ class AppStatusBar extends StatelessWidget {
             isLightBackground ? Brightness.light : Brightness.dark,
       ),
       child: SizedBox(
-        height: MediaQuery.viewPaddingOf(context).top,
+        height: heightOf(context),
         child: ColoredBox(color: color),
       ),
     );

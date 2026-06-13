@@ -616,6 +616,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   @override
   Widget build(BuildContext context) {
+    final statusBarHeight = AppStatusBar.heightOf(context);
     if (_showEmbeddedCamera) {
       return AnnotatedRegion<SystemUiOverlayStyle>(
         value: const SystemUiOverlayStyle(
@@ -625,20 +626,30 @@ class _ItemEditPageState extends State<ItemEditPage> {
         ),
         child: Scaffold(
           backgroundColor: Colors.black,
-          body: Column(
+          body: Stack(
             children: [
-              const AppStatusBar(),
-              Expanded(
-                child: CameraCapturePage(
-                  embedded: true,
-                  selectedCount: _media.length,
-                  maxCount: _maxMediaCount,
-                  maxSelectionMessage: _maxMediaMessage,
-                  onClose: () => setState(() => _showEmbeddedCamera = false),
-                  onOpenGallery: _handleEmbeddedGallery,
-                  onCaptured: _handleEmbeddedCapture,
-                  onCapturedAndContinue: _handleEmbeddedCaptureAndContinue,
-                ),
+              Column(
+                children: [
+                  SizedBox(height: statusBarHeight),
+                  Expanded(
+                    child: CameraCapturePage(
+                      embedded: true,
+                      selectedCount: _media.length,
+                      maxCount: _maxMediaCount,
+                      maxSelectionMessage: _maxMediaMessage,
+                      onClose: () => setState(() => _showEmbeddedCamera = false),
+                      onOpenGallery: _handleEmbeddedGallery,
+                      onCaptured: _handleEmbeddedCapture,
+                      onCapturedAndContinue: _handleEmbeddedCaptureAndContinue,
+                    ),
+                  ),
+                ],
+              ),
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: AppStatusBar(),
               ),
             ],
           ),
@@ -666,29 +677,31 @@ class _ItemEditPageState extends State<ItemEditPage> {
       value: const SystemUiOverlayStyle(statusBarColor: Colors.black, statusBarIconBrightness: Brightness.light),
       child: Scaffold(
         backgroundColor: pageColor,
-        body: Column(
+        body: Stack(
           children: [
-            const AppStatusBar(),
-            Container(
-              height: kToolbarHeight,
-              color: pageColor,
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back),
+            Column(
+              children: [
+                SizedBox(height: statusBarHeight),
+                Container(
+                  height: kToolbarHeight,
+                  color: pageColor,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back),
+                      ),
+                      const Spacer(),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: _EditDeletePill(
+                          isDeleting: _isDeleting,
+                          onTap: _isDeleting ? null : _confirmDeleteItem,
+                        ),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: _EditDeletePill(
-                      isDeleting: _isDeleting,
-                      onTap: _isDeleting ? null : _confirmDeleteItem,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
             Expanded(
               child: DecoratedBox(
                 decoration: contentDecoration,
@@ -742,6 +755,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 ),
               ),
             ),
+              ],
+            ),
+            const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
           ],
         ),
         bottomNavigationBar: SellerBottomNavBar(

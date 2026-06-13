@@ -131,6 +131,7 @@ class SellerProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statusBarHeight = AppStatusBar.heightOf(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.black,
@@ -139,14 +140,22 @@ class SellerProfilePage extends StatelessWidget {
       ),
       child: Scaffold(
         backgroundColor: const Color(0xFFF4FBF7),
-        body: _SellerProfileBody(
-          sellerId: sellerId,
-          sellerPhone: sellerPhone,
-          fallbackName: fallbackName,
-          isOwnProfile: isOwnProfile,
-          onSettings: () => _openSettings(context),
-          onLogout: () => _confirmLogout(context),
-          onBack: () => Navigator.pop(context),
+        body: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.only(top: statusBarHeight),
+              child: _SellerProfileBody(
+                sellerId: sellerId,
+                sellerPhone: sellerPhone,
+                fallbackName: fallbackName,
+                isOwnProfile: isOwnProfile,
+                onSettings: () => _openSettings(context),
+                onLogout: () => _confirmLogout(context),
+                onBack: () => Navigator.pop(context),
+              ),
+            ),
+            const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
+          ],
         ),
         bottomNavigationBar: SellerBottomNavBar(
           currentIndex: 4,
@@ -319,7 +328,6 @@ class _ProfileScrollableHeader extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const AppStatusBar(),
         Container(
           height: 56,
           color: const Color(0xFFF4FBF7),

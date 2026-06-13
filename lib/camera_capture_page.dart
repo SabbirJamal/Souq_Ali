@@ -705,26 +705,34 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     return Scaffold(backgroundColor: Colors.black, body: child);
   }
 
-  Widget _buildCameraShell(Widget preview) => ColoredBox(
-    color: Colors.black,
-    child: Column(
-      children: [
-        if (!widget.embedded) const AppStatusBar(),
-        Expanded(
-          child: Stack(
+  Widget _buildCameraShell(Widget preview) {
+    final statusBarHeight = widget.embedded ? 0.0 : AppStatusBar.heightOf(context);
+    return ColoredBox(
+      color: Colors.black,
+      child: Stack(
+        children: [
+          Column(
             children: [
-              Positioned.fill(child: preview),
-              if (_previewFile == null) ...[
-                if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
-                _buildTopBar(),
-                _buildBottomControls(),
-              ],
+              SizedBox(height: statusBarHeight),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: preview),
+                    if (_previewFile == null) ...[
+                      if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
+                      _buildTopBar(),
+                      _buildBottomControls(),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
-        ),
-      ],
-    ),
-  );
+          if (!widget.embedded) const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
+        ],
+      ),
+    );
+  }
 
   Widget _buildPermissionPrompt() => _wrapCameraPage(Center(child: Padding(
     padding: const EdgeInsets.all(32),

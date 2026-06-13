@@ -331,6 +331,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   Widget build(BuildContext context) {
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
     const bottomBarColor = Color(0xFFF4FBF7);
+    final statusBarHeight = AppStatusBar.heightOf(context);
 
     final uploadStatusTarget = _currentUploadStatusTarget();
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -355,7 +356,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
             children: [
               Column(
                 children: [
-                  const AppStatusBar(),
+                  SizedBox(height: statusBarHeight),
                   if (showTabHeader)
                     _SellerTabHeader(
                       rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),
@@ -387,6 +388,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                   ),
                 ],
               ),
+              const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
               if (uploadStatusTarget != null)
                 Positioned(
                   top: 62,
