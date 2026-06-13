@@ -632,7 +632,12 @@ class _SellerProfileColumn extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: docs
-          .map((doc) => ItemCard(docId: doc.id, item: doc.data(), isCompact: true))
+          .map((doc) => ItemCard(
+                docId: doc.id,
+                item: doc.data(),
+                isCompact: true,
+                replaceOnOpen: true,
+              ))
           .toList(),
     );
   }

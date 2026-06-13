@@ -17,6 +17,7 @@ class ItemCard extends StatefulWidget {
     this.isLivePage = false,
     this.liveMarkerTop = -36,
     this.uploadedAgoOverride,
+    this.replaceOnOpen = false,
   });
 
   final String docId;
@@ -25,6 +26,7 @@ class ItemCard extends StatefulWidget {
   final bool isLivePage;
   final double liveMarkerTop;
   final String? uploadedAgoOverride;
+  final bool replaceOnOpen;
 
   @override
   State<ItemCard> createState() => _ItemCardState();
@@ -61,15 +63,17 @@ class _ItemCardState extends State<ItemCard> {
             height: cardHeight,
             child: GestureDetector(
               onTap: () {
-                Navigator.push(
-                  context,
-                  QuickFadePageRoute(
-                    child: ItemDetailPage(
-                      itemData: widget.item,
-                      itemId: widget.docId,
-                    ),
+                final route = QuickFadePageRoute(
+                  child: ItemDetailPage(
+                    itemData: widget.item,
+                    itemId: widget.docId,
                   ),
                 );
+                if (widget.replaceOnOpen) {
+                  Navigator.pushReplacement(context, route);
+                } else {
+                  Navigator.push(context, route);
+                }
               },
               child: Card(
                   elevation: 6,

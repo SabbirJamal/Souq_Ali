@@ -222,7 +222,7 @@ class _SellerAvatarIconState extends State<_SellerAvatarIcon> {
         final cr = data['cr_number']?.toString().trim() ?? data['crNumber']?.toString().trim() ?? '';
         final ph = formatSellerPhone(sellerPhone);
         final top = [if (n.isNotEmpty) n, if (cr.isNotEmpty) 'CR No. $cr'].join(' | ');
-        return InkWell(borderRadius: BorderRadius.circular(14), onTap: sid.isEmpty ? null : () { onOpenProfile(); Navigator.push(context, _profileRoute(sid, n.toString())); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
+        return InkWell(borderRadius: BorderRadius.circular(14), onTap: sid.isEmpty ? null : () { onOpenProfile(); Navigator.pushReplacement(context, _profileRoute(sid, n.toString())); }, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
           if (top.isNotEmpty) FittedBox(child: Text(top, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
           if (ph.isNotEmpty) Text(ph, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
         ])));
