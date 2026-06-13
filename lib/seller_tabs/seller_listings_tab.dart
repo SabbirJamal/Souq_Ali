@@ -423,6 +423,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         }
         final session = sessionSnapshot.data;
         if (session == null) return const Center(child: Text('Please login again'));
+        final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 75;
 
         return Stack(
           children: [
@@ -530,6 +531,9 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                               child: _ListingsSkeletonGrid(),
                             ),
                         ],
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: bottomSpacerHeight),
+                        ),
                       ],
                     ),
                   ),

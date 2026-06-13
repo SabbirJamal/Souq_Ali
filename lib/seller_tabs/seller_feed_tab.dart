@@ -366,7 +366,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final isLivePage = widget.itemStatus == 'live';
     final showInlineLoading =
         _isLoading && UploadStatusManager.current.value == null;
-    final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 68;
+    final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 75;
 
     final content = Stack(
       children: [
