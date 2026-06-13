@@ -9,19 +9,23 @@ import 'seller_tabs/seller_live_tab.dart';
 import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_session.dart';
 import 'seller_session_guard.dart';
+import 'upload_status_manager.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
+import 'widgets/upload_status_banner.dart';
 
 class SellerHomePage extends StatefulWidget {
   const SellerHomePage({
     super.key,
     this.isSellerMode = true,
     this.initialTabIndex = 0,
+    this.initialListingsStatus = 'post',
   });
 
   final bool isSellerMode;
   final int initialTabIndex;
+  final String initialListingsStatus;
 
   @override
   State<SellerHomePage> createState() => _SellerHomePageState();
@@ -36,6 +40,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
   int _listingsRefreshTick = 0;
+  static SellerListingsTabState? latestListingsState;
   DateTime? _lastFeedBackPress;
   bool _isAddLiveMode = false;
   late final List<Widget?> _pageCache = List<Widget?>.filled(5, null);
@@ -284,7 +289,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
             )
           : const _SellerAccessPrompt(),
       3 => widget.isSellerMode
-          ? SellerListingsTab(key: _listingsKey, refreshTick: _listingsRefreshTick, onSessionInvalid: _handleInvalidSellerSession)
+          ? SellerListingsTab(
+              key: _listingsKey,
+              refreshTick: _listingsRefreshTick,
+              initialStatus: widget.initialListingsStatus,
+              onReady: (state) => latestListingsState = state,
+              onSessionInvalid: _handleInvalidSellerSession,
+            )
           : const _SellerAccessPrompt(),
       4 => widget.isSellerMode
           ? SellerSettingsTab(onLogout: _confirmLogout)
@@ -307,11 +318,21 @@ class _SellerHomePageState extends State<SellerHomePage> {
     return false;
   }
 
+  UploadStatusTarget? _currentUploadStatusTarget() {
+    return switch (_currentIndex) {
+      0 => UploadStatusTarget.feed,
+      1 => UploadStatusTarget.live,
+      3 => UploadStatusTarget.listings,
+      _ => null,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
     const bottomBarColor = Color(0xFFF4FBF7);
 
+    final uploadStatusTarget = _currentUploadStatusTarget();
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.black,
@@ -330,38 +351,53 @@ class _SellerHomePageState extends State<SellerHomePage> {
         child: Scaffold(
           backgroundColor: const Color(0xFFF4FBF7),
           extendBody: true, // Background flows behind navigation bar
-          body: Column(
+          body: Stack(
             children: [
-              const AppStatusBar(),
-              if (showTabHeader)
-                _SellerTabHeader(
-                  rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),
-                ),
-              Expanded(
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _onScrollNotification,
-                  child: IndexedStack(
-                    index: _currentIndex,
-                    children: List.generate(
-                      5,
-                      (index) {
-                        // Only build the page if it's currently selected or was previously cached
-                        final isPageInitialized = _pageCache[index] != null;
-                        final isCurrentPage = index == _currentIndex;
+              Column(
+                children: [
+                  const AppStatusBar(),
+                  if (showTabHeader)
+                    _SellerTabHeader(
+                      rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),
+                    ),
+                  Expanded(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _onScrollNotification,
+                      child: IndexedStack(
+                        index: _currentIndex,
+                        children: List.generate(
+                          5,
+                          (index) {
+                            // Only build the page if it's currently selected or was previously cached
+                            final isPageInitialized = _pageCache[index] != null;
+                            final isCurrentPage = index == _currentIndex;
 
-                        if (isCurrentPage || isPageInitialized) {
-                          return TickerMode(
-                            enabled: isCurrentPage,
-                            child: _pageAt(index),
-                          );
-                        }
+                            if (isCurrentPage || isPageInitialized) {
+                              return TickerMode(
+                                enabled: isCurrentPage,
+                                child: _pageAt(index),
+                              );
+                            }
 
-                        return const SizedBox.shrink();
-                      },
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (uploadStatusTarget != null)
+                Positioned(
+                  top: 62,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: UploadStatusBanner(
+                      target: uploadStatusTarget,
                     ),
                   ),
                 ),
-              ),
             ],
           ),
           bottomNavigationBar: SellerBottomNavBar(
@@ -584,6 +620,12 @@ class _SellerTabHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+void refreshLatestListingsPage() {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _SellerHomePageState.latestListingsState?.scrollToTopOrRefresh();
+  });
 }
 
 class _HeaderLogoutButton extends StatelessWidget {

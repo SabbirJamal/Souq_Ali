@@ -5,32 +5,42 @@ import 'package:flutter/foundation.dart';
 
 enum UploadStatusType { uploading, success, error }
 
+enum UploadStatusTarget { feed, live, listings }
+
 class UploadStatus {
   const UploadStatus({
     required this.id,
     required this.type,
     required this.message,
+    required this.target,
     this.thumbnail,
+    this.thumbnailUrl,
     this.progress = 0,
   });
 
   final String id;
   final UploadStatusType type;
   final String message;
+  final UploadStatusTarget target;
   final File? thumbnail;
+  final String? thumbnailUrl;
   final double progress;
 
   UploadStatus copyWith({
     UploadStatusType? type,
     String? message,
+    UploadStatusTarget? target,
     File? thumbnail,
+    String? thumbnailUrl,
     double? progress,
   }) {
     return UploadStatus(
       id: id,
       type: type ?? this.type,
       message: message ?? this.message,
+      target: target ?? this.target,
       thumbnail: thumbnail ?? this.thumbnail,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
       progress: progress ?? this.progress,
     );
   }
@@ -47,14 +57,18 @@ class UploadStatusManager {
 
   static String uploading({
     String message = 'Uploading item',
+    UploadStatusTarget target = UploadStatusTarget.feed,
     File? thumbnail,
+    String? thumbnailUrl,
   }) {
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     _set(UploadStatus(
       id: id,
       type: UploadStatusType.uploading,
       message: message,
+      target: target,
       thumbnail: thumbnail,
+      thumbnailUrl: thumbnailUrl,
       progress: 0.01,
     ));
     return id;
@@ -90,6 +104,7 @@ class UploadStatusManager {
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         type: UploadStatusType.error,
         message: message,
+        target: UploadStatusTarget.feed,
       ));
       return;
     }

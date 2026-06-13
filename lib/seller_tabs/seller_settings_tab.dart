@@ -50,8 +50,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                 seller['cr_number']?.toString().trim().isNotEmpty == true
                 ? seller['cr_number'].toString()
                 : seller['crNumber']?.toString() ?? '';
-            final sellerLocation = seller['location']?.toString() ?? '';
-
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
               child: Column(
@@ -80,17 +78,6 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                   _CrNumberField(
                     sellerId: session.sellerId,
                     initialValue: crNumber,
-                  ),
-                  const SizedBox(height: 12),
-                  _SellerInfoField(
-                    sellerId: session.sellerId,
-                    fieldKey: 'location',
-                    label: 'Location',
-                    hint: 'Location',
-                    initialValue: sellerLocation,
-                    keyboardType: TextInputType.text,
-                    inputFormatters: const [],
-                    savedMessage: 'Location saved',
                   ),
                 ],
               ),

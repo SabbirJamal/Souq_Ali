@@ -9,7 +9,6 @@ import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/item_card.dart';
-import '../widgets/upload_status_banner.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -433,7 +432,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                 ),
         ),
         Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
-        const Positioned(top: 62, left: 0, right: 0, child: Center(child: UploadStatusBanner())),
       ],
     );
     if (!isLivePage) return content;

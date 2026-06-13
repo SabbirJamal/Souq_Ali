@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../upload_status_manager.dart';
 
 class UploadStatusBanner extends StatefulWidget {
-  const UploadStatusBanner({super.key});
+  const UploadStatusBanner({super.key, required this.target});
+
+  final UploadStatusTarget target;
 
   @override
   State<UploadStatusBanner> createState() => _UploadStatusBannerState();
@@ -17,15 +19,20 @@ class _UploadStatusBannerState extends State<UploadStatusBanner> {
     return ValueListenableBuilder<List<UploadStatus>>(
       valueListenable: UploadStatusManager.active,
       builder: (context, uploads, child) {
-        if (uploads.isEmpty) {
+        final targetUploads = uploads
+            .where((status) => status.target == widget.target)
+            .toList(growable: false);
+        if (targetUploads.isEmpty) {
           return const SizedBox.shrink();
         }
-        final visibleUploads = _expanded ? uploads.take(4).toList() : uploads.take(1).toList();
+        final visibleUploads = _expanded
+            ? targetUploads.take(4).toList()
+            : targetUploads.take(1).toList();
         return FractionallySizedBox(
           widthFactor: 0.95,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: uploads.length > 1
+            onTap: targetUploads.length > 1
                 ? () => setState(() => _expanded = !_expanded)
                 : null,
             child: AnimatedSize(
@@ -37,6 +44,7 @@ class _UploadStatusBannerState extends State<UploadStatusBanner> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.black, width: 1),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: 0.14),
@@ -53,14 +61,14 @@ class _UploadStatusBannerState extends State<UploadStatusBanner> {
                         for (var i = 0; i < visibleUploads.length; i++) ...[
                           _UploadStatusRow(
                             status: visibleUploads[i],
-                            hiddenCount: !_expanded && uploads.length > 1 ? uploads.length - 1 : 0,
+                            hiddenCount: !_expanded && targetUploads.length > 1 ? targetUploads.length - 1 : 0,
                           ),
                           if (i != visibleUploads.length - 1) const SizedBox(height: 7),
                         ],
-                        if (_expanded && uploads.length > visibleUploads.length) ...[
+                        if (_expanded && targetUploads.length > visibleUploads.length) ...[
                           const SizedBox(height: 7),
                           Text(
-                            '+${uploads.length - visibleUploads.length} more uploading',
+                            '+${targetUploads.length - visibleUploads.length} more uploading',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -153,16 +161,23 @@ class _UploadThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final thumbnail = status.thumbnail;
+    final thumbnailUrl = status.thumbnailUrl?.trim() ?? '';
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: SizedBox(
         width: 42,
         height: 42,
         child: thumbnail == null
-            ? const ColoredBox(
-                color: Color(0xFFEDEDED),
-                child: Icon(Icons.image_rounded, size: 22, color: Colors.black45),
-              )
+            ? thumbnailUrl.isEmpty
+                ? const ColoredBox(
+                    color: Color(0xFFEDEDED),
+                    child: Icon(
+                      Icons.image_rounded,
+                      size: 22,
+                      color: Colors.black45,
+                    ),
+                  )
+                : Image.network(thumbnailUrl, fit: BoxFit.cover)
             : Image.file(thumbnail, fit: BoxFit.cover),
       ),
     );

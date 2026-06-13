@@ -10,7 +10,9 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:video_compress/video_compress.dart';
 
 import 'camera_capture_page.dart';
+import 'seller_home_page.dart';
 import 'seller_session_guard.dart';
+import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/item_add/selected_media_preview_dialog.dart';
@@ -20,7 +22,25 @@ import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
 
-void _noopEditCameraNavTap(int index) {}
+Route<void> _instantSellerTabRoute(int index) {
+  return PageRouteBuilder<void>(
+    pageBuilder: (context, animation, secondaryAnimation) =>
+        SellerHomePage(initialTabIndex: index),
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+  );
+}
+
+Route<void> _instantListingsRoute(String status) {
+  return PageRouteBuilder<void>(
+    pageBuilder: (context, animation, secondaryAnimation) => SellerHomePage(
+      initialTabIndex: 3,
+      initialListingsStatus: status,
+    ),
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+  );
+}
 
 class ItemEditPage extends StatefulWidget {
   const ItemEditPage({super.key, required this.docId, required this.itemData, this.onSessionInvalid});
@@ -52,6 +72,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   late String _priceUnit;
   String _sellerDefaultLocation = '';
   bool _isSaving = false;
+  bool _isDeleting = false;
   bool _showLocationError = false;
   bool _showPriceError = false;
   bool _showEmbeddedCamera = false;
@@ -249,6 +270,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     final isTransitPost = !isLiveItem && _isTransitPost;
     final name = _nameController.text.trim();
     final price = _priceController.text.trim();
+    final selectedPriceUnit = _priceUnit;
     final location = isTransitPost ? '🚚 Transit' : _locationController.text.trim();
 
     if (!isTransitPost && location.isEmpty) {
@@ -262,18 +284,39 @@ class _ItemEditPageState extends State<ItemEditPage> {
       return;
     }
 
-    setState(() => _isSaving = true);
-    try {
-      final sellerUid = widget.itemData['seller_uid']?.toString();
-      if (sellerUid == null || sellerUid.isEmpty) {
-        _showMessage('Please login again');
-        return;
-      }
-      if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
+    final sellerUid = widget.itemData['seller_uid']?.toString();
+    if (sellerUid == null || sellerUid.isEmpty) {
+      _showMessage('Please login again');
+      return;
+    }
+    if (!await SellerSessionGuard.ensureActive(
+      context,
+      onInvalid: widget.onSessionInvalid ?? () {},
+    )) {
+      return;
+    }
+    if (!mounted) return;
 
-      final newEntries = _media.where((m) => !m.isExisting).toList();
-      final uploadedMedia = await _uploadNewMedia(sellerUid, newEntries);
-      final allMedia = _media.map((m) => m.isExisting ? m.existing! : uploadedMedia[m]!).toList();
+    setState(() => _isSaving = true);
+    final mediaSnapshot = List<EditableMedia>.of(_media);
+    final removedSnapshot = List<MediaItem>.of(_removedMedia);
+    final firstMedia = mediaSnapshot.isNotEmpty ? mediaSnapshot.first : null;
+    final uploadId = UploadStatusManager.uploading(
+      target: UploadStatusTarget.listings,
+      thumbnail: firstMedia?.selected?.file,
+      thumbnailUrl: firstMedia?.existing?.thumbnailUrl?.trim().isNotEmpty == true
+          ? firstMedia!.existing!.thumbnailUrl!.trim()
+          : firstMedia?.existing?.url,
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      _instantListingsRoute(isLiveItem ? 'live' : 'post'),
+      (_) => false,
+    );
+
+    try {
+      final newEntries = mediaSnapshot.where((m) => !m.isExisting).toList();
+      final uploadedMedia = await _uploadNewMedia(sellerUid, newEntries, uploadId);
+      final allMedia = mediaSnapshot.map((m) => m.isExisting ? m.existing! : uploadedMedia[m]!).toList();
       
       final imageUrls = allMedia.where((m) => !m.isVideo).map((m) => m.url).toList();
       final mediaFileMaps = allMedia.map((m) => {
@@ -282,7 +325,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         if (m.thumbnailUrl != null) 'thumbnail_url': m.thumbnailUrl,
       }).toList();
 
-      final priceUnit = isLiveItem ? _priceUnit : '';
+      final priceUnit = isLiveItem ? selectedPriceUnit : '';
       final itemPrice = isLiveItem ? 'OMR ${_formatPriceWithCommas(normalizedPrice!)} $priceUnit' : '';
 
       final updateData = <String, dynamic>{
@@ -298,22 +341,21 @@ class _ItemEditPageState extends State<ItemEditPage> {
         'updated_at': FieldValue.serverTimestamp(),
       };
 
+      UploadStatusManager.progress(uploadId, 0.96);
       await FirebaseFirestore.instance.collection('items').doc(widget.docId).update(updateData);
-      await _deleteRemovedStorageFiles();
-
-      if (mounted) {
-        Navigator.pop(context);
-        _showMessage('Item updated');
-      }
+      await _deleteStorageFiles(removedSnapshot);
+      UploadStatusManager.success(uploadId);
+      refreshLatestListingsPage();
     } catch (e) {
-      _showMessage('Error: $e');
+      UploadStatusManager.error(uploadId, 'Update failed: $e');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
-  Future<Map<EditableMedia, MediaItem>> _uploadNewMedia(String sellerUid, List<EditableMedia> entries) async {
+  Future<Map<EditableMedia, MediaItem>> _uploadNewMedia(String sellerUid, List<EditableMedia> entries, String uploadId) async {
     final uploaded = <EditableMedia, MediaItem>{};
+    final total = entries.isEmpty ? 1 : entries.length;
     for (var i = 0; i < entries.length; i++) {
       final entry = entries[i];
       final sel = entry.selected!;
@@ -327,6 +369,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
           : await _uploadImageThumbnail(imageFile: compressed, sellerUid: sellerUid, fileName: int.parse(fileName.split('_').first), index: i);
       
       uploaded[entry] = MediaItem(url: await snap.ref.getDownloadURL(), type: sel.type, thumbnailUrl: thumb);
+      UploadStatusManager.progress(uploadId, ((i + 1) / total) * 0.86);
     }
     return uploaded;
   }
@@ -364,13 +407,159 @@ class _ItemEditPageState extends State<ItemEditPage> {
     return info?.path != null ? File(info!.path!) : file;
   }
 
-  Future<void> _deleteRemovedStorageFiles() async {
-    for (final m in _removedMedia) {
+  Future<void> _deleteStorageFiles(List<MediaItem> media) async {
+    for (final m in media) {
       try {
         if (m.thumbnailUrl?.isNotEmpty == true) await FirebaseStorage.instance.refFromURL(m.thumbnailUrl!).delete();
         await FirebaseStorage.instance.refFromURL(m.url).delete();
       } catch (_) {}
     }
+  }
+
+  Future<void> _confirmDeleteItem() async {
+    if (_isSaving || _isDeleting) return;
+    if (!await SellerSessionGuard.ensureActive(
+      context,
+      onInvalid: widget.onSessionInvalid ?? () {},
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 22),
+              child: Text(
+                'Delete !',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w500),
+              ),
+            ),
+            const Divider(height: 1),
+            SizedBox(
+              height: 58,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text(
+                        'No',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        shape: const RoundedRectangleBorder(),
+                      ),
+                      child: const Text(
+                        'Yes',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    await _deleteItem();
+  }
+
+  Future<void> _deleteItem() async {
+    setState(() => _isDeleting = true);
+    try {
+      await _deleteItemStorageFiles();
+      await _deleteSeenRecord();
+      await FirebaseFirestore.instance.collection('items').doc(widget.docId).delete();
+      if (!mounted) return;
+      AppToast.show(context, 'Item deleted');
+      Navigator.of(context).pushAndRemoveUntil(
+        _instantListingsRoute(_isLiveItem ? 'live' : 'post'),
+        (_) => false,
+      );
+    } catch (e) {
+      _showMessage('Error: $e');
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  Future<void> _deleteItemStorageFiles() async {
+    final urls = <String>{};
+    final imageUrls = widget.itemData['image_urls'];
+    if (imageUrls is List) {
+      for (final url in imageUrls) {
+        final text = url?.toString().trim() ?? '';
+        if (text.isNotEmpty) urls.add(text);
+      }
+    }
+
+    final mediaFiles = widget.itemData['media_files'];
+    if (mediaFiles is List) {
+      for (final media in mediaFiles) {
+        if (media is! Map) continue;
+        final url = media['url']?.toString().trim() ?? '';
+        final thumbnailUrl = media['thumbnail_url']?.toString().trim() ?? '';
+        if (url.isNotEmpty) urls.add(url);
+        if (thumbnailUrl.isNotEmpty) urls.add(thumbnailUrl);
+      }
+    }
+
+    final legacyAudioUrl =
+        widget.itemData['audio_description_url']?.toString().trim() ?? '';
+    if (legacyAudioUrl.isNotEmpty) urls.add(legacyAudioUrl);
+
+    await Future.wait(urls.map((url) async {
+      try {
+        await FirebaseStorage.instance.refFromURL(url).delete();
+      } catch (_) {}
+    }));
+  }
+
+  Future<void> _deleteSeenRecord() async {
+    try {
+      final seenRef =
+          FirebaseFirestore.instance.collection('item_seen').doc(widget.docId);
+      final viewers = await seenRef.collection('viewers').limit(100).get();
+      final batch = FirebaseFirestore.instance.batch();
+      for (final viewer in viewers.docs) {
+        batch.delete(viewer.reference);
+        batch.delete(
+          FirebaseFirestore.instance
+              .collection('viewer_seen')
+              .doc(viewer.id)
+              .collection('items')
+              .doc(widget.docId),
+        );
+      }
+      batch.delete(seenRef);
+      await batch.commit();
+    } catch (_) {}
   }
 
   void _showMessage(String msg) {
@@ -451,16 +640,26 @@ class _ItemEditPageState extends State<ItemEditPage> {
               ),
             ],
           ),
-          bottomNavigationBar: const SellerBottomNavBar(
+          bottomNavigationBar: SellerBottomNavBar(
             currentIndex: 2,
-            onTap: _noopEditCameraNavTap,
-            backgroundColor: Color(0xFFF4FBF7),
+            onTap: _handleBottomNavTap,
+            backgroundColor: const Color(0xFFF4FBF7),
           ),
         ),
       );
     }
 
     final pageColor = _isLiveItem ? const Color(0xFFFFE9EC) : const Color(0xFFF4FBF7);
+    final contentDecoration = BoxDecoration(
+      color: _isLiveItem ? null : const Color(0xFFF4FBF7),
+      gradient: _isLiveItem
+          ? const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
+            )
+          : null,
+    );
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(statusBarColor: Colors.black, statusBarIconBrightness: Brightness.light),
       child: Scaffold(
@@ -468,29 +667,54 @@ class _ItemEditPageState extends State<ItemEditPage> {
         body: Column(
           children: [
             const AppStatusBar(),
-            Container(height: kToolbarHeight, color: pageColor, alignment: Alignment.centerLeft, child: IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.arrow_back))),
+            Container(
+              height: kToolbarHeight,
+              color: pageColor,
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
+                  ),
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: _EditDeletePill(
+                      isDeleting: _isDeleting,
+                      onTap: _isDeleting ? null : _confirmDeleteItem,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
-              child: ListView(
+              child: DecoratedBox(
+                decoration: contentDecoration,
+                child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
                   _buildMediaEditor(),
                   const SizedBox(height: 15),
-                  if (!_isLiveItem) ...[_buildTransitToggle(), const SizedBox(height: 14)],
                   _field(_nameController, 'Item Name', maxLength: 80),
                   const SizedBox(height: 14),
+                  if (!_isLiveItem) ...[
+                    _buildTransitToggle(),
+                    const SizedBox(height: 14),
+                  ],
                   if (_isLiveItem) ...[
                     Row(
                       children: [
-                        Expanded(flex: 3, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError)),
+                        Expanded(flex: 3, child: SizedBox(height: 56, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError))),
                         const SizedBox(width: 10),
                         Expanded(flex: 2, child: SizedBox(
                           height: 56,
                           child: DropdownButtonFormField<String>(
                             initialValue: _priceUnit,
                             isExpanded: true,
+                            isDense: false,
                             items: _priceUnits.map((u) => DropdownMenuItem(value: u, child: Text(u.replaceFirst('/ ', '')))).toList(),
                             onChanged: _isSaving ? null : (v) => setState(() => _priceUnit = v!),
-                            decoration: InputDecoration(filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
+                            decoration: InputDecoration(filled: true, fillColor: Colors.white, constraints: const BoxConstraints.tightFor(height: 56), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))),
                           ),
                         )),
                       ],
@@ -508,16 +732,33 @@ class _ItemEditPageState extends State<ItemEditPage> {
                       child: ElevatedButton(
                         onPressed: _isSaving ? null : _save,
                         style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                        child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : const Text('Update', style: TextStyle(fontSize: 16)),
+                        child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : const Text('Update', style: TextStyle(fontSize: 20)),
                       ),
                     ),
                   ),
                 ],
+                ),
               ),
             ),
           ],
         ),
+        bottomNavigationBar: SellerBottomNavBar(
+          currentIndex: 3,
+          onTap: _handleBottomNavTap,
+          backgroundColor: const Color(0xFFF4FBF7),
+        ),
       ),
+    );
+  }
+
+  void _handleBottomNavTap(int index) {
+    if (index == 3) {
+      Navigator.pop(context);
+      return;
+    }
+    Navigator.of(context).pushAndRemoveUntil(
+      _instantSellerTabRoute(index),
+      (_) => false,
     );
   }
 
@@ -539,8 +780,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   double get _buttonAlignmentSpacerHeight {
     if (_isLiveItem) return 4;
-    if (_isTransitPost) return 76;
-    return 20;
+    if (_isTransitPost) return 60;
+    return 4;
   }
 
   Widget _buildMediaEditor() {
@@ -616,7 +857,7 @@ class _EditSegmentedSelector extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
-      height: 40,
+      height: 56,
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
@@ -645,6 +886,50 @@ class _EditSegmentedSelector extends StatelessWidget {
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+class _EditDeletePill extends StatelessWidget {
+  const _EditDeletePill({required this.isDeleting, required this.onTap});
+
+  final bool isDeleting;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.red,
+            border: Border.all(color: Colors.black, width: 1.2),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: isDeleting
+              ? const SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text(
+                  'Delete',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+        ),
       ),
     );
   }

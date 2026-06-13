@@ -10,12 +10,19 @@ import '../utils/formatters.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
-import '../widgets/pull_down_refresh_area.dart';
 
 class SellerListingsTab extends StatefulWidget {
-  const SellerListingsTab({super.key, this.refreshTick = 0, this.onSessionInvalid});
+  const SellerListingsTab({
+    super.key,
+    this.refreshTick = 0,
+    this.initialStatus = 'post',
+    this.onReady,
+    this.onSessionInvalid,
+  });
 
   final int refreshTick;
+  final String initialStatus;
+  final ValueChanged<SellerListingsTabState>? onReady;
   final VoidCallback? onSessionInvalid;
 
   @override
@@ -31,7 +38,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   final _scrollController = ScrollController();
   
   final List<QueryDocumentSnapshot<Map<String, dynamic>>> _allDocs = [];
-  String _selectedStatus = 'post';
+  late String _selectedStatus = widget.initialStatus == 'live' ? 'live' : 'post';
   bool _isLoading = false;
   bool _hasMore = true;
 
@@ -40,6 +47,9 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _sessionFuture = SellerSession.current();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onReady?.call(this);
+    });
     _loadInitial();
   }
 
@@ -383,7 +393,18 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   Future<void> _openEdit(BuildContext context, String docId, Map<String, dynamic> item) async {
     if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
     if (!context.mounted) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => ItemEditPage(docId: docId, itemData: item, onSessionInvalid: widget.onSessionInvalid)));
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => ItemEditPage(
+          docId: docId,
+          itemData: item,
+          onSessionInvalid: widget.onSessionInvalid,
+        ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+    );
   }
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _getFilteredDocs(DateTime now) {
@@ -411,78 +432,111 @@ class SellerListingsTabState extends State<SellerListingsTab> {
               builder: (context, now, _) {
                 final docs = _getFilteredDocs(now);
 
-                return Column(
-                  children: [
-                    const _ListingsScrollableHeader(),
-                    _SellerInfoHeader(session: session),
-                    _ListingsStatusTabs(
-                        selectedStatus: _selectedStatus,
-                        onChanged: (status) {
-                          if (status != _selectedStatus) {
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            setState(() {
-                              _selectedStatus = status;
-                              _allDocs.clear();
-                              _hasMore = true;
-                              _nowNotifier.value = DateTime.now();
-                            });
-                            _loadInitial();
-                          }
-                        },
-                      ),
-                    Expanded(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: _selectedStatus == 'live' ? null : const Color(0xFFF4FBF7),
-                          gradient: _selectedStatus == 'live'
-                              ? const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
-                                )
-                              : null,
+                return DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: _selectedStatus == 'live'
+                        ? null
+                        : const Color(0xFFF4FBF7),
+                    gradient: _selectedStatus == 'live'
+                        ? const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
+                          )
+                        : null,
+                  ),
+                  child: RefreshIndicator(
+                    onRefresh: reloadItems,
+                    color: const Color(0xFFFF7801),
+                    backgroundColor: Colors.white,
+                    edgeOffset: 0,
+                    displacement: 42,
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        const SliverToBoxAdapter(
+                          child: _ListingsScrollableHeader(),
                         ),
-                        child: PullDownRefreshArea(
-                          onRefresh: reloadItems,
-                          child: CustomScrollView(
-                            controller: _scrollController,
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            slivers: [
-                              if (docs.isEmpty && !_isLoading)
-                                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(_selectedStatus == 'live' ? 'No live items listed yet' : 'No items listed yet', style: const TextStyle(fontSize: 16, color: Colors.grey))))
-                              else ...[
-                                SliverPadding(
-                                  padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-                                  sliver: SliverGrid.builder(
-                                    key: ValueKey(_selectedStatus + widget.refreshTick.toString()),
-                                    itemCount: docs.length,
-                                    addAutomaticKeepAlives: false,
-                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                    itemBuilder: (context, index) {
-                                      final doc = docs[index];
-                                      final data = doc.data();
-                                      return _ListingManageCard(
-                                        key: ValueKey(doc.id),
-                                        docId: doc.id,
-                                        item: data,
-                                        uploadedAgo: _uploadedAgo(data['created_at'], now),
-                                        expiryText: _expiryText(data, now),
-                                        formatPrice: formatPrice,
-                                        onEdit: _openEdit,
-                                        onRenew: _confirmRenew,
-                                        onDelete: _confirmDelete,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                if (_isLoading) const SliverToBoxAdapter(child: _ListingsSkeletonGrid()),
-                              ],
-                            ],
+                        SliverToBoxAdapter(
+                          child: _SellerInfoHeader(session: session),
+                        ),
+                        SliverToBoxAdapter(
+                          child: _ListingsStatusTabs(
+                            selectedStatus: _selectedStatus,
+                            onChanged: (status) {
+                              if (status != _selectedStatus) {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                setState(() {
+                                  _selectedStatus = status;
+                                  _allDocs.clear();
+                                  _hasMore = true;
+                                  _nowNotifier.value = DateTime.now();
+                                });
+                                _loadInitial();
+                              }
+                            },
                           ),
                         ),
-                      ),
+                        if (docs.isEmpty && !_isLoading)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Text(
+                                _selectedStatus == 'live'
+                                    ? 'No live items listed yet'
+                                    : 'No items listed yet',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ),
+                          )
+                        else ...[
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+                            sliver: SliverGrid.builder(
+                              key: ValueKey(
+                                _selectedStatus + widget.refreshTick.toString(),
+                              ),
+                              itemCount: docs.length,
+                              addAutomaticKeepAlives: false,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 4,
+                                mainAxisSpacing: 2,
+                                childAspectRatio: 0.58,
+                              ),
+                              itemBuilder: (context, index) {
+                                final doc = docs[index];
+                                final data = doc.data();
+                                return _ListingManageCard(
+                                  key: ValueKey(doc.id),
+                                  docId: doc.id,
+                                  item: data,
+                                  uploadedAgo: _uploadedAgo(
+                                    data['created_at'],
+                                    now,
+                                  ),
+                                  expiryText: _expiryText(data, now),
+                                  formatPrice: formatPrice,
+                                  onEdit: _openEdit,
+                                  onRenew: _confirmRenew,
+                                  onDelete: _confirmDelete,
+                                );
+                              },
+                            ),
+                          ),
+                          if (_isLoading)
+                            const SliverToBoxAdapter(
+                              child: _ListingsSkeletonGrid(),
+                            ),
+                        ],
+                      ],
                     ),
-                  ],
+                  ),
                 );
               },
             ),

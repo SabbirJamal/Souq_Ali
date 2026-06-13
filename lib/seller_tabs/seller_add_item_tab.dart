@@ -180,7 +180,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if (_selectedMedia.isEmpty) { _showMessage('Minimum 1 media required'); return; }
     final name = _nameController.text.trim();
     final loc = _isTransitPost ? '🚚 Transit' : _locationController.text.trim();
-    if (loc.isEmpty) { setState(() => _showLocationError = true); return; }
     final normPrice = _isLiveItem ? _normalizePrice(_priceController.text) : '';
     if (_isLiveItem && (normPrice == null || double.parse(normPrice) <= 0)) { setState(() => _showPriceError = true); _priceFocusNode.requestFocus(); return; }
     final draft = _ItemUploadDraft(
@@ -200,7 +199,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       if (s == null) return;
       if (!mounted) return;
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
-      uploadId = UploadStatusManager.uploading(thumbnail: draft.media.first.file);
+      uploadId = UploadStatusManager.uploading(
+        target: draft.isLive ? UploadStatusTarget.live : UploadStatusTarget.feed,
+        thumbnail: draft.media.first.file,
+      );
       _clearForm();
       widget.onItemAddedDone?.call(draft.isLive);
       if (mounted) setState(() => _isSubmitting = false);
@@ -209,7 +211,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final price = draft.isLive ? 'OMR ${_formatPriceWithCommas(draft.normalizedPrice)} ${draft.priceUnit}' : '';
       UploadStatusManager.progress(uploadId, 0.96);
       
-      await FirebaseFirestore.instance.collection('items').add({
+      final itemRef = FirebaseFirestore.instance.collection('items').doc();
+      final batch = FirebaseFirestore.instance.batch();
+      batch.set(itemRef, {
         'seller_uid': s.sellerId, 'seller_name': s.name, 'seller_phone': s.phoneNumber,
         'status': draft.isLive ? 'live' : 'post', 'is_transit': draft.isTransit, 'item_name': draft.name,
         'item_price': price, 'price_number': draft.normalizedPrice, 'price_unit': draft.isLive ? draft.priceUnit : '',
@@ -217,6 +221,13 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'media_files': uploaded.map((m) => m.toMap()).toList(),
         'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: draft.isLive ? 2 : 18))),
       });
+      if (!draft.isTransit) {
+        batch.update(
+          FirebaseFirestore.instance.collection('sellers').doc(s.sellerId),
+          {'location': draft.location},
+        );
+      }
+      await batch.commit();
       widget.onItemUploadSuccess?.call(draft.isLive);
       UploadStatusManager.success(uploadId);
     } catch (e) {
