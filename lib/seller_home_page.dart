@@ -278,7 +278,15 @@ class _SellerHomePageState extends State<SellerHomePage> {
           }
         },
       ),
-      1 => SellerLiveTab(feedKey: _liveFeedKey),
+      1 => SellerLiveTab(
+        feedKey: _liveFeedKey,
+        chromeVisibleListenable: _chromeVisible,
+        onSearchActiveChanged: (isActive) {
+          if (isActive) {
+            _setChromeVisible(true);
+          }
+        },
+      ),
       2 => widget.isSellerMode
           ? SellerAddItemTab(
               key: _addItemKey,
