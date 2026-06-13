@@ -1,13 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../item_edit_page.dart';
 import '../seller_session.dart';
 import '../seller_session_guard.dart';
 import '../utils/formatters.dart';
+import '../utils/price_input.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/app_pull_refresh.dart';
 import '../widgets/item_card.dart';
 import '../widgets/price_with_currency.dart';
 
@@ -257,11 +258,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   String? _normalizeRenewPrice(String value) {
-    final cleanValue = value.replaceAll(',', '').trim();
-    if (!RegExp(r'^\d+(\.\d{0,3})?$').hasMatch(cleanValue)) return null;
-    final parsed = double.tryParse(cleanValue);
-    if (parsed == null || parsed <= 0) return null;
-    return parsed.toStringAsFixed(3);
+    return normalizePriceInput(value);
   }
 
   String _formatRenewPrice(String value) {
@@ -387,6 +384,8 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     });
 
     if (!mounted) return;
+    await _loadInitial();
+    if (!mounted) return;
     AppToast.show(this.context, 'Live item renewed');
   }
 
@@ -445,12 +444,9 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                           )
                         : null,
                   ),
-                  child: RefreshIndicator(
+                  child: AppPullRefresh(
                     onRefresh: reloadItems,
-                    color: const Color(0xFFFF7801),
-                    backgroundColor: Colors.white,
-                    edgeOffset: 0,
-                    displacement: 42,
+                    indicatorTop: 132,
                     child: CustomScrollView(
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -708,15 +704,67 @@ class _RenewDialog extends StatefulWidget {
 class _RenewDialogState extends State<_RenewDialog> {
   late final TextEditingController _priceController;
   late String _selectedUnit;
+  late String _lastValidPriceText;
   String? _priceError;
   @override
   void initState() {
     super.initState();
-    _priceController = TextEditingController(text: widget.initialPrice);
+    _priceController = TextEditingController(text: _formatEditingPrice(widget.initialPrice));
+    _lastValidPriceText = _priceController.text;
     _selectedUnit = widget.initialUnit;
   }
   @override
   void dispose() { _priceController.dispose(); super.dispose(); }
+
+  void _handlePriceChanged(String value) {
+    final raw = value.replaceAll(',', '');
+    if ('.'.allMatches(raw).length > 1) {
+      _setPriceText(_lastValidPriceText);
+      return;
+    }
+    final next = raw.startsWith('.') ? '0$raw' : raw;
+    if (next.isNotEmpty && !RegExp(r'^\d+\.?\d*$').hasMatch(next)) {
+      _setPriceText(_lastValidPriceText);
+      return;
+    }
+    final parsed = double.tryParse(next);
+    if (parsed != null && parsed > maxAllowedPrice) {
+      _setPriceText(_lastValidPriceText);
+      return;
+    }
+    final formatted = _formatEditingPrice(next);
+    _lastValidPriceText = formatted;
+    if (formatted != value) _setPriceText(formatted);
+    if (_priceError != null) setState(() => _priceError = null);
+  }
+
+  void _setPriceText(String value) {
+    _priceController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  String _formatEditingPrice(String value) {
+    final clean = value.replaceAll(',', '');
+    if (clean.isEmpty) return '';
+    final parts = clean.split('.');
+    final whole = _formatWholeNumber(parts.first);
+    if (clean.endsWith('.')) return '$whole.';
+    return parts.length == 2 ? '$whole.${parts.last}' : whole;
+  }
+
+  String _formatWholeNumber(String value) {
+    final digits = value.replaceFirst(RegExp(r'^0+(?=\d)'), '');
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      final remaining = digits.length - i;
+      buffer.write(digits[i]);
+      if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
+    }
+    return buffer.toString();
+  }
+
   void _submit() {
     final normalized = widget.normalizePrice(_priceController.text);
     if (normalized == null) { setState(() => _priceError = 'Price Required'); return; }
@@ -737,7 +785,7 @@ class _RenewDialogState extends State<_RenewDialog> {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
             child: Row(
               children: [
-                Expanded(flex: 3, child: TextField(controller: _priceController, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: const [_RenewPriceInputFormatter()], onChanged: (_) { if (_priceError != null) setState(() => _priceError = null); }, decoration: InputDecoration(isDense: true, labelText: _priceError ?? 'Price', errorText: _priceError, prefixIcon: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))))),
+                Expanded(flex: 3, child: TextField(controller: _priceController, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: const [PriceInputFormatter()], onChanged: _handlePriceChanged, decoration: InputDecoration(isDense: true, labelText: _priceError ?? 'Price', errorText: _priceError, prefixIcon: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))))),
                 const SizedBox(width: 10),
                 Expanded(flex: 2, child: DropdownButtonFormField<String>(initialValue: _selectedUnit, decoration: InputDecoration(isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12))), items: widget.priceUnits.map((unit) => DropdownMenuItem(value: unit, child: Text(unit.replaceFirst('/ ', '')))).toList(), onChanged: (value) { if (value != null) setState(() => _selectedUnit = value); })),
               ],
@@ -757,24 +805,6 @@ class _RenewDialogState extends State<_RenewDialog> {
         ],
       ),
     );
-  }
-}
-
-class _RenewPriceInputFormatter extends TextInputFormatter {
-  const _RenewPriceInputFormatter();
-
-  static final _validPrice = RegExp(r'^\d*\.?\d{0,3}$');
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text.replaceAll(',', '');
-    if (text.isEmpty || _validPrice.hasMatch(text)) {
-      return newValue;
-    }
-    return oldValue;
   }
 }
 

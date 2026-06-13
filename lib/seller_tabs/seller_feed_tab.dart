@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
+import '../widgets/app_pull_refresh.dart';
 import '../widgets/item_card.dart';
 
 class SellerFeedTab extends StatefulWidget {
@@ -369,12 +370,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
     final content = Stack(
       children: [
-        RefreshIndicator(
+        AppPullRefresh(
           onRefresh: _refreshFeed,
-          color: const Color(0xFFFF7801),
-          backgroundColor: Colors.white,
-          edgeOffset: 0,
-          displacement: 42,
+          indicatorTop: 96,
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
             child: CustomScrollView(

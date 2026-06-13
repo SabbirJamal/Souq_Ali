@@ -14,6 +14,7 @@ import 'seller_home_page.dart';
 import 'seller_session_guard.dart';
 import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
+import 'utils/price_input.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/item_add/selected_media_preview_dialog.dart';
 import 'widgets/app_status_bar.dart';
@@ -55,7 +56,6 @@ class ItemEditPage extends StatefulWidget {
 
 class _ItemEditPageState extends State<ItemEditPage> {
   static const _maxMediaCount = 8;
-  static const _maxPriceValue = 1000000.0;
   static const _maxMediaMessage =
       '8 Media selected, please delete media to select new media';
 
@@ -308,10 +308,14 @@ class _ItemEditPageState extends State<ItemEditPage> {
           ? firstMedia!.existing!.thumbnailUrl!.trim()
           : firstMedia?.existing?.url,
     );
-    Navigator.of(context).pushAndRemoveUntil(
-      _instantListingsRoute(isLiveItem ? 'live' : 'post'),
-      (_) => false,
-    );
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        _instantListingsRoute(isLiveItem ? 'live' : 'post'),
+        (_) => false,
+      );
+    }
 
     try {
       final newEntries = mediaSnapshot.where((m) => !m.isExisting).toList();
@@ -571,7 +575,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     if ('.'.allMatches(raw).length > 1) { _setPriceText(_lastValidPriceText); return; }
     var next = raw.startsWith('.') ? '0$raw' : raw;
     if (next.isNotEmpty && !RegExp(r'^\d+\.?\d*$').hasMatch(next)) { _setPriceText(_lastValidPriceText); return; }
-    if (double.tryParse(next) != null && double.parse(next) > _maxPriceValue) { _setPriceText(_lastValidPriceText); return; }
+    if (double.tryParse(next) != null && double.parse(next) > maxAllowedPrice) { _setPriceText(_lastValidPriceText); return; }
     final fmt = _formatEditingPrice(next);
     _lastValidPriceText = fmt;
     if (fmt != val) _setPriceText(fmt);
@@ -607,9 +611,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   String? _normalizePrice(String val) {
-    final clean = val.replaceAll(',', '');
-    final p = double.tryParse(clean);
-    return (p == null || p > _maxPriceValue) ? null : p.toStringAsFixed(3);
+    return normalizePriceInput(val);
   }
 
   @override
@@ -704,7 +706,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                   if (_isLiveItem) ...[
                     Row(
                       children: [
-                        Expanded(flex: 3, child: SizedBox(height: 56, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError))),
+                          Expanded(flex: 3, child: SizedBox(height: 56, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefixIconWidget: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focusNode: _priceFocusNode, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: const [PriceInputFormatter()], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError))),
                         const SizedBox(width: 10),
                         Expanded(flex: 2, child: SizedBox(
                           height: 56,

@@ -14,6 +14,7 @@ import '../camera_capture_page.dart';
 import '../seller_session.dart';
 import '../seller_session_guard.dart';
 import '../upload_status_manager.dart';
+import '../utils/price_input.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_add/selected_media_preview_dialog.dart';
 import '../widgets/item_edit/edit_widgets.dart';
@@ -39,7 +40,6 @@ class SellerAddItemTab extends StatefulWidget {
 
 class SellerAddItemTabState extends State<SellerAddItemTab> {
   static const _maxMediaCount = 8;
-  static const _maxPriceValue = 1000000.0;
   static const _fieldHeight = 56.0;
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
@@ -328,7 +328,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     if ('.'.allMatches(raw).length > 1) { _setPriceText(_lastValidPriceText); return; }
     final next = raw.startsWith('.') ? '0$raw' : raw;
     if (next.isNotEmpty && !RegExp(r'^\d+\.?\d*$').hasMatch(next)) { _setPriceText(_lastValidPriceText); return; }
-    if (double.tryParse(next) != null && double.parse(next) > _maxPriceValue) { _setPriceText(_lastValidPriceText); return; }
+    if (double.tryParse(next) != null && double.parse(next) > maxAllowedPrice) { _setPriceText(_lastValidPriceText); return; }
     final fmt = _formatEditingPrice(next); _lastValidPriceText = fmt; if (fmt != v) _setPriceText(fmt);
   }
 
@@ -358,8 +358,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   String? _normalizePrice(String v) {
-    final p = double.tryParse(v.replaceAll(',', ''));
-    return (p == null || p > _maxPriceValue) ? null : p.toStringAsFixed(3);
+    return normalizePriceInput(v);
   }
 
   @override
@@ -402,7 +401,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
           if (_isLiveItem) ...[
             Builder(builder: (context) {
               return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Expanded(flex: 3, child: SizedBox(height: livePriceFieldHeight, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError))),
+                  Expanded(flex: 3, child: SizedBox(height: livePriceFieldHeight, child: _field(_priceController, _showPriceError ? 'PRICE REQUIRED' : 'Price', prefix: const Padding(padding: EdgeInsets.all(12), child: RiyalCurrencyIcon(size: 22)), focus: _priceFocusNode, keyboard: const TextInputType.numberWithOptions(decimal: true), input: const [PriceInputFormatter()], onTap: () { if (_priceController.text == '0') _setPriceText(''); if (_showPriceError) setState(() => _showPriceError = false); }, onChanged: _handlePriceChanged, hasErrorBorder: _showPriceError))),
                   const SizedBox(width: 10),
                     Expanded(
                       flex: 2,
