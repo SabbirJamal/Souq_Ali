@@ -101,8 +101,8 @@ class _SouqaliAppState extends State<SouqaliApp> {
               backgroundColor: Color(0xFFF4FBF7),
               body: Center(
                 child: SizedBox(
-                  width: 100,
-                  height: 100,
+                  width: 152,
+                  height: 152,
                   child: Image(
                     image: AssetImage('assets/branding/logo.png'),
                     fit: BoxFit.contain,
