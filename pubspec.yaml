@@ -50,7 +50,6 @@ dependencies:
   permission_handler: ^12.0.1
   lottie: ^3.3.3
   cloud_functions: ^6.3.2
-  ffmpeg_kit_flutter_new: ^4.2.1
 
 dev_dependencies:
   flutter_test:

@@ -60,22 +60,37 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
       _preloadedVideoControllers[first.url]?.play();
     }).catchError((_) {}) : null;
 
-    final firstImage = !first.isVideo ? Future.value() : first.thumbnailUrl?.trim().isNotEmpty == true
-        ? precacheImage(CachedNetworkImageProvider(first.thumbnailUrl!), context).catchError((_) {})
+    final firstImageUrl = first.isVideo ? first.thumbnailUrl?.trim() ?? '' : first.url.trim();
+    final firstImage = firstImageUrl.isNotEmpty
+        ? _precacheDetailImage(firstImageUrl).catchError((_) {})
         : Future.value();
+    final remainingImages = media.skip(1).map((m) {
+      final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : m.url.trim();
+      return url.isEmpty ? Future.value() : _precacheDetailImage(url).catchError((_) {});
+    });
 
-    await Future.any([Future.wait([firstImage, ?firstVid]), Future.delayed(const Duration(milliseconds: 900))]);
+    await Future.any([
+      Future.wait([firstImage, ?firstVid, ...remainingImages]),
+      Future.delayed(const Duration(milliseconds: 1300)),
+    ]);
     if (mounted) setState(() => _isPreparingDetail = false);
     _precacheRemainingDetailMedia(media.skip(1));
+  }
+
+  Future<void> _precacheDetailImage(String url) {
+    return precacheImage(
+      CachedNetworkImageProvider(url, maxWidth: 1600),
+      context,
+    );
   }
 
   void _precacheRemainingDetailMedia(Iterable<MediaItem> media) {
     Future.delayed(const Duration(milliseconds: 200), () {
       if (!mounted) return;
       for (final m in media) {
-        final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : (m.thumbnailUrl?.trim().isNotEmpty == true ? m.thumbnailUrl!.trim() : m.url);
+        final url = m.isVideo ? m.thumbnailUrl?.trim() ?? '' : m.url.trim();
         if (url.isNotEmpty) {
-          precacheImage(CachedNetworkImageProvider(url), context).catchError((_) {});
+          _precacheDetailImage(url).catchError((_) {});
         }
       }
     });

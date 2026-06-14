@@ -49,3 +49,6 @@ app.*.map.json
 # Firebase Functions
 /functions/node_modules/
 /functions/lib/
+
+# Cloud Run media processor
+/media_processor/node_modules/

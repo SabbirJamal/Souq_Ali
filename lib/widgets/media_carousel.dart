@@ -5,11 +5,29 @@ import 'package:flutter/scheduler.dart';
 import 'package:video_player/video_player.dart';
 
 class MediaItem {
-  const MediaItem({required this.url, required this.type, this.thumbnailUrl});
+  const MediaItem({
+    required this.url,
+    required this.type,
+    this.thumbnailUrl,
+    this.rawThumbnailUrl,
+    this.rawUrl,
+    this.path,
+    this.rawPath,
+    this.optimizedPath,
+    this.thumbnailPath,
+    this.processingStatus,
+  });
 
   final String url;
   final String type;
   final String? thumbnailUrl;
+  final String? rawThumbnailUrl;
+  final String? rawUrl;
+  final String? path;
+  final String? rawPath;
+  final String? optimizedPath;
+  final String? thumbnailPath;
+  final String? processingStatus;
 
   bool get isVideo => type == 'video';
 }
@@ -25,6 +43,13 @@ List<MediaItem> mediaItemsFromMap(Map<String, dynamic> item) {
             url: data['url']?.toString() ?? '',
             type: data['type']?.toString() ?? 'image',
             thumbnailUrl: data['thumbnail_url']?.toString(),
+            rawThumbnailUrl: data['raw_thumbnail_url']?.toString(),
+            rawUrl: data['raw_url']?.toString(),
+            path: data['path']?.toString(),
+            rawPath: data['raw_path']?.toString(),
+            optimizedPath: data['optimized_path']?.toString(),
+            thumbnailPath: data['thumbnail_path']?.toString(),
+            processingStatus: data['processing_status']?.toString(),
           );
         })
         .where((media) => media.url.isNotEmpty)

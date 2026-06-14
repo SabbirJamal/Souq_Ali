@@ -230,6 +230,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'item_price': price, 'price_number': draft.normalizedPrice, 'price_unit': draft.isLive ? draft.priceUnit : '',
         'location': draft.location, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),
         'media_files': uploaded.map((m) => m.toMap()).toList(),
+        'media_processing_status': 'pending',
         'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: draft.isLive ? 2 : 18))),
       });
       if (!draft.isTransit) {
@@ -268,7 +269,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       );
       final thumb = m.isVideo ? await _uploadThumb(comp, uid, name, i, true) : await _uploadThumb(comp, uid, name, i, false);
       UploadStatusManager.progress(uploadId, ((i + 1) / total) * 0.86);
-      res.add(_UploadedMedia(url: await snap.ref.getDownloadURL(), type: m.type, thumbnailUrl: thumb));
+      res.add(_UploadedMedia(
+        url: await snap.ref.getDownloadURL(),
+        type: m.type,
+        path: ref.fullPath,
+        thumbnailUrl: thumb,
+      ));
     }
     return res;
   }
@@ -679,9 +685,22 @@ class _AddItemSegmentButton extends StatelessWidget {
 }
 
 class _UploadedMedia {
-  const _UploadedMedia({required this.url, required this.type, this.thumbnailUrl});
-  final String url, type; final String? thumbnailUrl;
-  Map<String, dynamic> toMap() => {'url': url, 'type': type, if (thumbnailUrl != null) 'thumbnail_url': thumbnailUrl};
+  const _UploadedMedia({
+    required this.url,
+    required this.type,
+    required this.path,
+    this.thumbnailUrl,
+  });
+  final String url, type, path; final String? thumbnailUrl;
+  Map<String, dynamic> toMap() => {
+        'url': url,
+        'raw_url': url,
+        'path': path,
+        'raw_path': path,
+        'type': type,
+        'processing_status': 'pending',
+        if (thumbnailUrl != null) 'thumbnail_url': thumbnailUrl,
+      };
 }
 
 class _ItemUploadDraft {

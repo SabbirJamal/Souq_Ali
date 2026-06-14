@@ -337,9 +337,17 @@ class _ItemEditPageState extends State<ItemEditPage> {
       final imageUrls = allMedia.where((m) => !m.isVideo).map((m) => m.url).toList();
       final mediaFileMaps = allMedia.map((m) => {
         'url': m.url,
+        if (m.rawUrl != null) 'raw_url': m.rawUrl,
+        if (m.path != null) 'path': m.path,
+        if (m.rawPath != null) 'raw_path': m.rawPath,
         'type': m.type,
         if (m.thumbnailUrl != null) 'thumbnail_url': m.thumbnailUrl,
+        if (m.rawThumbnailUrl != null) 'raw_thumbnail_url': m.rawThumbnailUrl,
+        if (m.thumbnailPath != null) 'thumbnail_path': m.thumbnailPath,
+        if (m.optimizedPath != null) 'optimized_path': m.optimizedPath,
+        if (m.processingStatus != null) 'processing_status': m.processingStatus,
       }).toList();
+      final needsMediaProcessing = allMedia.any((m) => m.processingStatus != 'done');
 
       final priceUnit = isLiveItem ? selectedPriceUnit : '';
       final itemPrice = isLiveItem ? 'OMR ${_formatPriceWithCommas(normalizedPrice!)} $priceUnit' : '';
@@ -353,6 +361,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
         'item_price': itemPrice,
         'location': location,
         'media_files': mediaFileMaps,
+        'media_processing_status': needsMediaProcessing ? 'pending' : 'done',
         'image_urls': imageUrls,
         'updated_at': FieldValue.serverTimestamp(),
       };
@@ -384,7 +393,16 @@ class _ItemEditPageState extends State<ItemEditPage> {
           ? await _uploadVideoThumbnail(videoFile: compressed, sellerUid: sellerUid, fileName: int.parse(fileName.split('_').first), index: i)
           : await _uploadImageThumbnail(imageFile: compressed, sellerUid: sellerUid, fileName: int.parse(fileName.split('_').first), index: i);
       
-      uploaded[entry] = MediaItem(url: await snap.ref.getDownloadURL(), type: sel.type, thumbnailUrl: thumb);
+      final url = await snap.ref.getDownloadURL();
+      uploaded[entry] = MediaItem(
+        url: url,
+        rawUrl: url,
+        path: ref.fullPath,
+        rawPath: ref.fullPath,
+        type: sel.type,
+        thumbnailUrl: thumb,
+        processingStatus: 'pending',
+      );
       UploadStatusManager.progress(uploadId, ((i + 1) / total) * 0.86);
     }
     return uploaded;

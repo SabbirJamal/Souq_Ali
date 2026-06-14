@@ -1,5 +1,6 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
 const { FieldPath, getFirestore, Timestamp } = require("firebase-admin/firestore");
@@ -9,9 +10,12 @@ initializeApp();
 
 const db = getFirestore();
 const bucket = getStorage().bucket();
-const DEFAULT_FEED_LIMIT = 30;
+const DEFAULT_FEED_LIMIT = 16;
+const MAX_FEED_LIMIT = 32;
 const FEED_FETCH_BATCH_SIZE = 100;
 const FEED_MAX_SCANNED_DOCS = 600;
+const MEDIA_PROCESSOR_URL =
+  "https://bizsooq-media-processor-r7y3ppqj6q-uc.a.run.app";
 const FEED_ITEM_FIELDS = [
   "created_at",
   "expires_at",
@@ -21,6 +25,7 @@ const FEED_ITEM_FIELDS = [
   "item_price",
   "location",
   "media_files",
+  "media_processing_status",
   "price_number",
   "price_unit",
   "seller_name",
@@ -186,6 +191,94 @@ exports.markFeedItemsSeen = onCall(
   },
 );
 
+exports.processNewItemMedia = onDocumentCreated(
+  {
+    document: "items/{itemId}",
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "512MiB",
+  },
+  async (event) => {
+    const itemId = event.params.itemId;
+    const item = event.data && event.data.data ? event.data.data() : {};
+    const mediaFiles = Array.isArray(item.media_files) ? item.media_files : [];
+
+    if (mediaFiles.length === 0) {
+      logger.info("Skipping media processor; item has no media.", { itemId });
+      return;
+    }
+
+    try {
+      logger.info("Calling media processor.", {
+        itemId,
+        mediaCount: mediaFiles.length,
+        url: MEDIA_PROCESSOR_URL,
+      });
+
+      const response = await fetch(`${MEDIA_PROCESSOR_URL}/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Media processor failed ${response.status}: ${body}`);
+      }
+
+      const body = await response.text();
+      logger.info("Media processor completed.", { itemId, response: body });
+    } catch (error) {
+      logger.error("Failed calling media processor.", { itemId, error });
+      throw error;
+    }
+  },
+);
+
+exports.processUpdatedItemMedia = onDocumentUpdated(
+  {
+    document: "items/{itemId}",
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "512MiB",
+  },
+  async (event) => {
+    const itemId = event.params.itemId;
+    const before = event.data && event.data.before ? event.data.before.data() : {};
+    const after = event.data && event.data.after ? event.data.after.data() : {};
+    const mediaFiles = Array.isArray(after.media_files) ? after.media_files : [];
+
+    if (mediaFiles.length === 0 || !hasMediaWaitingForProcessing(after, before)) {
+      return;
+    }
+
+    try {
+      logger.info("Calling media processor for updated item.", {
+        itemId,
+        mediaCount: mediaFiles.length,
+        url: MEDIA_PROCESSOR_URL,
+      });
+
+      const response = await fetch(`${MEDIA_PROCESSOR_URL}/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Media processor failed ${response.status}: ${body}`);
+      }
+
+      const body = await response.text();
+      logger.info("Media processor completed for updated item.", { itemId, response: body });
+    } catch (error) {
+      logger.error("Failed calling media processor for updated item.", { itemId, error });
+      throw error;
+    }
+  },
+);
+
 exports.cleanupExpiredItems = onSchedule(
   {
     schedule: "every 6 hours",
@@ -286,6 +379,20 @@ function collectMediaUrls(item) {
         media.thumbnail_url.trim()
       ) {
         urls.add(media.thumbnail_url);
+      }
+      if (
+        media &&
+        typeof media.raw_url === "string" &&
+        media.raw_url.trim()
+      ) {
+        urls.add(media.raw_url);
+      }
+      if (
+        media &&
+        typeof media.raw_thumbnail_url === "string" &&
+        media.raw_thumbnail_url.trim()
+      ) {
+        urls.add(media.raw_thumbnail_url);
       }
     }
   }
@@ -404,7 +511,7 @@ function normalizedLimit(value) {
   if (!Number.isFinite(parsed)) {
     return DEFAULT_FEED_LIMIT;
   }
-  return Math.min(Math.max(Math.floor(parsed), 1), DEFAULT_FEED_LIMIT);
+  return Math.min(Math.max(Math.floor(parsed), 1), MAX_FEED_LIMIT);
 }
 
 function normalizeCursor(cursor) {
@@ -432,7 +539,31 @@ function isItemVisible(item, now) {
   if (status !== "post" && status !== "live") {
     return false;
   }
+  if (stringValue(item.media_processing_status) === "pending") {
+    return false;
+  }
   return isItemExpired(item, now) === false;
+}
+
+function hasMediaWaitingForProcessing(after, before) {
+  const status = stringValue(after.media_processing_status);
+  if (status !== "pending") {
+    return false;
+  }
+  if (stringValue(before.media_processing_status) === "processing") {
+    return false;
+  }
+  return (Array.isArray(after.media_files) ? after.media_files : []).some((media) => {
+    if (!media || typeof media !== "object") {
+      return false;
+    }
+    const type = stringValue(media.type).toLowerCase();
+    return (
+      (type === "image" || type === "photo" || type === "video") &&
+      stringValue(media.url) &&
+      stringValue(media.processing_status) !== "done"
+    );
+  });
 }
 
 function serializeItem(item) {

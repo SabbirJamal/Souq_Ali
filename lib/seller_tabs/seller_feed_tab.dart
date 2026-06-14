@@ -30,8 +30,8 @@ class SellerFeedTab extends StatefulWidget {
 }
 
 class SellerFeedTabState extends State<SellerFeedTab> {
-  static const _initialFetchLimit = 15;
-  static const _nextFetchLimit = 30;
+  static const _initialFetchLimit = 16;
+  static const _nextFetchLimit = 32;
   static const _mergeLatestLimit = 20;
 
   final _searchController = TextEditingController();
@@ -87,7 +87,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _maybeLoadMoreFromBuilder(int index, int total) {
-    if (total - index > 8 || _isLoading || !_hasMore || _isSearchOpen) return;
+    if (total - index > 12 || _isLoading || !_hasMore || _isSearchOpen) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadMore();
     });
@@ -106,11 +106,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         return;
       }
 
+      final requestedLimit = isInitial ? _initialFetchLimit : _nextFetchLimit;
       final result = await FeedService.fetchItems(
         viewerId: viewerId,
         status: widget.itemStatus,
         cursor: isInitial ? null : _feedCursor,
-        limit: isInitial ? _initialFetchLimit : _nextFetchLimit,
+        limit: requestedLimit,
       );
       if (!mounted) return;
       setState(() {
@@ -120,7 +121,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         final existingIds = _allDocs.map((doc) => doc.id).toSet();
         _allDocs.addAll(result.items.where((doc) => !existingIds.contains(doc.id)));
         _feedCursor = result.cursor;
-        _hasMore = result.hasMore;
+        _hasMore = result.hasMore || result.items.length >= requestedLimit;
         _isLoading = false;
         _cachedFilteredDocs = null;
       });
