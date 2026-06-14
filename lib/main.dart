@@ -4,10 +4,12 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'camera_capture_page.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
+import 'services/app_update_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,8 +62,11 @@ class SouqaliApp extends StatefulWidget {
 
 class _SouqaliAppState extends State<SouqaliApp> {
   // Hoisted so a root rebuild can't recreate the future and re-show the splash.
+  late final Future<AppUpdateDecision> _updateFuture =
+      widget.firebaseFuture.then((_) => AppUpdateService.check());
   late final Future<List<dynamic>> _readyFuture =
-      Future.wait([widget.firebaseFuture, widget.sessionFuture]);
+      Future.wait([widget.firebaseFuture, widget.sessionFuture, _updateFuture]);
+  bool _didShowUpdateDialog = false;
 
   @override
   Widget build(BuildContext context) {
@@ -113,11 +118,83 @@ class _SouqaliAppState extends State<SouqaliApp> {
           }
 
           final session = snapshot.data?[1] as SellerSession?;
-          return session != null
+          final updateDecision = snapshot.data?[2] as AppUpdateDecision?;
+          final home = session != null
               ? const SellerHomePage()
               : const SellerHomePage(isSellerMode: false);
+          if (updateDecision?.isRequired == true) {
+            _showUpdateDialogOnce(context, updateDecision!);
+          }
+          return home;
         },
       ),
     );
+  }
+
+  void _showUpdateDialogOnce(
+    BuildContext context,
+    AppUpdateDecision decision,
+  ) {
+    if (_didShowUpdateDialog) return;
+    _didShowUpdateDialog = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!context.mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _ForcedUpdateDialog(decision: decision),
+      );
+    });
+  }
+}
+
+class _ForcedUpdateDialog extends StatelessWidget {
+  const _ForcedUpdateDialog({required this.decision});
+
+  final AppUpdateDecision decision;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        title: const Text(
+          'Update Required',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          decision.message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 16, height: 1.35),
+        ),
+        actionsPadding: EdgeInsets.zero,
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: TextButton(
+              onPressed: () => _openStore(decision.storeUrl),
+              child: const Text(
+                'Update',
+                style: TextStyle(
+                  color: Color(0xFFFF7801),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openStore(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 }
