@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart' as permissions;
 import 'package:url_launcher/url_launcher.dart';
@@ -12,7 +13,8 @@ import 'seller_session.dart';
 import 'services/app_update_service.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   SystemChrome.setEnabledSystemUIMode(
     SystemUiMode.manual,
     overlays: SystemUiOverlay.values,
@@ -26,11 +28,12 @@ Future<void> main() async {
   // Parallelize Firebase and Session loading
   final firebaseFuture = Firebase.initializeApp();
   final sessionFuture = SellerSession.current();
-  unawaited(_prewarmCameraIfPermitted());
+  final cameraPrewarmFuture = _prewarmCameraIfPermitted();
 
   runApp(SouqaliApp(
     firebaseFuture: firebaseFuture,
     sessionFuture: sessionFuture,
+    cameraPrewarmFuture: cameraPrewarmFuture,
   ));
 }
 
@@ -51,10 +54,12 @@ class SouqaliApp extends StatefulWidget {
     super.key,
     required this.firebaseFuture,
     required this.sessionFuture,
+    required this.cameraPrewarmFuture,
   });
 
   final Future<void> firebaseFuture;
   final Future<SellerSession?> sessionFuture;
+  final Future<void> cameraPrewarmFuture;
 
   @override
   State<SouqaliApp> createState() => _SouqaliAppState();
@@ -64,9 +69,14 @@ class _SouqaliAppState extends State<SouqaliApp> {
   // Hoisted so a root rebuild can't recreate the future and re-show the splash.
   late final Future<AppUpdateDecision> _updateFuture =
       widget.firebaseFuture.then((_) => AppUpdateService.check());
-  late final Future<List<dynamic>> _readyFuture =
-      Future.wait([widget.firebaseFuture, widget.sessionFuture, _updateFuture]);
+  late final Future<List<dynamic>> _readyFuture = Future.wait([
+    widget.firebaseFuture,
+    widget.sessionFuture,
+    _updateFuture,
+    widget.cameraPrewarmFuture,
+  ]);
   bool _didShowUpdateDialog = false;
+  bool _didRemoveNativeSplash = false;
 
   @override
   Widget build(BuildContext context) {
@@ -102,19 +112,7 @@ class _SouqaliAppState extends State<SouqaliApp> {
         builder: (context, AsyncSnapshot<List<dynamic>> snapshot) {
           // While waiting, show a clean background shell
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              backgroundColor: Color(0xFFF4FBF7),
-              body: Center(
-                child: SizedBox(
-                  width: 100,
-                  height: 100,
-                  child: Image(
-                    image: AssetImage('assets/branding/logo.png'),
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-            );
+            return const SizedBox.shrink();
           }
 
           final session = snapshot.data?[1] as SellerSession?;
@@ -122,6 +120,7 @@ class _SouqaliAppState extends State<SouqaliApp> {
           final home = session != null
               ? const SellerHomePage()
               : const SellerHomePage(isSellerMode: false);
+          _removeNativeSplashOnce();
           if (updateDecision?.isRequired == true) {
             _showUpdateDialogOnce(context, updateDecision!);
           }
@@ -129,6 +128,14 @@ class _SouqaliAppState extends State<SouqaliApp> {
         },
       ),
     );
+  }
+
+  void _removeNativeSplashOnce() {
+    if (_didRemoveNativeSplash) return;
+    _didRemoveNativeSplash = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FlutterNativeSplash.remove();
+    });
   }
 
   void _showUpdateDialogOnce(

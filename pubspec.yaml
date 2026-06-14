@@ -51,6 +51,17 @@ dependencies:
   lottie: ^3.3.3
   cloud_functions: ^6.3.2
   package_info_plus: ^10.1.0
+  flutter_native_splash: ^2.4.7
+
+flutter_native_splash:
+  color: "#F4FBF7"
+  image: assets/branding/logo.png
+  android: true
+  ios: true
+  fullscreen: false
+  android_12:
+    color: "#F4FBF7"
+    image: assets/branding/logo.png
 
 dev_dependencies:
   flutter_test:
