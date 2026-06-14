@@ -633,6 +633,15 @@ class _DetailMediaPage extends StatelessWidget {
                         ),
                       ),
                     ),
+              if (media.isVideo && preloadedController != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _DetailVideoProgressStrip(
+                    controller: preloadedController!,
+                  ),
+                ),
               if (showVideoPauseIcon)
                 Center(
                   child: IgnorePointer(
@@ -655,6 +664,58 @@ class _DetailMediaPage extends StatelessWidget {
     );
   }
 
+}
+
+class _DetailVideoProgressStrip extends StatelessWidget {
+  const _DetailVideoProgressStrip({required this.controller});
+
+  final VideoPlayerController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: ValueListenableBuilder<VideoPlayerValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final durationMs = value.duration.inMilliseconds;
+          if (!value.isInitialized || durationMs <= 0) {
+            return const SizedBox.shrink();
+          }
+
+          final played = (value.position.inMilliseconds / durationMs)
+              .clamp(0.0, 1.0)
+              .toDouble();
+          final buffered = value.buffered.fold<double>(
+            0,
+            (maxEnd, range) {
+              final loaded = range.end.inMilliseconds / durationMs;
+              return loaded > maxEnd ? loaded : maxEnd;
+            },
+          ).clamp(0.0, 1.0).toDouble();
+
+          return SizedBox(
+            height: 3,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const ColoredBox(color: Colors.black),
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: buffered,
+                  child: const ColoredBox(color: Colors.white),
+                ),
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: played,
+                  child: const ColoredBox(color: Color(0xFFFF7801)),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _DetailMediaCountBadge extends StatelessWidget {
