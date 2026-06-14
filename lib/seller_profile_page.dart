@@ -198,6 +198,7 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
   VoidCallback get onSettings => widget.onSettings;
   VoidCallback get onLogout => widget.onLogout;
   VoidCallback? get onBack => widget.onBack;
+  String _selectedStatus = 'post';
 
   late final String _sellerDocId =
       widget.sellerId.isNotEmpty ? widget.sellerId : widget.sellerPhone;
@@ -245,7 +246,19 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
                         : 16,
                   ),
                 ),
-                _SellerActivePosts(sellerId: sellerDocId),
+                SliverToBoxAdapter(
+                  child: _ProfileStatusTabs(
+                    selectedStatus: _selectedStatus,
+                    onChanged: (status) {
+                      if (status == _selectedStatus) return;
+                      setState(() => _selectedStatus = status);
+                    },
+                  ),
+                ),
+                _SellerActivePosts(
+                  sellerId: sellerDocId,
+                  selectedStatus: _selectedStatus,
+                ),
               ],
             );
           },
@@ -255,12 +268,12 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
         else ...[
           if (onBack != null)
             Positioned(
-              top: topInset + 8,
+              top: topInset + 7,
               left: 14,
               child: _ProfileFloatingBackButton(onBack: onBack!),
             ),
           Positioned(
-            top: topInset + 8,
+            top: topInset + 7,
             right: 14,
             child: const _ProfileFloatingShareButton(),
           ),
@@ -510,10 +523,109 @@ String _formatSellerPhone(Object? value) {
   return '+968 $digits';
 }
 
+class _ProfileStatusTabs extends StatelessWidget {
+  const _ProfileStatusTabs({
+    required this.selectedStatus,
+    required this.onChanged,
+  });
+
+  final String selectedStatus;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFF4FBF7),
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.black.withValues(alpha: 0.18)),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _ProfileStatusTabButton(
+                  text: 'POSTINGS',
+                  isSelected: selectedStatus == 'post',
+                  selectedColor: const Color(0xFF001341),
+                  onTap: () => onChanged('post'),
+                  borderRadius: const BorderRadius.horizontal(
+                    left: Radius.circular(8),
+                  ),
+                ),
+              ),
+              Container(width: 1, color: Colors.black.withValues(alpha: 0.18)),
+              Expanded(
+                child: _ProfileStatusTabButton(
+                  text: 'LIVE',
+                  isSelected: selectedStatus == 'live',
+                  selectedColor: const Color(0xFFFF7801),
+                  onTap: () => onChanged('live'),
+                  borderRadius: const BorderRadius.horizontal(
+                    right: Radius.circular(8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileStatusTabButton extends StatelessWidget {
+  const _ProfileStatusTabButton({
+    required this.text,
+    required this.isSelected,
+    required this.selectedColor,
+    required this.onTap,
+    required this.borderRadius,
+  });
+
+  final String text;
+  final bool isSelected;
+  final Color selectedColor;
+  final VoidCallback onTap;
+  final BorderRadius borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? selectedColor : Colors.transparent,
+      borderRadius: borderRadius,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SellerActivePosts extends StatefulWidget {
-  const _SellerActivePosts({required this.sellerId});
+  const _SellerActivePosts({
+    required this.sellerId,
+    required this.selectedStatus,
+  });
 
   final String sellerId;
+  final String selectedStatus;
 
   @override
   State<_SellerActivePosts> createState() => _SellerActivePostsState();
@@ -547,7 +659,11 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
         }
 
         final docs = (snapshot.data?.docs ?? [])
-            .where((doc) => _isItemActive(doc.data(), now))
+            .where((doc) {
+              final item = doc.data();
+              return _isItemActive(item, now) &&
+                  _matchesProfileStatus(item, widget.selectedStatus);
+            })
             .toList()
           ..sort((a, b) {
             final aTime = a.data()['created_at'];
@@ -649,6 +765,12 @@ class _SellerProfileColumn extends StatelessWidget {
           .toList(),
     );
   }
+}
+
+bool _matchesProfileStatus(Map<String, dynamic> item, String selectedStatus) {
+  final status = item['status']?.toString().trim().toLowerCase();
+  if (selectedStatus == 'live') return status == 'live';
+  return status == null || status.isEmpty || status == 'post';
 }
 
 bool _isItemActive(Map<String, dynamic> item, DateTime now) {

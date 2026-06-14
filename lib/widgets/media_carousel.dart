@@ -686,7 +686,7 @@ class _SharedShimmer {
       vsync: const _ShimmerTickerProvider(),
       duration: const Duration(milliseconds: 1150),
     );
-    if (!controller.isAnimating) controller.repeat();
+    if (!controller.isAnimating) controller.repeat(reverse: true);
     return controller;
   }
 
@@ -723,19 +723,26 @@ class _MediaSkeletonPlaceholderState extends State<MediaSkeletonPlaceholder> {
     return AnimatedBuilder(
       animation: _shimmer,
       builder: (context, child) {
-        final value = _shimmer.value;
+        final value = Curves.easeInOut.transform(_shimmer.value);
         return RepaintBoundary(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment(-1.0 + value * 2.4, -0.8),
-                end: Alignment(-0.2 + value * 2.4, 0.8),
-                colors: [
-                  widget.baseColor,
-                  widget.highlightColor,
-                  widget.baseColor,
-                ],
-                stops: const [0.25, 0.5, 0.75],
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: widget.baseColor),
+            child: FractionallySizedBox(
+              widthFactor: 0.42,
+              alignment: Alignment(-1.6 + (value * 3.2), 0),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      widget.baseColor.withValues(alpha: 0),
+                      widget.highlightColor.withValues(alpha: 0.95),
+                      widget.baseColor.withValues(alpha: 0),
+                    ],
+                    stops: const [0.0, 0.5, 1.0],
+                  ),
+                ),
               ),
             ),
           ),

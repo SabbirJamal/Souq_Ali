@@ -13,6 +13,7 @@ import 'package:video_compress/video_compress.dart';
 import '../camera_capture_page.dart';
 import '../seller_session.dart';
 import '../seller_session_guard.dart';
+import '../services/media_compression_service.dart';
 import '../upload_status_manager.dart';
 import '../utils/price_input.dart';
 import '../widgets/app_toast.dart';
@@ -45,7 +46,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
   final _priceFocusNode = FocusNode();
-  final List<SelectedMedia> _selectedMedia = [];
+  final ValueNotifier<List<SelectedMedia>> _selectedMediaNotifier =
+      ValueNotifier<List<SelectedMedia>>(<SelectedMedia>[]);
   final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
   String _lastValidPriceText = '';
   String _priceUnit = '/ kg';
@@ -55,6 +57,14 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   bool _isLiveItem = false;
   bool _isTransitPost = false;
   bool _showEmbeddedCamera = false;
+
+  List<SelectedMedia> get _selectedMedia => _selectedMediaNotifier.value;
+
+  void _updateSelectedMedia(void Function(List<SelectedMedia> media) update) {
+    final next = List<SelectedMedia>.of(_selectedMediaNotifier.value);
+    update(next);
+    _selectedMediaNotifier.value = next;
+  }
 
   @override
   void initState() {
@@ -74,6 +84,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
 
   @override
   void dispose() {
+    _selectedMediaNotifier.dispose();
     _nameController.dispose(); _priceController.dispose(); _priceFocusNode.dispose(); _locationController.dispose();
     VideoCompress.cancelCompression(); super.dispose();
   }
@@ -104,9 +115,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final f = await a.fileWithSubtype ?? await a.file;
       if (f != null) newMedia.add(SelectedMedia(file: f, type: a.type == AssetType.video ? 'video' : 'image', assetId: a.id));
     }
-    setState(() {
-      _selectedMedia.removeWhere((m) => m.assetId != null && !ids.contains(m.assetId));
-      _selectedMedia.addAll(newMedia);
+    _updateSelectedMedia((media) {
+      media.removeWhere((m) => m.assetId != null && !ids.contains(m.assetId));
+      media.addAll(newMedia);
     });
   }
 
@@ -133,10 +144,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _showMessage('8 Media selected, please delete media to select new media');
       return;
     }
-    setState(() {
-      _selectedMedia.add(SelectedMedia(file: media.file, type: media.type));
-      _showEmbeddedCamera = false;
+    _updateSelectedMedia((items) {
+      items.add(SelectedMedia(file: media.file, type: media.type));
     });
+    setState(() => _showEmbeddedCamera = false);
   }
 
   void _handleEmbeddedCaptureAndContinue(CapturedMedia media) {
@@ -144,10 +155,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       _showMessage('8 Media selected, please delete media to select new media');
       return;
     }
-    setState(() {
-      _selectedMedia.add(SelectedMedia(file: media.file, type: media.type));
-      _showEmbeddedCamera = _selectedMedia.length < _maxMediaCount;
+    _updateSelectedMedia((items) {
+      items.add(SelectedMedia(file: media.file, type: media.type));
     });
+    setState(() => _showEmbeddedCamera = _selectedMedia.length < _maxMediaCount);
   }
 
   Future<void> _openSelectedMediaPreview(int index) async {
@@ -170,7 +181,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               deleteIndex >= _selectedMedia.length) {
             return;
           }
-          setState(() => _selectedMedia.removeAt(deleteIndex));
+          _updateSelectedMedia((media) => media.removeAt(deleteIndex));
         },
       ),
     );
@@ -305,19 +316,17 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   Future<File> _compressImage(File f) async {
-    final path = '${(await getTemporaryDirectory()).path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
-    final res = await FlutterImageCompress.compressAndGetFile(f.path, path, minWidth: 1080, minHeight: 1080, quality: 42);
-    return res == null ? f : File(res.path);
+    return MediaCompressionService.compressImage(f);
   }
 
   Future<File> _compressVideo(File f) async {
-    final info = await VideoCompress.compressVideo(f.path, quality: VideoQuality.LowQuality, deleteOrigin: false, includeAudio: true);
-    return info?.path != null ? File(info!.path!) : f;
+    return MediaCompressionService.compressVideo(f);
   }
 
   void _clearForm() {
     _nameController.clear(); _priceController.clear(); _lastValidPriceText = '';
-    setState(() { _selectedMedia.clear(); _priceUnit = '/ kg'; _isTransitPost = false; });
+    _selectedMediaNotifier.value = <SelectedMedia>[];
+    setState(() { _priceUnit = '/ kg'; _isTransitPost = false; });
     _loadDefaultSellerLocation();
   }
 
@@ -499,33 +508,44 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   );
 
   Widget _buildMediaEditor() {
-    final count = _selectedMedia.length;
     return LayoutBuilder(builder: (context, constraints) {
       const spacing = 8.0;
       final tileSize = (constraints.maxWidth - (spacing * 2)) / 3;
-      return Wrap(
-        spacing: spacing,
-        runSpacing: spacing,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (var i = 0; i < count; i++)
-            SizedBox(
-              width: tileSize,
-              height: tileSize,
-              child: DragTarget<int>(
-                onAcceptWithDetails: (d) => setState(() { final m = _selectedMedia.removeAt(d.data); _selectedMedia.insert(i, m); }),
-                builder: (ctx, cand, _) => LongPressDraggable<int>(
-                  data: i,
-                  feedback: SizedBox(width: tileSize, height: tileSize, child: Opacity(opacity: 0.8, child: _tile(i, false))),
-                  child: GestureDetector(
-                    onTap: () => _openSelectedMediaPreview(i),
-                    child: _tile(i, cand.isNotEmpty),
+      return ValueListenableBuilder<List<SelectedMedia>>(
+        valueListenable: _selectedMediaNotifier,
+        builder: (context, media, _) {
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = 0; i < media.length; i++)
+                SizedBox(
+                  width: tileSize,
+                  height: tileSize,
+                  child: DragTarget<int>(
+                    onAcceptWithDetails: (d) => _updateSelectedMedia((items) {
+                      final moved = items.removeAt(d.data);
+                      items.insert(i, moved);
+                    }),
+                    builder: (ctx, cand, _) => LongPressDraggable<int>(
+                      data: i,
+                      feedback: SizedBox(
+                        width: tileSize,
+                        height: tileSize,
+                        child: Opacity(opacity: 0.8, child: _tile(media, i, false)),
+                      ),
+                      child: GestureDetector(
+                        onTap: () => _openSelectedMediaPreview(i),
+                        child: _tile(media, i, cand.isNotEmpty),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          _cameraAddButton(_openCamera, size: tileSize),
-        ],
+              _cameraAddButton(_openCamera, size: tileSize),
+            ],
+          );
+        },
       );
     });
   }
@@ -541,12 +561,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     ),
   );
 
-  Widget _tile(int i, bool drop) => Container(
+  Widget _tile(List<SelectedMedia> media, int i, bool drop) => Container(
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: drop ? Border.all(color: const Color(0xFF25D366), width: 3) : null),
     child: Stack(fit: StackFit.expand, children: [
-      ClipRRect(borderRadius: BorderRadius.circular(8), child: _selectedMedia[i].isVideo ? Container(color: Colors.black87, child: const Icon(Icons.play_circle_fill, color: Colors.white, size: 42)) : Image.file(_selectedMedia[i].file, fit: BoxFit.cover)),
+      ClipRRect(borderRadius: BorderRadius.circular(8), child: media[i].isVideo ? Container(color: Colors.black87, child: const Icon(Icons.play_circle_fill, color: Colors.white, size: 42)) : Image.file(media[i].file, fit: BoxFit.cover, cacheWidth: 360, cacheHeight: 360)),
       Positioned(top: 4, left: 4, child: CircleAvatar(radius: 12, backgroundColor: const Color(0xFF25D366), child: Text('${i + 1}', style: const TextStyle(color: Colors.white, fontSize: 12)))),
-      Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => setState(() => _selectedMedia.removeAt(i)), child: const CircleAvatar(radius: 12, backgroundColor: Colors.red, child: Icon(Icons.close, size: 14, color: Colors.white)))),
+      Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _updateSelectedMedia((media) => media.removeAt(i)), child: const CircleAvatar(radius: 12, backgroundColor: Colors.red, child: Icon(Icons.close, size: 14, color: Colors.white)))),
     ]),
   );
 

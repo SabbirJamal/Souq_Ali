@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
@@ -247,7 +248,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   bool _hasUserZoomed = false;
   double _minZoom = 1.0, _maxZoom = 1.0, _currZoom = 1.0, _startZoom = 1.0;
   double? _startY;
-  Offset? _focusPoint;
+  final ValueNotifier<Offset?> _focusPointNotifier = ValueNotifier<Offset?>(null);
   int _focusToken = 0;
   Timer? _focusApplyTimer;
   bool _hasPermission = false;
@@ -273,6 +274,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     _focusApplyTimer?.cancel();
     _recordingListenable.dispose();
     _elapsedListenable.dispose();
+    _focusPointNotifier.dispose();
     unawaited(_resetCameraState(rebuild: false));
     _CameraControllerCache.release();
     super.dispose();
@@ -538,7 +540,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       (point.dy / size.height).clamp(0.0, 1.0).toDouble(),
     );
     final token = ++_focusToken;
-    setState(() => _focusPoint = point);
+    _focusPointNotifier.value = point;
     _focusApplyTimer?.cancel();
     _focusApplyTimer = Timer(const Duration(milliseconds: 35), () {
       if (mounted && token == _focusToken) {
@@ -546,7 +548,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
       }
     });
     Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && token == _focusToken) setState(() => _focusPoint = null);
+      if (mounted && token == _focusToken) _focusPointNotifier.value = null;
     });
   }
 
@@ -719,7 +721,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                   children: [
                     Positioned.fill(child: preview),
                     if (_previewFile == null) ...[
-                      if (_focusPoint != null) Positioned(left: _focusPoint!.dx - 35, top: _focusPoint!.dy - 35, child: _FocusRing()),
+                      _FocusRingOverlay(focusPoint: _focusPointNotifier),
                       _buildTopBar(),
                       _buildBottomControls(),
                     ],
@@ -892,7 +894,30 @@ class _CircleBtn extends StatelessWidget {
   );
 }
 
+class _FocusRingOverlay extends StatelessWidget {
+  const _FocusRingOverlay({required this.focusPoint});
+
+  final ValueListenable<Offset?> focusPoint;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<Offset?>(
+      valueListenable: focusPoint,
+      builder: (context, point, _) {
+        if (point == null) return const SizedBox.shrink();
+        return Positioned(
+          left: point.dx - 35,
+          top: point.dy - 35,
+          child: const _FocusRing(),
+        );
+      },
+    );
+  }
+}
+
 class _FocusRing extends StatelessWidget {
+  const _FocusRing();
+
   @override
   Widget build(BuildContext context) => TweenAnimationBuilder<double>(
     tween: Tween(begin: 1.0, end: 0.0), duration: const Duration(milliseconds: 300),

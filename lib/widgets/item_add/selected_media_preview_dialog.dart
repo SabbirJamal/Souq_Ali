@@ -331,7 +331,12 @@ class _PreviewThumb extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (item.thumbnailUrl?.isNotEmpty == true)
-                Image.network(item.thumbnailUrl!, fit: BoxFit.cover)
+                Image.network(
+                  item.thumbnailUrl!,
+                  fit: BoxFit.cover,
+                  cacheWidth: 180,
+                  cacheHeight: 220,
+                )
               else if (item.isVideo)
                 const ColoredBox(
                   color: Colors.black87,
@@ -342,9 +347,19 @@ class _PreviewThumb extends StatelessWidget {
                   ),
                 )
               else if (item.isNetwork)
-                Image.network(item.url!, fit: BoxFit.cover)
+                Image.network(
+                  item.url!,
+                  fit: BoxFit.cover,
+                  cacheWidth: 180,
+                  cacheHeight: 220,
+                )
               else
-                Image.file(item.file!, fit: BoxFit.cover),
+                Image.file(
+                  item.file!,
+                  fit: BoxFit.cover,
+                  cacheWidth: 180,
+                  cacheHeight: 220,
+                ),
             ],
           ),
         ),

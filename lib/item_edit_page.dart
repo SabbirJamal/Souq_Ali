@@ -12,6 +12,7 @@ import 'package:video_compress/video_compress.dart';
 import 'camera_capture_page.dart';
 import 'seller_home_page.dart';
 import 'seller_session_guard.dart';
+import 'services/media_compression_service.dart';
 import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
 import 'utils/price_input.dart';
@@ -64,7 +65,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
   late final TextEditingController _locationController;
   final _priceFocusNode = FocusNode();
 
-  final List<EditableMedia> _media = [];
+  final ValueNotifier<List<EditableMedia>> _mediaNotifier =
+      ValueNotifier<List<EditableMedia>>(<EditableMedia>[]);
   final List<MediaItem> _removedMedia = [];
   final _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
 
@@ -78,6 +80,14 @@ class _ItemEditPageState extends State<ItemEditPage> {
   bool _showEmbeddedCamera = false;
   late final bool _isLiveItem;
   bool _isTransitPost = false;
+
+  List<EditableMedia> get _media => _mediaNotifier.value;
+
+  void _updateMedia(void Function(List<EditableMedia> media) update) {
+    final next = List<EditableMedia>.of(_mediaNotifier.value);
+    update(next);
+    _mediaNotifier.value = next;
+  }
 
   @override
   void initState() {
@@ -95,7 +105,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
     );
     _lastValidPriceText = _priceController.text;
     _locationController = TextEditingController(text: existingLocation);
-    _media.addAll(mediaItemsFromMap(widget.itemData).map(EditableMedia.existing));
+    _mediaNotifier.value =
+        mediaItemsFromMap(widget.itemData).map(EditableMedia.existing).toList();
     _priceUnit = _priceUnits.contains(widget.itemData['price_unit'])
         ? widget.itemData['price_unit'].toString()
         : '/ kg';
@@ -108,6 +119,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     _priceController.dispose();
     _priceFocusNode.dispose();
     _locationController.dispose();
+    _mediaNotifier.dispose();
     VideoCompress.cancelCompression();
     super.dispose();
   }
@@ -136,20 +148,20 @@ class _ItemEditPageState extends State<ItemEditPage> {
       return;
     }
 
-    setState(() {
-      _media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
-      _showEmbeddedCamera = false;
+    _updateMedia((media) {
+      media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
     });
+    setState(() => _showEmbeddedCamera = false);
   }
 
   void _handleEmbeddedCaptureAndContinue(CapturedMedia result) {
     if (!_canAddMedia()) {
       return;
     }
-    setState(() {
-      _media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
-      _showEmbeddedCamera = _media.length < _maxMediaCount;
+    _updateMedia((media) {
+      media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
     });
+    setState(() => _showEmbeddedCamera = _media.length < _maxMediaCount);
   }
 
   Future<void> _openMediaSheet() async {
@@ -188,12 +200,12 @@ class _ItemEditPageState extends State<ItemEditPage> {
         ),
       );
     }
-    setState(() {
-      _media.removeWhere((media) {
+    _updateMedia((media) {
+      media.removeWhere((media) {
         final assetId = media.selected?.assetId;
         return assetId != null && !selectedIds.contains(assetId);
       });
-      _media.addAll(newMedia);
+      media.addAll(newMedia);
     });
   }
 
@@ -206,9 +218,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
   void _moveMedia(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
-    setState(() {
-      final item = _media.removeAt(fromIndex);
-      _media.insert(toIndex, item);
+    _updateMedia((media) {
+      final item = media.removeAt(fromIndex);
+      media.insert(toIndex, item);
     });
   }
 
@@ -238,8 +250,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
               deleteIndex >= _media.length) {
             return;
           }
-          setState(() {
-            final removed = _media.removeAt(deleteIndex);
+          _updateMedia((media) {
+            final removed = media.removeAt(deleteIndex);
             if (removed.isExisting) _removedMedia.add(removed.existing!);
           });
         },
@@ -400,15 +412,11 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Future<File> _compressImage(File file) async {
-    final temp = await getTemporaryDirectory();
-    final path = '${temp.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
-    final res = await FlutterImageCompress.compressAndGetFile(file.absolute.path, path, minWidth: 1080, minHeight: 1080, quality: 42);
-    return res == null ? file : File(res.path);
+    return MediaCompressionService.compressImage(file);
   }
 
   Future<File> _compressVideo(File file) async {
-    final info = await VideoCompress.compressVideo(file.path, quality: VideoQuality.LowQuality, deleteOrigin: false, includeAudio: true);
-    return info?.path != null ? File(info!.path!) : file;
+    return MediaCompressionService.compressVideo(file);
   }
 
   Future<void> _deleteStorageFiles(List<MediaItem> media) async {
@@ -803,33 +811,56 @@ class _ItemEditPageState extends State<ItemEditPage> {
   }
 
   Widget _buildMediaEditor() {
-    final count = _media.length;
     return LayoutBuilder(builder: (context, constraints) {
       const spacing = 8.0;
       final tileSize = (constraints.maxWidth - (spacing * 2)) / 3;
-      return Wrap(
-        spacing: spacing,
-        runSpacing: spacing,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (var i = 0; i < count; i++)
-            SizedBox(
-              width: tileSize,
-              height: tileSize,
-              child: DragTarget<int>(
-                onAcceptWithDetails: (d) => _moveMedia(d.data, i),
-                builder: (ctx, cand, _) => LongPressDraggable<int>(
-                  data: i,
-                  feedback: SizedBox(width: tileSize, height: tileSize, child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: false, onRemove: null)),
-                  child: GestureDetector(
-                    onTap: () => _openSelectedMediaPreview(i),
-                    child: EditableMediaTile(media: _media[i], sequenceNumber: i + 1, isDropTarget: cand.isNotEmpty, onRemove: () => setState(() { final r = _media.removeAt(i); if (r.isExisting) _removedMedia.add(r.existing!); })),
+      return ValueListenableBuilder<List<EditableMedia>>(
+        valueListenable: _mediaNotifier,
+        builder: (context, media, _) {
+          return Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = 0; i < media.length; i++)
+                SizedBox(
+                  width: tileSize,
+                  height: tileSize,
+                  child: DragTarget<int>(
+                    onAcceptWithDetails: (d) => _moveMedia(d.data, i),
+                    builder: (ctx, cand, _) => LongPressDraggable<int>(
+                      data: i,
+                      feedback: SizedBox(
+                        width: tileSize,
+                        height: tileSize,
+                        child: EditableMediaTile(
+                          media: media[i],
+                          sequenceNumber: i + 1,
+                          isDropTarget: false,
+                          onRemove: null,
+                        ),
+                      ),
+                      child: GestureDetector(
+                        onTap: () => _openSelectedMediaPreview(i),
+                        child: EditableMediaTile(
+                          media: media[i],
+                          sequenceNumber: i + 1,
+                          isDropTarget: cand.isNotEmpty,
+                          onRemove: () => _updateMedia((items) {
+                            final removed = items.removeAt(i);
+                            if (removed.isExisting) {
+                              _removedMedia.add(removed.existing!);
+                            }
+                          }),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          _cameraAddButton(_openMediaSheet, size: tileSize),
-        ],
+              _cameraAddButton(_openMediaSheet, size: tileSize),
+            ],
+          );
+        },
       );
     });
   }

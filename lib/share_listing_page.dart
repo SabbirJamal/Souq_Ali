@@ -343,6 +343,8 @@ class _SinglePicturePreview extends StatelessWidget {
                         child: CachedNetworkImage(
                           imageUrl: imageUrls[index],
                           width: double.infinity,
+                          memCacheWidth: 640,
+                          maxWidthDiskCache: 900,
                           fit: BoxFit.cover,
                         ),
                       ),

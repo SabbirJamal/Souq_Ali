@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class AppPullRefresh extends StatefulWidget {
@@ -24,7 +25,8 @@ class _AppPullRefreshState extends State<AppPullRefresh>
     with SingleTickerProviderStateMixin {
   bool _refreshing = false;
   bool _dragStartedAtTop = false;
-  double _pullDistance = 0;
+  final ValueNotifier<double> _pullDistance = ValueNotifier<double>(0);
+  final ValueNotifier<bool> _refreshingNotifier = ValueNotifier<bool>(false);
   late final AnimationController _spinController;
 
   @override
@@ -39,12 +41,14 @@ class _AppPullRefreshState extends State<AppPullRefresh>
   @override
   void dispose() {
     _spinController.dispose();
+    _pullDistance.dispose();
+    _refreshingNotifier.dispose();
     super.dispose();
   }
 
   void _setPullDistance(double value) {
-    if (_pullDistance == value) return;
-    setState(() => _pullDistance = value);
+    if (_pullDistance.value == value) return;
+    _pullDistance.value = value;
   }
 
   bool _handleScroll(ScrollNotification notification) {
@@ -68,22 +72,22 @@ class _AppPullRefreshState extends State<AppPullRefresh>
     if (notification is OverscrollNotification &&
         atTop &&
         notification.overscroll < 0) {
-      _setPullDistance(_pullDistance + -notification.overscroll);
+      _setPullDistance(_pullDistance.value + -notification.overscroll);
       return false;
     }
 
     if (notification is ScrollUpdateNotification &&
-        _pullDistance > 0 &&
+        _pullDistance.value > 0 &&
         (notification.scrollDelta ?? 0) > 0) {
       _setPullDistance(
-        (_pullDistance - (notification.scrollDelta ?? 0)).clamp(0, 1000),
+        (_pullDistance.value - (notification.scrollDelta ?? 0)).clamp(0, 1000),
       );
       return false;
     }
 
     if (notification is ScrollEndNotification) {
       final shouldRefresh =
-          _dragStartedAtTop && _pullDistance >= widget.triggerDistance;
+          _dragStartedAtTop && _pullDistance.value >= widget.triggerDistance;
       if (!shouldRefresh) _setPullDistance(0);
       _dragStartedAtTop = false;
       if (shouldRefresh) {
@@ -96,20 +100,18 @@ class _AppPullRefreshState extends State<AppPullRefresh>
 
   Future<void> _refresh() async {
     if (_refreshing) return;
-    setState(() {
-      _refreshing = true;
-      _pullDistance = widget.triggerDistance;
-    });
+    _refreshing = true;
+    _refreshingNotifier.value = true;
+    _pullDistance.value = widget.triggerDistance;
     _spinController.repeat();
     try {
       await widget.onRefresh();
     } finally {
       _spinController.stop();
       if (mounted) {
-        setState(() {
-          _refreshing = false;
-          _pullDistance = 0;
-        });
+        _refreshing = false;
+        _refreshingNotifier.value = false;
+        _pullDistance.value = 0;
       }
     }
   }
@@ -122,14 +124,54 @@ class _AppPullRefreshState extends State<AppPullRefresh>
           onNotification: _handleScroll,
           child: widget.child,
         ),
-        _RefreshBubble(
-          progress: (_pullDistance / widget.triggerDistance).clamp(0.0, 1.0),
+        _RefreshBubbleHost(
+          pullDistance: _pullDistance,
+          refreshing: _refreshingNotifier,
+          triggerDistance: widget.triggerDistance,
           top: widget.indicatorTop,
           color: widget.color,
-          refreshing: _refreshing,
           spinController: _spinController,
         ),
       ],
+    );
+  }
+}
+
+class _RefreshBubbleHost extends StatelessWidget {
+  const _RefreshBubbleHost({
+    required this.pullDistance,
+    required this.refreshing,
+    required this.triggerDistance,
+    required this.top,
+    required this.color,
+    required this.spinController,
+  });
+
+  final ValueListenable<double> pullDistance;
+  final ValueListenable<bool> refreshing;
+  final double triggerDistance;
+  final double top;
+  final Color color;
+  final AnimationController spinController;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: pullDistance,
+      builder: (context, distance, _) {
+        return ValueListenableBuilder<bool>(
+          valueListenable: refreshing,
+          builder: (context, isRefreshing, _) {
+            return _RefreshBubble(
+              progress: (distance / triggerDistance).clamp(0.0, 1.0),
+              top: top,
+              color: color,
+              refreshing: isRefreshing,
+              spinController: spinController,
+            );
+          },
+        );
+      },
     );
   }
 }

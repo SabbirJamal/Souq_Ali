@@ -41,6 +41,8 @@ class EditableMediaTile extends StatelessWidget {
                     ? CachedNetworkImage(
                         imageUrl: media.existing!.url,
                         fit: BoxFit.cover,
+                        memCacheWidth: 360,
+                        maxWidthDiskCache: 512,
                         placeholder: (context, url) => Container(
                           color: const Color(0xFFEFF4F1),
                           child: const Center(
@@ -52,7 +54,12 @@ class EditableMediaTile extends StatelessWidget {
                           child: const Icon(Icons.broken_image),
                         ),
                       )
-                    : Image.file(media.selected!.file, fit: BoxFit.cover),
+                    : Image.file(
+                        media.selected!.file,
+                        fit: BoxFit.cover,
+                        cacheWidth: 360,
+                        cacheHeight: 360,
+                      ),
           ),
           Positioned(
             top: 4,
