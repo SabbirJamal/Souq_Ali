@@ -268,12 +268,12 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
         else ...[
           if (onBack != null)
             Positioned(
-              top: topInset + 7,
+              top: topInset,
               left: 14,
               child: _ProfileFloatingBackButton(onBack: onBack!),
             ),
           Positioned(
-            top: topInset + 7,
+            top: topInset,
             right: 14,
             child: const _ProfileFloatingShareButton(),
           ),

@@ -16,12 +16,14 @@ class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
     super.key,
     this.chromeVisibleListenable,
+    this.gridLayoutMode,
     required this.onSearchActiveChanged,
     this.itemStatus = 'post',
     this.emptyMessage = 'No items available',
   });
 
   final ValueListenable<bool>? chromeVisibleListenable;
+  final ValueNotifier<bool>? gridLayoutMode;
   final ValueChanged<bool> onSearchActiveChanged;
   final String itemStatus;
   final String emptyMessage;
@@ -63,8 +65,20 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void initState() {
     super.initState();
+    _isGridView = widget.gridLayoutMode?.value ?? _isGridView;
+    widget.gridLayoutMode?.addListener(_handleGridLayoutModeChanged);
     _scrollController.addListener(_onScroll);
     _loadInitial();
+  }
+
+  @override
+  void didUpdateWidget(covariant SellerFeedTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.gridLayoutMode != widget.gridLayoutMode) {
+      oldWidget.gridLayoutMode?.removeListener(_handleGridLayoutModeChanged);
+      _isGridView = widget.gridLayoutMode?.value ?? _isGridView;
+      widget.gridLayoutMode?.addListener(_handleGridLayoutModeChanged);
+    }
   }
 
   void _onScroll() {
@@ -88,7 +102,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _maybeLoadMoreFromBuilder(int index, int total) {
-    if (total - index > 12 || _isLoading || !_hasMore || _isSearchOpen) return;
+    if (!_scrollController.hasClients ||
+        _scrollController.position.pixels <= 80 ||
+        total - index > 12 ||
+        _isLoading ||
+        !_hasMore ||
+        _isSearchOpen) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadMore();
     });
@@ -137,6 +158,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
+    widget.gridLayoutMode?.removeListener(_handleGridLayoutModeChanged);
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
     _visibilityDebounce?.cancel();
@@ -146,6 +168,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     _searchFocusNode.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _handleGridLayoutModeChanged() {
+    final nextValue = widget.gridLayoutMode?.value;
+    if (nextValue == null || nextValue == _isGridView || !mounted) {
+      return;
+    }
+    setState(() => _isGridView = nextValue);
   }
 
   Future<_FeedViewerIdentity?> _ensureViewerIdentity() async {
@@ -270,7 +300,13 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _toggleLayoutMode() {
-    setState(() => _isGridView = !_isGridView);
+    final nextValue = !_isGridView;
+    final sharedMode = widget.gridLayoutMode;
+    if (sharedMode != null) {
+      sharedMode.value = nextValue;
+    } else {
+      setState(() => _isGridView = nextValue);
+    }
   }
 
   List<FeedItem> _getFilteredAndRankedDocs() {
@@ -429,13 +465,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                 : SliverList.builder(itemCount: 2, itemBuilder: (context, index) => _SkeletonFeedItemCard(isLivePage: isLivePage)),
                           ),
                       ],
-                      if (_hasMore && !_isSearchOpen)
-                        SliverToBoxAdapter(
-                          child: _LoadMoreTrigger(
-                            isLoading: _isLoading,
-                            onVisible: _loadMore,
-                          ),
-                        ),
                       SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
                     ],
                   ),
@@ -458,45 +487,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   GlobalKey _keyForItem(String itemId) => _itemKeys.putIfAbsent(itemId, GlobalKey.new);
-}
-
-class _LoadMoreTrigger extends StatefulWidget {
-  const _LoadMoreTrigger({
-    required this.isLoading,
-    required this.onVisible,
-  });
-
-  final bool isLoading;
-  final VoidCallback onVisible;
-
-  @override
-  State<_LoadMoreTrigger> createState() => _LoadMoreTriggerState();
-}
-
-class _LoadMoreTriggerState extends State<_LoadMoreTrigger> {
-  @override
-  void initState() {
-    super.initState();
-    _scheduleLoad();
-  }
-
-  @override
-  void didUpdateWidget(covariant _LoadMoreTrigger oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isLoading && !widget.isLoading) _scheduleLoad();
-  }
-
-  void _scheduleLoad() {
-    if (widget.isLoading) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.onVisible();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(height: 1);
-  }
 }
 
 class _FloatingFeedSearchControl extends StatelessWidget {

@@ -242,8 +242,8 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         );
       }
       await batch.commit();
-      widget.onItemUploadSuccess?.call(draft.isLive);
       UploadStatusManager.success(uploadId);
+      widget.onItemUploadSuccess?.call(draft.isLive);
     } catch (e) {
       final failedUploadId = uploadId;
       if (failedUploadId != null) {

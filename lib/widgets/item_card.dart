@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
 import '../item_detail_page.dart';
@@ -118,19 +117,11 @@ class _ItemCardState extends State<ItemCard> {
                         ),
                       ),
                       Positioned(
-                        top: showLivePageMarker
-                            ? widget.liveMarkerTop
-                            : widget.isCompact
-                                ? 7
-                                : 10,
-                        right: showLivePageMarker
-                            ? -82
-                            : widget.isCompact
-                                ? 7
-                                : 10,
+                        top: widget.isCompact ? 7 : 10,
+                        right: widget.isCompact ? 7 : 10,
                         child: showLivePageMarker
-                            ? const IgnorePointer(
-                                child: _LiveCardAnimation(),
+                            ? IgnorePointer(
+                                child: _LiveBadge(isCompact: widget.isCompact),
                               )
                             : _UploadedAgoBadge(
                                 uploadedAgo: uploadedAgo,
@@ -497,26 +488,6 @@ class _LiveBadge extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _LiveCardAnimation extends StatelessWidget {
-  const _LiveCardAnimation();
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: SizedBox(
-        width: 225,
-        height: 108,
-        child: Lottie.asset(
-          'assets/lottie/live2.json',
-          fit: BoxFit.contain,
-          repeat: true,
-          animate: true,
-        ),
       ),
     );
   }
