@@ -414,7 +414,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
             child: CustomScrollView(
-              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-${_isGridView ? 'grid' : 'list'}-$_refreshTick'),
+              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-$_refreshTick'),
               controller: _scrollController,
               cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
