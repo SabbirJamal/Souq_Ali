@@ -16,6 +16,7 @@ import '../seller_session_guard.dart';
 import '../services/media_compression_service.dart';
 import '../upload_status_manager.dart';
 import '../utils/price_input.dart';
+import '../utils/upload_status_thumbnail.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_add/selected_media_preview_dialog.dart';
 import '../widgets/item_edit/edit_widgets.dart';
@@ -210,9 +211,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       if (s == null) return;
       if (!mounted) return;
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
+      final statusThumbnail = await localUploadStatusThumbnail(draft.media.first);
       uploadId = UploadStatusManager.uploading(
         target: draft.isLive ? UploadStatusTarget.live : UploadStatusTarget.feed,
-        thumbnail: draft.media.first.file,
+        thumbnail: statusThumbnail,
       );
       _clearForm();
       widget.onItemAddedDone?.call(draft.isLive);

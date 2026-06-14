@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import '../item_detail_page.dart';
 import '../utils/formatters.dart';
@@ -87,11 +88,15 @@ class _ItemCardState extends State<ItemCard> {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: MediaPreview(
-                          media: mediaItems.isEmpty ? null : mediaItems.first,
+                        child: Skeleton.replace(
+                          width: double.infinity,
                           height: cardHeight,
-                          borderRadius: 0,
-                          isCompact: widget.isCompact,
+                          child: MediaPreview(
+                            media: mediaItems.isEmpty ? null : mediaItems.first,
+                            height: cardHeight,
+                            borderRadius: 0,
+                            isCompact: widget.isCompact,
+                          ),
                         ),
                       ),
                       Positioned(

@@ -52,6 +52,7 @@ dependencies:
   cloud_functions: ^6.3.2
   package_info_plus: ^10.1.0
   flutter_native_splash: ^2.4.7
+  skeletonizer: 2.1.3
 
 flutter_native_splash:
   color: "#F4FBF7"

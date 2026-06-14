@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:video_player/video_player.dart';
 
+import 'detail_video_player.dart';
 import '../media_carousel.dart';
 import '../price_with_currency.dart';
 
@@ -600,19 +601,14 @@ class _DetailMediaPage extends StatelessWidget {
             alignment: Alignment.center,
             children: [
               media.isVideo
-                  ? Transform.scale(
-                      scale: videoScale,
-                      child: VideoPreview(
-                        url: media.url,
-                        thumbnailUrl: media.thumbnailUrl,
-                        fit: BoxFit.contain,
-                        controller: preloadedController,
-                        initializeFuture: preloadFuture,
-                        autoPlay: autoPlay,
-                        pauseSignal: pauseSignal,
-                        showPlayButton: false,
-                        playIconSize: 72,
-                      ),
+                  ? DetailVideoPlayer(
+                      url: media.url,
+                      videoScale: videoScale,
+                      autoPlay: autoPlay,
+                      pauseSignal: pauseSignal,
+                      showPauseIcon: showVideoPauseIcon,
+                      controller: preloadedController,
+                      initializeFuture: preloadFuture,
                     )
                   : CachedNetworkImage(
                       imageUrl: media.url,
@@ -633,30 +629,6 @@ class _DetailMediaPage extends StatelessWidget {
                         ),
                       ),
                     ),
-              if (media.isVideo && preloadedController != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _DetailVideoProgressStrip(
-                    controller: preloadedController!,
-                  ),
-                ),
-              if (showVideoPauseIcon)
-                Center(
-                  child: IgnorePointer(
-                    child: SizedBox.square(
-                      dimension: 45,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.62),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.pause, color: Colors.white, size: 29),
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
@@ -664,58 +636,6 @@ class _DetailMediaPage extends StatelessWidget {
     );
   }
 
-}
-
-class _DetailVideoProgressStrip extends StatelessWidget {
-  const _DetailVideoProgressStrip({required this.controller});
-
-  final VideoPlayerController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: ValueListenableBuilder<VideoPlayerValue>(
-        valueListenable: controller,
-        builder: (context, value, _) {
-          final durationMs = value.duration.inMilliseconds;
-          if (!value.isInitialized || durationMs <= 0) {
-            return const SizedBox.shrink();
-          }
-
-          final played = (value.position.inMilliseconds / durationMs)
-              .clamp(0.0, 1.0)
-              .toDouble();
-          final buffered = value.buffered.fold<double>(
-            0,
-            (maxEnd, range) {
-              final loaded = range.end.inMilliseconds / durationMs;
-              return loaded > maxEnd ? loaded : maxEnd;
-            },
-          ).clamp(0.0, 1.0).toDouble();
-
-          return SizedBox(
-            height: 3,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                const ColoredBox(color: Colors.black),
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: buffered,
-                  child: const ColoredBox(color: Colors.white),
-                ),
-                FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: played,
-                  child: const ColoredBox(color: Color(0xFFFF7801)),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
 }
 
 class _DetailMediaCountBadge extends StatelessWidget {

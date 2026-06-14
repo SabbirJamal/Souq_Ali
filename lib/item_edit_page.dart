@@ -16,6 +16,7 @@ import 'services/media_compression_service.dart';
 import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
 import 'utils/price_input.dart';
+import 'utils/upload_status_thumbnail.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/item_add/selected_media_preview_dialog.dart';
 import 'widgets/app_status_bar.dart';
@@ -313,9 +314,11 @@ class _ItemEditPageState extends State<ItemEditPage> {
     final mediaSnapshot = List<EditableMedia>.of(_media);
     final removedSnapshot = List<MediaItem>.of(_removedMedia);
     final firstMedia = mediaSnapshot.isNotEmpty ? mediaSnapshot.first : null;
+    final statusThumbnail = await localUploadStatusThumbnail(firstMedia?.selected);
+    if (!mounted) return;
     final uploadId = UploadStatusManager.uploading(
       target: UploadStatusTarget.listings,
-      thumbnail: firstMedia?.selected?.file,
+      thumbnail: statusThumbnail,
       thumbnailUrl: firstMedia?.existing?.thumbnailUrl?.trim().isNotEmpty == true
           ? firstMedia!.existing!.thumbnailUrl!.trim()
           : firstMedia?.existing?.url,
