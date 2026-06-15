@@ -847,16 +847,18 @@ class _ListingsSkeletonGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 8, 2, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Expanded(child: ItemCardSkeleton(isCompact: true)),
-          SizedBox(width: 4),
-          Expanded(child: ItemCardSkeleton(isCompact: true)),
-        ],
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 2,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 2,
+        childAspectRatio: 0.58,
       ),
+      itemBuilder: (context, index) => const ItemCardSkeleton(isCompact: true),
     );
   }
 }

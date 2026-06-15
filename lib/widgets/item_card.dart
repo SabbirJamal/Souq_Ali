@@ -188,9 +188,9 @@ class ItemCardSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final cardHeight = isCompact
-            ? (constraints.maxWidth * 1.48).clamp(245.0, 310.0)
-            : (constraints.maxWidth * 1.36).clamp(445.0, 595.0);
+        final cardHeight = constraints.hasBoundedHeight
+            ? constraints.maxHeight
+            : constraints.maxWidth / (isCompact ? 0.58 : 0.66);
 
         return RepaintBoundary(
           child: Card(

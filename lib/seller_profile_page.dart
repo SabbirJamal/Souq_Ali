@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'utils/item_status_cache.dart';
+import 'widgets/app_pull_refresh.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/item_card.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
@@ -235,6 +236,10 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
 
   final _activePostsKey = GlobalKey<_SellerActivePostsState>();
 
+  Future<void> _refreshPosts() async {
+    await _activePostsKey.currentState?.refreshAllStatuses();
+  }
+
   @override
   Widget build(BuildContext context) {
     final sellerDocId = _sellerDocId;
@@ -257,38 +262,42 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
 
             return ColoredBox(
               color: const Color(0xFFF4FBF7),
-              child: CustomScrollView(
-                controller: _scrollController,
-                slivers: [
-                  if (!isOwnProfile)
+              child: AppPullRefresh(
+                onRefresh: _refreshPosts,
+                indicatorTop: 132,
+                child: CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    if (!isOwnProfile)
+                      SliverToBoxAdapter(
+                        child: _ProfileScrollableHeader(onBack: onBack),
+                      ),
                     SliverToBoxAdapter(
-                      child: _ProfileScrollableHeader(onBack: onBack),
+                      child: _SellerProfileTop(
+                        sellerName: sellerName,
+                        crNumber: crNumber,
+                        sellerPhone: sellerPhone,
+                        topPadding: isOwnProfile
+                            ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
+                            : 16,
+                      ),
                     ),
-                  SliverToBoxAdapter(
-                    child: _SellerProfileTop(
-                      sellerName: sellerName,
-                      crNumber: crNumber,
-                      sellerPhone: sellerPhone,
-                      topPadding: isOwnProfile
-                          ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
-                          : 16,
+                    SliverToBoxAdapter(
+                      child: _ProfileStatusTabs(
+                        selectedStatus: _selectedStatus,
+                        onChanged: (status) {
+                          if (status == _selectedStatus) return;
+                          setState(() => _selectedStatus = status);
+                        },
+                      ),
                     ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _ProfileStatusTabs(
+                    _SellerActivePosts(
+                      key: _activePostsKey,
+                      sellerId: sellerDocId,
                       selectedStatus: _selectedStatus,
-                      onChanged: (status) {
-                        if (status == _selectedStatus) return;
-                        setState(() => _selectedStatus = status);
-                      },
                     ),
-                  ),
-                  _SellerActivePosts(
-                    key: _activePostsKey,
-                    sellerId: sellerDocId,
-                    selectedStatus: _selectedStatus,
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -697,6 +706,11 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
 
   Future<void> loadMore() => _fetchPage(isInitial: false);
 
+  Future<void> refreshAllStatuses() async {
+    setState(_itemCaches.resetAll);
+    await _loadInitial();
+  }
+
   Future<void> _fetchPage({required bool isInitial}) async {
     final requestedStatus = widget.selectedStatus;
     final cache = _itemCaches.forStatus(requestedStatus);
@@ -865,16 +879,18 @@ class _SellerProfilePostsSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 8, 2, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Expanded(child: ItemCardSkeleton(isCompact: true)),
-          SizedBox(width: 4),
-          Expanded(child: ItemCardSkeleton(isCompact: true)),
-        ],
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 2,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 4,
+        mainAxisSpacing: 2,
+        childAspectRatio: 0.58,
       ),
+      itemBuilder: (context, index) => const ItemCardSkeleton(isCompact: true),
     );
   }
 }
