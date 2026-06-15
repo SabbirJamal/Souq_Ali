@@ -13,7 +13,8 @@ const bucket = getStorage().bucket();
 const DEFAULT_FEED_LIMIT = 16;
 const MAX_FEED_LIMIT = 32;
 const FEED_FETCH_BATCH_SIZE = 100;
-const FEED_MAX_SCANNED_DOCS = 600;
+const FEED_MAX_SCANNED_DOCS = 400;
+const FEED_SEEN_LOOKBACK_LIMIT = 1500;
 const MEDIA_PROCESSOR_URL =
   "https://bizsooq-media-processor-r7y3ppqj6q-uc.a.run.app";
 const FEED_ITEM_FIELDS = [
@@ -54,8 +55,16 @@ exports.getFeedItems = onCall(
       throw new HttpsError("invalid-argument", "status must be post or live.");
     }
 
+    const startedAt = Date.now();
+    let seenLoadMs = 0;
+    let itemQueryMs = 0;
+    let filteringMs = 0;
+    let batches = 0;
+
     try {
+      const seenStartedAt = Date.now();
       const seenIds = await loadViewerSeenIds(viewerId);
+      seenLoadMs = Date.now() - seenStartedAt;
       const now = Timestamp.now();
       const unseen = [];
       const seenFallback = [];
@@ -81,9 +90,13 @@ exports.getFeedItems = onCall(
           );
         }
 
+        const queryStartedAt = Date.now();
         const snapshot = await query.get();
+        itemQueryMs += Date.now() - queryStartedAt;
+        batches += 1;
         hasMore = snapshot.size === FEED_FETCH_BATCH_SIZE;
 
+        const filteringStartedAt = Date.now();
         for (let index = 0; index < snapshot.docs.length; index += 1) {
           const doc = snapshot.docs[index];
           scanned += 1;
@@ -108,6 +121,7 @@ exports.getFeedItems = onCall(
             }
           }
         }
+        filteringMs += Date.now() - filteringStartedAt;
 
         if (!lastCursor) {
           hasMore = false;
@@ -126,6 +140,21 @@ exports.getFeedItems = onCall(
         selectedItems.length > 0
           ? selectedItems[selectedItems.length - 1].cursor
           : lastCursor;
+
+      const totalMs = Date.now() - startedAt;
+      logger.info("getFeedItems timing", {
+        viewerId,
+        status,
+        limit,
+        returned: selectedItems.length,
+        scanned,
+        batches,
+        seenCount: seenIds.size,
+        seenLoadMs,
+        itemQueryMs,
+        filteringMs,
+        totalMs,
+      });
 
       return {
         items: selectedItems.map((item) => ({ id: item.id, data: item.data })),
@@ -492,7 +521,8 @@ async function loadViewerSeenIds(viewerId) {
     .collection("viewer_seen")
     .doc(viewerId)
     .collection("items")
-    .limit(5000)
+    .orderBy("seen_at", "desc")
+    .limit(FEED_SEEN_LOOKBACK_LIMIT)
     .get();
 
   for (const doc of seen.docs) {
@@ -539,10 +569,24 @@ function isItemVisible(item, now) {
   if (status !== "post" && status !== "live") {
     return false;
   }
-  if (stringValue(item.media_processing_status) === "pending") {
+  if (isItemExpired(item, now)) {
     return false;
   }
-  return isItemExpired(item, now) === false;
+  const hasMedia = hasUsableMedia(item);
+  if (stringValue(item.media_processing_status) === "pending" && !hasMedia) {
+    return false;
+  }
+  return hasMedia;
+}
+
+function hasUsableMedia(item) {
+  const mediaFiles = Array.isArray(item.media_files) ? item.media_files : [];
+  if (mediaFiles.some((media) => media && typeof media === "object" && stringValue(media.url))) {
+    return true;
+  }
+
+  const imageUrls = Array.isArray(item.image_urls) ? item.image_urls : [];
+  return imageUrls.some((url) => stringValue(url));
 }
 
 function hasMediaWaitingForProcessing(after, before) {

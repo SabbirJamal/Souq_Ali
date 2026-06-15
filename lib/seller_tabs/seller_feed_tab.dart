@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,7 @@ import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../widgets/app_pull_refresh.dart';
 import '../widgets/item_card.dart';
+import '../widgets/media_carousel.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -36,6 +38,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   static const _initialFetchLimit = 16;
   static const _nextFetchLimit = 32;
   static const _mergeLatestLimit = 20;
+  static const _visibilityCheckDelay = Duration(milliseconds: 320);
 
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
@@ -43,6 +46,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final Map<String, GlobalKey> _itemKeys = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
+  final Set<String> _prefetchedImageUrls = {};
 
   final List<FeedItem> _allDocs = [];
   List<FeedItem>? _cachedFilteredDocs;
@@ -147,11 +151,42 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _isLoading = false;
         _cachedFilteredDocs = null;
       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _prefetchFeedThumbnails(result.items, isInitial: isInitial);
+      });
       _scheduleVisibleSeenCheck();
     } catch (error, stackTrace) {
       debugPrint('Feed load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _prefetchFeedThumbnails(
+    List<FeedItem> items, {
+    required bool isInitial,
+  }) {
+    final limit = isInitial ? 6 : 4;
+    var queued = 0;
+
+    for (var index = 0; index < items.length && queued < limit; index++) {
+      final media = mediaItemsFromMap(items[index].data);
+      if (media.isEmpty) continue;
+
+      final first = media.first;
+      final thumbnailUrl = first.thumbnailUrl?.trim() ?? '';
+      final fallbackUrl = first.url.trim();
+      final url = thumbnailUrl.isNotEmpty
+          ? thumbnailUrl
+          : (!first.isVideo && index < 4 ? fallbackUrl : '');
+      if (url.isEmpty || !_prefetchedImageUrls.add(url)) continue;
+
+      queued += 1;
+      precacheImage(
+        CachedNetworkImageProvider(url, maxWidth: 500),
+        context,
+      ).catchError((_) {});
     }
   }
 
@@ -339,12 +374,18 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   void _scheduleVisibleSeenCheck() {
     _visibilityDebounce?.cancel();
-    _visibilityDebounce = Timer(const Duration(milliseconds: 220), _markVisibleItemsSeen);
+    _visibilityDebounce = Timer(_visibilityCheckDelay, _markVisibleItemsSeen);
   }
 
   void _markVisibleItemsSeen() {
     final viewerId = _viewerId;
-    if (viewerId == null || viewerId.isEmpty || !_scrollController.hasClients || !mounted) return;
+    if (viewerId == null ||
+        viewerId.isEmpty ||
+        _itemKeys.isEmpty ||
+        !_scrollController.hasClients ||
+        !mounted) {
+      return;
+    }
 
     final viewportTop = MediaQuery.paddingOf(context).top + 56;
     final viewportBottom = MediaQuery.sizeOf(context).height - 58;

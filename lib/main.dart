@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -11,6 +12,7 @@ import 'camera_capture_page.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'services/app_update_service.dart';
+import 'services/feed_service.dart';
 
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +31,7 @@ Future<void> main() async {
   final firebaseFuture = Firebase.initializeApp();
   final sessionFuture = SellerSession.current();
   final cameraPrewarmFuture = _prewarmCameraIfPermitted();
+  unawaited(_warmInitialFeed(firebaseFuture, sessionFuture));
 
   runApp(SouqaliApp(
     firebaseFuture: firebaseFuture,
@@ -46,6 +49,31 @@ Future<void> _prewarmCameraIfPermitted() async {
     await CameraCapturePage.preloadCameras();
   } catch (_) {
     // Camera warm-up is opportunistic; normal camera open handles failures.
+  }
+}
+
+Future<void> _warmInitialFeed(
+  Future<void> firebaseFuture,
+  Future<SellerSession?> sessionFuture,
+) async {
+  try {
+    await firebaseFuture;
+    final session = await sessionFuture;
+    String? viewerId = session?.sellerId.trim();
+    if (viewerId == null || viewerId.isEmpty) {
+      final auth = FirebaseAuth.instance;
+      final user = auth.currentUser ?? (await auth.signInAnonymously()).user;
+      viewerId = user?.uid;
+    }
+    if (viewerId == null || viewerId.isEmpty) return;
+
+    FeedService.warmUpItems(
+      viewerId: viewerId,
+      status: 'post',
+      limit: 16,
+    );
+  } catch (_) {
+    // Feed warm-up is opportunistic; the feed screen still loads normally.
   }
 }
 

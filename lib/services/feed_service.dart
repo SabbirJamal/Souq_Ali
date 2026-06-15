@@ -7,8 +7,72 @@ class FeedService {
   static final _functions = FirebaseFunctions.instanceFor(region: 'us-central1');
   static final _feedCallable = _functions.httpsCallable('getFeedItems');
   static final _seenCallable = _functions.httpsCallable('markFeedItemsSeen');
+  static final Map<String, Future<FeedPageResult>> _warmupRequests = {};
+  static final Map<String, FeedPageResult> _warmupResults = {};
+  static final Set<String> _consumedWarmups = {};
+
+  static void warmUpItems({
+    required String viewerId,
+    required String status,
+    int limit = 60,
+  }) {
+    final key = _warmupKey(
+      viewerId: viewerId,
+      status: status,
+      limit: limit,
+    );
+    if (_warmupResults.containsKey(key) || _warmupRequests.containsKey(key)) {
+      return;
+    }
+
+    final request = _fetchItems(
+      viewerId: viewerId,
+      status: status,
+      limit: limit,
+    );
+    _warmupRequests[key] = request;
+    request.then((result) {
+      if (!_consumedWarmups.remove(key)) {
+        _warmupResults[key] = result;
+      }
+    }).catchError((_) {
+      _consumedWarmups.remove(key);
+    }).whenComplete(() {
+      _warmupRequests.remove(key);
+    });
+  }
 
   static Future<FeedPageResult> fetchItems({
+    required String viewerId,
+    required String status,
+    FeedCursor? cursor,
+    int limit = 60,
+  }) async {
+    if (cursor == null) {
+      final key = _warmupKey(
+        viewerId: viewerId,
+        status: status,
+        limit: limit,
+      );
+      final cachedResult = _warmupResults.remove(key);
+      if (cachedResult != null) return cachedResult;
+
+      final pendingRequest = _warmupRequests[key];
+      if (pendingRequest != null) {
+        _consumedWarmups.add(key);
+        return pendingRequest;
+      }
+    }
+
+    return _fetchItems(
+      viewerId: viewerId,
+      status: status,
+      cursor: cursor,
+      limit: limit,
+    );
+  }
+
+  static Future<FeedPageResult> _fetchItems({
     required String viewerId,
     required String status,
     FeedCursor? cursor,
@@ -49,6 +113,14 @@ class FeedService {
       'viewerType': viewerType,
       'itemIds': itemIds,
     });
+  }
+
+  static String _warmupKey({
+    required String viewerId,
+    required String status,
+    required int limit,
+  }) {
+    return '$viewerId|$status|$limit';
   }
 }
 
