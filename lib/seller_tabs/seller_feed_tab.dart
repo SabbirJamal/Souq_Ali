@@ -5,7 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:skeletonizer/skeletonizer.dart';
 
 import '../services/feed_service.dart';
 import '../seller_session.dart';
@@ -119,7 +118,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     });
   }
 
-  Future<void> _fetchPage({required bool isInitial}) async {
+  Future<void> _fetchPage({
+    required bool isInitial,
+    bool useWarmup = true,
+  }) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
@@ -138,6 +140,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         status: widget.itemStatus,
         cursor: isInitial ? null : _feedCursor,
         limit: requestedLimit,
+        useWarmup: useWarmup,
       );
       if (!mounted) return;
       setState(() {
@@ -280,7 +283,18 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     await _fetchPage(isInitial: true);
   }
 
-  Future<void> reloadItems() => _refreshFeed();
+  Future<void> reloadItems({bool forceFresh = false}) async {
+    _markVisibleItemsSeen();
+    await _flushSeenItems();
+    setState(() {
+      _refreshTick++;
+      _allDocs.clear();
+      _hasMore = true;
+      _feedCursor = null;
+      _cachedFilteredDocs = null;
+    });
+    await _fetchPage(isInitial: true, useWarmup: !forceFresh);
+  }
 
   Future<void> mergeLatestItems() async {
     if (_isLoading || _isMergingLatest) return;
@@ -445,7 +459,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final isLivePage = widget.itemStatus == 'live';
     final showInlineLoading =
         _isLoading && UploadStatusManager.current.value == null;
-    final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 75;
+    final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 90;
 
     final content = Stack(
       children: [
@@ -468,9 +482,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                               ? SliverGrid.builder(
                                   itemCount: 6,
                                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                  itemBuilder: (context, index) => _SkeletonFeedItemCard(isCompact: true, isLivePage: isLivePage),
+                                  itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
                                 )
-                              : SliverList.builder(itemCount: 3, itemBuilder: (context, index) => _SkeletonFeedItemCard(isLivePage: isLivePage)),
+                              : SliverList.builder(itemCount: 3, itemBuilder: (context, index) => const _SkeletonFeedItemCard()),
                         )
                       else if (docs.isEmpty && !_isLoading)
                         SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))))
@@ -501,9 +515,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                 ? SliverGrid.builder(
                                     itemCount: 4,
                                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                    itemBuilder: (context, index) => _SkeletonFeedItemCard(isCompact: true, isLivePage: isLivePage),
+                                    itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
                                   )
-                                : SliverList.builder(itemCount: 2, itemBuilder: (context, index) => _SkeletonFeedItemCard(isLivePage: isLivePage)),
+                                : SliverList.builder(itemCount: 2, itemBuilder: (context, index) => const _SkeletonFeedItemCard()),
                           ),
                       ],
                       SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
@@ -649,42 +663,14 @@ class _FeedHeader extends StatelessWidget {
 class _SkeletonFeedItemCard extends StatelessWidget {
   const _SkeletonFeedItemCard({
     this.isCompact = false,
-    required this.isLivePage,
   });
 
   final bool isCompact;
-  final bool isLivePage;
 
   @override
   Widget build(BuildContext context) {
-    return Skeletonizer(
-      enabled: true,
-      effect: const ShimmerEffect(
-        baseColor: Color(0xFFE9EFEB),
-        highlightColor: Color(0xFFF8FBF9),
-        duration: Duration(milliseconds: 1250),
-      ),
-      child: ItemCard(
-        docId: 'skeleton',
-        item: _skeletonItem,
-        isCompact: isCompact,
-        isLivePage: isLivePage,
-        uploadedAgoOverride: '15 min ago',
-      ),
-    );
+    return ItemCardSkeleton(isCompact: isCompact);
   }
-
-  Map<String, dynamic> get _skeletonItem => {
-        'status': isLivePage ? 'live' : 'post',
-        'item_name': 'Sample Item',
-        'item_price': isLivePage ? 'OMR 12.000 / kg' : '',
-        'location': 'Muscat',
-        'is_transit': false,
-        'created_at': Timestamp.now(),
-        'media_files': const [
-          {'type': 'image', 'url': ''},
-        ],
-      };
 }
 
 bool _isItemActive(Map<String, dynamic> item, DateTime now) {

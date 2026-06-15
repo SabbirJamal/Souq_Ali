@@ -47,8 +47,9 @@ class FeedService {
     required String status,
     FeedCursor? cursor,
     int limit = 60,
+    bool useWarmup = true,
   }) async {
-    if (cursor == null) {
+    if (cursor == null && useWarmup) {
       final key = _warmupKey(
         viewerId: viewerId,
         status: status,

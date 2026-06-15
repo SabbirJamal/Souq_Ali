@@ -93,11 +93,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _handleItemUploadSuccess(bool isLiveItem) {
     if (isLiveItem) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _liveFeedKey.currentState?.reloadItems();
+        _liveFeedKey.currentState?.reloadItems(forceFresh: true);
       });
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _feedKey.currentState?.reloadItems();
+        _feedKey.currentState?.reloadItems(forceFresh: true);
       });
     }
   }

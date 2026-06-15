@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: 'AIzaSyBbfoGx0dS6Xymfgu4koLAVdHrPN-AKG_8',
@@ -12,9 +12,15 @@ Future<void> main() async {
     ),
   );
 
-  final snapshot =
-      await FirebaseFirestore.instance.collection('items').count().get();
+  final status = args.isNotEmpty ? args.first.trim() : '';
+  Query<Map<String, dynamic>> query =
+      FirebaseFirestore.instance.collection('items');
+  if (status.isNotEmpty) {
+    query = query.where('status', isEqualTo: status);
+  }
+
+  final snapshot = await query.count().get();
 
   // ignore: avoid_print
-  print('Total items: ${snapshot.count}');
+  print(status.isEmpty ? 'Total items: ${snapshot.count}' : 'Total $status items: ${snapshot.count}');
 }

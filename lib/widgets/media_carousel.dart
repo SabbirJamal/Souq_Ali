@@ -123,11 +123,10 @@ class MediaPreview extends StatelessWidget {
     if (currentMedia == null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: Container(
+        child: SizedBox(
           width: double.infinity,
           height: height,
-          color: const Color(0xFFDCF8C6),
-          child: const Icon(Icons.image, size: 50, color: Color(0xFF075E54)),
+          child: const MediaSkeletonPlaceholder(),
         ),
       );
     }
@@ -257,11 +256,10 @@ class _MediaCarouselState extends State<MediaCarousel> {
     if (widget.mediaItems.isEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(widget.borderRadius),
-        child: Container(
+        child: SizedBox(
           width: double.infinity,
           height: widget.height,
-          color: const Color(0xFFDCF8C6),
-          child: const Icon(Icons.image, size: 50, color: Color(0xFF075E54)),
+          child: const MediaSkeletonPlaceholder(),
         ),
       );
     }
@@ -481,10 +479,7 @@ class _MediaErrorPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFDCF8C6),
-      child: const Icon(Icons.broken_image, size: 50, color: Color(0xFF075E54)),
-    );
+    return const MediaSkeletonPlaceholder();
   }
 }
 
