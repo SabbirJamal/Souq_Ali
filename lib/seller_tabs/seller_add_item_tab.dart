@@ -242,7 +242,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         'location': draft.location, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),
         'media_files': uploaded.map((m) => m.toMap()).toList(),
         'media_processing_status': 'pending',
-        'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: draft.isLive ? 2 : 18))),
+        'created_at': FieldValue.serverTimestamp(), 'expires_at': Timestamp.fromDate(DateTime.now().add(Duration(hours: draft.isLive ? 3 : 18))),
       });
       if (!draft.isTransit) {
         batch.update(
@@ -473,7 +473,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               child: ElevatedButton(
                 onPressed: _isSubmitting ? null : _addItem,
                 style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: _isSubmitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : Text(_isLiveItem ? 'Go Live - 2 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+                child: _isSubmitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : Text(_isLiveItem ? 'Go Live - 3 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
               ),
             ),
           ),

@@ -315,20 +315,36 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     final cam = await permissions.Permission.camera.status;
     final mic = await permissions.Permission.microphone.status;
     if (cam.isGranted && mic.isGranted) {
-      setState(() { _hasPermission = true; _isCheckingPermission = false; });
+      if (!mounted) return;
+      setState(() {
+        _hasPermission = true;
+        _isCheckingPermission = false;
+      });
       _initFuture = _setup();
     } else {
-      setState(() { _hasPermission = false; _isCheckingPermission = false; });
+      await _requestPermission(openSettingsIfDenied: false);
     }
   }
 
-  Future<void> _requestPermission() async {
+  Future<void> _requestPermission({bool openSettingsIfDenied = true}) async {
     final status = await [permissions.Permission.camera, permissions.Permission.microphone].request();
-    if (status[permissions.Permission.camera]?.isGranted == true && status[permissions.Permission.microphone]?.isGranted == true) {
-      setState(() { _hasPermission = true; });
+    final granted = status[permissions.Permission.camera]?.isGranted == true &&
+        status[permissions.Permission.microphone]?.isGranted == true;
+    if (!mounted) return;
+    if (granted) {
+      setState(() {
+        _hasPermission = true;
+        _isCheckingPermission = false;
+      });
       _initFuture = _setup();
     } else {
-      permissions.openAppSettings();
+      setState(() {
+        _hasPermission = false;
+        _isCheckingPermission = false;
+      });
+      if (openSettingsIfDenied) {
+        permissions.openAppSettings();
+      }
     }
   }
 

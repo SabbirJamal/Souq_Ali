@@ -379,7 +379,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       'time_period_days': 0,
       'time_period_extra_hours': 2,
       'time_period_hours': 2,
-      'expires_at': Timestamp.fromDate(DateTime.now().add(const Duration(hours: 2))),
+      'expires_at': Timestamp.fromDate(DateTime.now().add(const Duration(hours: 3))),
       'updated_at': FieldValue.serverTimestamp(),
     });
 

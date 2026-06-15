@@ -237,7 +237,7 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
   @override
   Widget build(BuildContext context) {
     final sellerDocId = _sellerDocId;
-    final topInset = MediaQuery.paddingOf(context).top;
+    const headerButtonTop = 7.0;
 
     return Stack(
       children: [
@@ -294,12 +294,12 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
         else ...[
           if (onBack != null)
             Positioned(
-              top: topInset,
+              top: headerButtonTop,
               left: 14,
               child: _ProfileFloatingBackButton(onBack: onBack!),
             ),
           Positioned(
-            top: topInset,
+            top: headerButtonTop,
             right: 14,
             child: const _ProfileFloatingShareButton(),
           ),
