@@ -309,13 +309,9 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
         return;
       }
       if (widget.fieldKey == 'name') {
-        final session = await SellerSession.current();
-        if (session != null) {
-          await SellerSession.save(
-            sellerId: session.sellerId,
-            name: _controller.text.trim(),
-            phoneNumber: session.phoneNumber,
-          );
+        await SellerSession.updateName(_controller.text.trim());
+        if (!mounted) {
+          return;
         }
       }
       FocusScope.of(context).unfocus();

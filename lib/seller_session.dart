@@ -70,6 +70,21 @@ class SellerSession {
     return _cached!;
   }
 
+  static Future<void> updateName(String name) async {
+    final session = await current();
+    if (session == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_sellerNameKey, name);
+    _cached = SellerSession(
+      sellerId: session.sellerId,
+      name: name,
+      phoneNumber: session.phoneNumber,
+      sessionId: session.sessionId,
+      deviceId: session.deviceId,
+    );
+  }
+
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_sellerIdKey);
