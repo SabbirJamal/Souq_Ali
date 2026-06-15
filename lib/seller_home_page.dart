@@ -93,11 +93,11 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _handleItemUploadSuccess(bool isLiveItem) {
     if (isLiveItem) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _liveFeedKey.currentState?.mergeLatestItems();
+        _liveFeedKey.currentState?.reloadItems();
       });
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _feedKey.currentState?.mergeLatestItems();
+        _feedKey.currentState?.reloadItems();
       });
     }
   }
@@ -660,7 +660,7 @@ class _SellerTabHeader extends StatelessWidget {
 
 void refreshLatestListingsPage() {
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    _SellerHomePageState.latestListingsState?.scrollToTopOrRefresh();
+    _SellerHomePageState.latestListingsState?.reloadItems();
   });
 }
 

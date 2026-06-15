@@ -193,7 +193,16 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     final name = _nameController.text.trim();
     final loc = _isTransitPost ? '🚚 Transit' : _locationController.text.trim();
     final normPrice = _isLiveItem ? _normalizePrice(_priceController.text) : '';
-    if (_isLiveItem && (normPrice == null || double.parse(normPrice) <= 0)) { setState(() => _showPriceError = true); _priceFocusNode.requestFocus(); return; }
+    final isLocationInvalid = !_isTransitPost && loc.isEmpty;
+    final isPriceInvalid = _isLiveItem && (normPrice == null || double.parse(normPrice) <= 0);
+    if (isLocationInvalid || isPriceInvalid) {
+      setState(() {
+        _showLocationError = isLocationInvalid;
+        _showPriceError = isPriceInvalid;
+      });
+      if (isPriceInvalid) _priceFocusNode.requestFocus();
+      return;
+    }
     final draft = _ItemUploadDraft(
       media: List<SelectedMedia>.of(_selectedMedia),
       name: name,
