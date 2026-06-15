@@ -6,6 +6,7 @@ import '../item_edit_page.dart';
 import '../seller_session.dart';
 import '../seller_session_guard.dart';
 import '../utils/formatters.dart';
+import '../utils/item_status_cache.dart';
 import '../utils/price_input.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/app_pull_refresh.dart';
@@ -37,11 +38,9 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   late final Future<SellerSession?> _sessionFuture;
   final ValueNotifier<DateTime> _nowNotifier = ValueNotifier(DateTime.now());
   final _scrollController = ScrollController();
-  
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _allDocs = [];
+  final ItemStatusCaches _itemCaches = ItemStatusCaches();
   late String _selectedStatus = widget.initialStatus == 'live' ? 'live' : 'post';
-  bool _isLoading = false;
-  bool _hasMore = true;
+  ItemStatusCache get _activeCache => _itemCaches.forStatus(_selectedStatus);
 
   @override
   void initState() {
@@ -55,7 +54,8 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients || _isLoading || !_hasMore) return;
+    final cache = _activeCache;
+    if (!_scrollController.hasClients || cache.isLoading || !cache.hasMore) return;
     if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 800) {
       _loadMore();
     }
@@ -71,8 +71,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     _nowNotifier.value = DateTime.now();
     if (mounted) {
       setState(() {
-        _allDocs.clear();
-        _hasMore = true;
+        _itemCaches.resetStatus(_selectedStatus);
       });
     }
     await _loadInitial();
@@ -97,8 +96,10 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   Future<void> _fetchPage(SellerSession session, {required bool isInitial}) async {
-    if (_isLoading || (!isInitial && !_hasMore)) return;
-    setState(() => _isLoading = true);
+    final requestedStatus = _selectedStatus;
+    final cache = _activeCache;
+    if (cache.isLoading || (!isInitial && !cache.hasMore)) return;
+    setState(() => cache.isLoading = true);
 
     try {
       var query = FirebaseFirestore.instance
@@ -119,10 +120,13 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         newDocs = _sortedByCreatedAtDesc(legacySnapshot.docs);
       }
       setState(() {
-        if (isInitial) _allDocs.clear();
-        _allDocs.addAll(newDocs);
-        _hasMore = false;
-        _isLoading = false;
+        if (isInitial) cache.reset();
+        cache.addUnique(
+          newDocs.where((doc) => _matchesStatus(doc.data(), requestedStatus)),
+        );
+        cache.hasMore = false;
+        cache.isLoading = false;
+        cache.error = null;
       });
     } catch (e) {
       try {
@@ -143,13 +147,16 @@ class SellerListingsTabState extends State<SellerListingsTab> {
           newDocs = _sortedByCreatedAtDesc(legacySnapshot.docs);
         }
         setState(() {
-          if (isInitial) _allDocs.clear();
-          _allDocs.addAll(newDocs);
-          _hasMore = false;
-          _isLoading = false;
+          if (isInitial) cache.reset();
+          cache.addUnique(
+            newDocs.where((doc) => _matchesStatus(doc.data(), requestedStatus)),
+          );
+          cache.hasMore = false;
+          cache.isLoading = false;
+          cache.error = null;
         });
       } catch (_) {
-        if (mounted) setState(() => _isLoading = false);
+        if (mounted) setState(() => cache.isLoading = false);
       }
     }
   }
@@ -177,6 +184,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     if (widget.refreshTick != oldWidget.refreshTick) {
       _nowNotifier.value = DateTime.now();
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      _itemCaches.resetStatus(_selectedStatus);
       _loadInitial();
     }
   }
@@ -205,9 +213,13 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   bool _matchesSelectedStatus(Map<String, dynamic> item) {
+    return _matchesStatus(item, _selectedStatus);
+  }
+
+  bool _matchesStatus(Map<String, dynamic> item, String statusFilter) {
     final status = item['status']?.toString();
-    if (_selectedStatus == 'post') return status == null || status.isEmpty || status == 'post';
-    return status == _selectedStatus;
+    if (statusFilter == 'post') return status == null || status.isEmpty || status == 'post';
+    return status == statusFilter;
   }
 
   String _uploadedAgo(Object? value, DateTime now) {
@@ -279,7 +291,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     await _deleteSeenRecord(docId);
     await FirebaseFirestore.instance.collection('items').doc(docId).delete();
     if (mounted) {
-      setState(() => _allDocs.removeWhere((doc) => doc.id == docId));
+      setState(() => _itemCaches.removeDoc(docId));
     }
     if (!context.mounted) return;
     AppToast.show(context, 'Item deleted');
@@ -384,7 +396,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     });
 
     if (!mounted) return;
-    await _loadInitial();
+    await reloadItems();
     if (!mounted) return;
     AppToast.show(this.context, 'Live item renewed');
   }
@@ -407,7 +419,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   }
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _getFilteredDocs(DateTime now) {
-    return _allDocs
+    return _activeCache.docs
         .where((doc) => _isItemActive(doc.data(), now))
         .where((doc) => _matchesSelectedStatus(doc.data()))
         .toList();
@@ -418,7 +430,8 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     return FutureBuilder<SellerSession?>(
       future: _sessionFuture,
       builder: (context, sessionSnapshot) {
-        if (sessionSnapshot.connectionState == ConnectionState.waiting && _allDocs.isEmpty) {
+        final activeCache = _activeCache;
+        if (sessionSnapshot.connectionState == ConnectionState.waiting && activeCache.docs.isEmpty) {
           return const _ListingsSkeletonGrid();
         }
         final session = sessionSnapshot.data;
@@ -466,16 +479,16 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                                 FocusManager.instance.primaryFocus?.unfocus();
                                 setState(() {
                                   _selectedStatus = status;
-                                  _allDocs.clear();
-                                  _hasMore = true;
                                   _nowNotifier.value = DateTime.now();
                                 });
-                                _loadInitial();
+                                if (_activeCache.docs.isEmpty && !_activeCache.isLoading) {
+                                  _loadInitial();
+                                }
                               }
                             },
                           ),
                         ),
-                        if (docs.isEmpty && !_isLoading)
+                        if (docs.isEmpty && !activeCache.isLoading)
                           SliverFillRemaining(
                             hasScrollBody: false,
                             child: Center(
@@ -526,7 +539,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                               },
                             ),
                           ),
-                          if (_isLoading)
+                          if (activeCache.isLoading)
                             const SliverToBoxAdapter(
                               child: _ListingsSkeletonGrid(),
                             ),

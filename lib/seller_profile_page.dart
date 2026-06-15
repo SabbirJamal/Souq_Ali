@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'seller_home_page.dart';
 import 'seller_session.dart';
+import 'utils/item_status_cache.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/item_card.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
@@ -254,38 +255,41 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
                 ? seller['cr_number'].toString().trim()
                 : seller['crNumber']?.toString().trim() ?? '';
 
-            return CustomScrollView(
-              controller: _scrollController,
-              slivers: [
-                if (!isOwnProfile)
+            return ColoredBox(
+              color: const Color(0xFFF4FBF7),
+              child: CustomScrollView(
+                controller: _scrollController,
+                slivers: [
+                  if (!isOwnProfile)
+                    SliverToBoxAdapter(
+                      child: _ProfileScrollableHeader(onBack: onBack),
+                    ),
                   SliverToBoxAdapter(
-                    child: _ProfileScrollableHeader(onBack: onBack),
+                    child: _SellerProfileTop(
+                      sellerName: sellerName,
+                      crNumber: crNumber,
+                      sellerPhone: sellerPhone,
+                      topPadding: isOwnProfile
+                          ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
+                          : 16,
+                    ),
                   ),
-                SliverToBoxAdapter(
-                  child: _SellerProfileTop(
-                    sellerName: sellerName,
-                    crNumber: crNumber,
-                    sellerPhone: sellerPhone,
-                    topPadding: isOwnProfile
-                        ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
-                        : 16,
+                  SliverToBoxAdapter(
+                    child: _ProfileStatusTabs(
+                      selectedStatus: _selectedStatus,
+                      onChanged: (status) {
+                        if (status == _selectedStatus) return;
+                        setState(() => _selectedStatus = status);
+                      },
+                    ),
                   ),
-                ),
-                SliverToBoxAdapter(
-                  child: _ProfileStatusTabs(
+                  _SellerActivePosts(
+                    key: _activePostsKey,
+                    sellerId: sellerDocId,
                     selectedStatus: _selectedStatus,
-                    onChanged: (status) {
-                      if (status == _selectedStatus) return;
-                      setState(() => _selectedStatus = status);
-                    },
                   ),
-                ),
-                _SellerActivePosts(
-                  key: _activePostsKey,
-                  sellerId: sellerDocId,
-                  selectedStatus: _selectedStatus,
-                ),
-              ],
+                ],
+              ),
             );
           },
         ),
@@ -501,7 +505,7 @@ class _SellerProfileTop extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      color: const Color(0xFFF4FBF7),
+      color: Colors.transparent,
       padding: EdgeInsets.fromLTRB(18, topPadding, 18, 10),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -561,7 +565,7 @@ class _ProfileStatusTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFF4FBF7),
+      color: Colors.transparent,
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
@@ -661,11 +665,8 @@ class _SellerActivePosts extends StatefulWidget {
 class _SellerActivePostsState extends State<_SellerActivePosts> {
   static const _pageSize = 20;
 
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
-  QueryDocumentSnapshot<Map<String, dynamic>>? _lastDoc;
-  bool _isLoading = false;
-  bool _hasMore = true;
-  Object? _error;
+  final ItemStatusCaches _itemCaches = ItemStatusCaches();
+  ItemStatusCache get _activeCache => _itemCaches.forStatus(widget.selectedStatus);
 
   @override
   void initState() {
@@ -676,18 +677,18 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   @override
   void didUpdateWidget(covariant _SellerActivePosts oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.sellerId != widget.sellerId ||
-        oldWidget.selectedStatus != widget.selectedStatus) {
+    if (oldWidget.sellerId != widget.sellerId) {
       _resetAndLoad();
+    } else if (oldWidget.selectedStatus != widget.selectedStatus &&
+        _activeCache.docs.isEmpty &&
+        !_activeCache.isLoading) {
+      _loadInitial();
     }
   }
 
   Future<void> _resetAndLoad() async {
     setState(() {
-      _docs.clear();
-      _lastDoc = null;
-      _hasMore = true;
-      _error = null;
+      _itemCaches.resetAll();
     });
     await _loadInitial();
   }
@@ -697,31 +698,33 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   Future<void> loadMore() => _fetchPage(isInitial: false);
 
   Future<void> _fetchPage({required bool isInitial}) async {
-    if (_isLoading || (!isInitial && !_hasMore) || widget.sellerId.isEmpty) {
+    final requestedStatus = widget.selectedStatus;
+    final cache = _itemCaches.forStatus(requestedStatus);
+    if (cache.isLoading || (!isInitial && !cache.hasMore) || widget.sellerId.isEmpty) {
       return;
     }
 
     setState(() {
-      _isLoading = true;
-      if (isInitial) _error = null;
+      cache.isLoading = true;
+      if (isInitial) cache.error = null;
     });
 
     try {
       var query = FirebaseFirestore.instance
           .collection('items')
           .where('seller_uid', isEqualTo: widget.sellerId)
-          .where('status', isEqualTo: widget.selectedStatus)
+          .where('status', isEqualTo: requestedStatus)
           .orderBy('created_at', descending: true)
           .limit(_pageSize);
 
-      if (!isInitial && _lastDoc != null) {
-        query = query.startAfterDocument(_lastDoc!);
+      if (!isInitial && cache.lastDoc != null) {
+        query = query.startAfterDocument(cache.lastDoc!);
       }
 
       var snapshot = await query.get();
       if (isInitial &&
           snapshot.docs.isEmpty &&
-          widget.selectedStatus == 'post') {
+          requestedStatus == 'post') {
         snapshot = await FirebaseFirestore.instance
             .collection('items')
             .where('seller_uid', isEqualTo: widget.sellerId)
@@ -735,63 +738,94 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
       final activeDocs = snapshot.docs
           .where((doc) =>
               _isItemActive(doc.data(), now) &&
-              _matchesQueriedStatus(doc.data(), widget.selectedStatus))
+              _matchesQueriedStatus(doc.data(), requestedStatus))
           .toList(growable: false);
 
       setState(() {
-        if (isInitial) _docs.clear();
-        final existingIds = _docs.map((doc) => doc.id).toSet();
-        _docs.addAll(
-          activeDocs.where((doc) => !existingIds.contains(doc.id)),
-        );
-        _lastDoc = snapshot.docs.isEmpty ? _lastDoc : snapshot.docs.last;
-        _hasMore = snapshot.docs.length == _pageSize;
-        _isLoading = false;
+        if (isInitial) cache.reset();
+        cache.addUnique(activeDocs);
+        cache.lastDoc = snapshot.docs.isEmpty ? cache.lastDoc : snapshot.docs.last;
+        cache.hasMore = snapshot.docs.length == _pageSize;
+        cache.isLoading = false;
+        cache.error = null;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error;
-        _isLoading = false;
+        cache.error = error;
+        cache.isLoading = false;
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && _docs.isEmpty) {
-      return const SliverFillRemaining(
-        hasScrollBody: false,
-        child: _SellerProfilePostsSkeleton(),
+    final cache = _activeCache;
+    final docs = cache.docs;
+    if (cache.isLoading && docs.isEmpty) {
+      return SliverToBoxAdapter(
+        child: _SellerProfileContentBackground(
+          isLive: widget.selectedStatus == 'live',
+          child: const _SellerProfilePostsSkeleton(),
+        ),
       );
     }
 
-    if (_error != null && _docs.isEmpty) {
+    if (cache.error != null && docs.isEmpty) {
       return SliverFillRemaining(
         hasScrollBody: false,
-        child: Center(child: Text('Error: $_error')),
+        child: _SellerProfileContentBackground(
+          isLive: widget.selectedStatus == 'live',
+          child: Center(child: Text('Error: ${cache.error}')),
+        ),
       );
     }
 
-    if (_docs.isEmpty) {
-      return const SliverFillRemaining(
+    if (docs.isEmpty) {
+      return SliverFillRemaining(
         hasScrollBody: false,
-        child: Center(
-          child: Text(
-            'No active posts',
-            style: TextStyle(color: Colors.grey, fontSize: 16),
+        child: _SellerProfileContentBackground(
+          isLive: widget.selectedStatus == 'live',
+          child: const Center(
+            child: Text(
+              'No active posts',
+              style: TextStyle(color: Colors.grey, fontSize: 16),
+            ),
           ),
         ),
       );
     }
 
-    return SliverPadding(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-      sliver: SliverToBoxAdapter(
+    return SliverToBoxAdapter(
+      child: _SellerProfileContentBackground(
+        isLive: widget.selectedStatus == 'live',
         child: Column(
           children: [
-            _SellerProfileGrid(docs: _docs),
-            if (_isLoading) const _SellerProfilePostsSkeleton(),
+            GridView.builder(
+              padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: docs.length,
+              addAutomaticKeepAlives: false,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 4,
+                mainAxisSpacing: 2,
+                childAspectRatio: 0.58,
+              ),
+              itemBuilder: (context, index) {
+                final doc = docs[index];
+                return ItemCard(
+                  key: ValueKey(doc.id),
+                  docId: doc.id,
+                  item: doc.data(),
+                  isCompact: true,
+                  isLivePage: widget.selectedStatus == 'live',
+                  replaceOnOpen: true,
+                );
+              },
+            ),
+            if (cache.isLoading) const _SellerProfilePostsSkeleton(),
           ],
         ),
       ),
@@ -799,30 +833,29 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   }
 }
 
-class _SellerProfileGrid extends StatelessWidget {
-  const _SellerProfileGrid({required this.docs});
+class _SellerProfileContentBackground extends StatelessWidget {
+  const _SellerProfileContentBackground({
+    required this.isLive,
+    required this.child,
+  });
 
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+  final bool isLive;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final leftDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    final rightDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    for (var i = 0; i < docs.length; i++) {
-      if (i.isEven) {
-        leftDocs.add(docs[i]);
-      } else {
-        rightDocs.add(docs[i]);
-      }
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(child: _SellerProfileColumn(docs: leftDocs)),
-        const SizedBox(width: 4),
-        Expanded(child: _SellerProfileColumn(docs: rightDocs)),
-      ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isLive ? null : const Color(0xFFF4FBF7),
+        gradient: isLive
+            ? const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFFE9EC), Color(0xFFF4FBF7)],
+              )
+            : null,
+      ),
+      child: child,
     );
   }
 }
@@ -842,26 +875,6 @@ class _SellerProfilePostsSkeleton extends StatelessWidget {
           Expanded(child: ItemCardSkeleton(isCompact: true)),
         ],
       ),
-    );
-  }
-}
-
-class _SellerProfileColumn extends StatelessWidget {
-  const _SellerProfileColumn({required this.docs});
-
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: docs
-          .map((doc) => ItemCard(
-                docId: doc.id,
-                item: doc.data(),
-                isCompact: true,
-                replaceOnOpen: true,
-              ))
-          .toList(),
     );
   }
 }

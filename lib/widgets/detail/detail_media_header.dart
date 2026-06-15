@@ -1,6 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:video_player/video_player.dart';
 
 import 'detail_video_player.dart';
@@ -451,9 +450,9 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
           if (!hideChrome && widget.isLiveItem)
             const Positioned(
               top: 12,
-              right: -72,
+              right: 14,
               child: IgnorePointer(
-                child: _DetailLiveAnimation(),
+                child: _DetailLiveBadge(),
               ),
             ),
           if (!hideChrome && widget.mediaItems.length > 1)
@@ -674,19 +673,33 @@ class _DetailMediaCountBadge extends StatelessWidget {
   }
 }
 
-class _DetailLiveAnimation extends StatelessWidget {
-  const _DetailLiveAnimation();
+class _DetailLiveBadge extends StatelessWidget {
+  const _DetailLiveBadge();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 225,
-      height: 108,
-      child: Lottie.asset(
-        'assets/lottie/live2.json',
-        fit: BoxFit.contain,
-        repeat: true,
-        animate: true,
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE92808),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.sensors, color: Colors.white, size: 21),
+          SizedBox(width: 7),
+          Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
       ),
     );
   }

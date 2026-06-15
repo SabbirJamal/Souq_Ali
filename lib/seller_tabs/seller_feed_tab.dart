@@ -231,7 +231,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _handleActiveTabChanged() {
-    if (!_isActiveTab || !mounted) return;
+    if (!mounted) return;
+    if (!_isActiveTab) {
+      if (_isSearchOpen) _closeSearch();
+      return;
+    }
     final nextValue = widget.gridLayoutMode?.value;
     if (nextValue == null || nextValue == _isGridView) return;
     setState(() => _isGridView = nextValue);
