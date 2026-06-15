@@ -17,6 +17,8 @@ class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
     super.key,
     this.chromeVisibleListenable,
+    this.activeTabListenable,
+    this.tabIndex = 0,
     this.gridLayoutMode,
     required this.onSearchActiveChanged,
     this.itemStatus = 'post',
@@ -24,6 +26,8 @@ class SellerFeedTab extends StatefulWidget {
   });
 
   final ValueListenable<bool>? chromeVisibleListenable;
+  final ValueListenable<int>? activeTabListenable;
+  final int tabIndex;
   final ValueNotifier<bool>? gridLayoutMode;
   final ValueChanged<bool> onSearchActiveChanged;
   final String itemStatus;
@@ -70,6 +74,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     super.initState();
     _isGridView = widget.gridLayoutMode?.value ?? _isGridView;
     widget.gridLayoutMode?.addListener(_handleGridLayoutModeChanged);
+    widget.activeTabListenable?.addListener(_handleActiveTabChanged);
     _scrollController.addListener(_onScroll);
     _loadInitial();
   }
@@ -81,6 +86,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       oldWidget.gridLayoutMode?.removeListener(_handleGridLayoutModeChanged);
       _isGridView = widget.gridLayoutMode?.value ?? _isGridView;
       widget.gridLayoutMode?.addListener(_handleGridLayoutModeChanged);
+    }
+    if (oldWidget.activeTabListenable != widget.activeTabListenable) {
+      oldWidget.activeTabListenable?.removeListener(_handleActiveTabChanged);
+      widget.activeTabListenable?.addListener(_handleActiveTabChanged);
     }
   }
 
@@ -197,6 +206,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     widget.gridLayoutMode?.removeListener(_handleGridLayoutModeChanged);
+    widget.activeTabListenable?.removeListener(_handleActiveTabChanged);
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
     _visibilityDebounce?.cancel();
@@ -213,8 +223,23 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     if (nextValue == null || nextValue == _isGridView || !mounted) {
       return;
     }
+    if (_isActiveTab) {
+      setState(() => _isGridView = nextValue);
+    } else {
+      _isGridView = nextValue;
+    }
+  }
+
+  void _handleActiveTabChanged() {
+    if (!_isActiveTab || !mounted) return;
+    final nextValue = widget.gridLayoutMode?.value;
+    if (nextValue == null || nextValue == _isGridView) return;
     setState(() => _isGridView = nextValue);
   }
+
+  bool get _isActiveTab =>
+      widget.activeTabListenable == null ||
+      widget.activeTabListenable!.value == widget.tabIndex;
 
   Future<_FeedViewerIdentity?> _ensureViewerIdentity() async {
     if (_viewerId != null && _viewerId!.isNotEmpty && _viewerType != null) {
@@ -352,6 +377,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final nextValue = !_isGridView;
     final sharedMode = widget.gridLayoutMode;
     if (sharedMode != null) {
+      setState(() => _isGridView = nextValue);
       sharedMode.value = nextValue;
     } else {
       setState(() => _isGridView = nextValue);

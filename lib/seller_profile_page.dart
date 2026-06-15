@@ -192,6 +192,7 @@ class _SellerProfileBody extends StatefulWidget {
 }
 
 class _SellerProfileBodyState extends State<_SellerProfileBody> {
+  final _scrollController = ScrollController();
   String get sellerPhone => widget.sellerPhone;
   String get fallbackName => widget.fallbackName;
   bool get isOwnProfile => widget.isOwnProfile;
@@ -209,6 +210,29 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
               .collection('sellers')
               .doc(_sellerDocId)
               .snapshots();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels > position.maxScrollExtent - 800) {
+      _activePostsKey.currentState?.loadMore();
+    }
+  }
+
+  final _activePostsKey = GlobalKey<_SellerActivePostsState>();
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +255,7 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
                 : seller['crNumber']?.toString().trim() ?? '';
 
             return CustomScrollView(
+              controller: _scrollController,
               slivers: [
                 if (!isOwnProfile)
                   SliverToBoxAdapter(
@@ -256,6 +281,7 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
                   ),
                 ),
                 _SellerActivePosts(
+                  key: _activePostsKey,
                   sellerId: sellerDocId,
                   selectedStatus: _selectedStatus,
                 ),
@@ -620,6 +646,7 @@ class _ProfileStatusTabButton extends StatelessWidget {
 
 class _SellerActivePosts extends StatefulWidget {
   const _SellerActivePosts({
+    super.key,
     required this.sellerId,
     required this.selectedStatus,
   });
@@ -632,70 +659,142 @@ class _SellerActivePosts extends StatefulWidget {
 }
 
 class _SellerActivePostsState extends State<_SellerActivePosts> {
-  late final Stream<QuerySnapshot<Map<String, dynamic>>> _itemsStream =
-      FirebaseFirestore.instance
+  static const _pageSize = 20;
+
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>> _docs = [];
+  QueryDocumentSnapshot<Map<String, dynamic>>? _lastDoc;
+  bool _isLoading = false;
+  bool _hasMore = true;
+  Object? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitial();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SellerActivePosts oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sellerId != widget.sellerId ||
+        oldWidget.selectedStatus != widget.selectedStatus) {
+      _resetAndLoad();
+    }
+  }
+
+  Future<void> _resetAndLoad() async {
+    setState(() {
+      _docs.clear();
+      _lastDoc = null;
+      _hasMore = true;
+      _error = null;
+    });
+    await _loadInitial();
+  }
+
+  Future<void> _loadInitial() => _fetchPage(isInitial: true);
+
+  Future<void> loadMore() => _fetchPage(isInitial: false);
+
+  Future<void> _fetchPage({required bool isInitial}) async {
+    if (_isLoading || (!isInitial && !_hasMore) || widget.sellerId.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      if (isInitial) _error = null;
+    });
+
+    try {
+      var query = FirebaseFirestore.instance
           .collection('items')
           .where('seller_uid', isEqualTo: widget.sellerId)
-          .snapshots();
+          .where('status', isEqualTo: widget.selectedStatus)
+          .orderBy('created_at', descending: true)
+          .limit(_pageSize);
+
+      if (!isInitial && _lastDoc != null) {
+        query = query.startAfterDocument(_lastDoc!);
+      }
+
+      var snapshot = await query.get();
+      if (isInitial &&
+          snapshot.docs.isEmpty &&
+          widget.selectedStatus == 'post') {
+        snapshot = await FirebaseFirestore.instance
+            .collection('items')
+            .where('seller_uid', isEqualTo: widget.sellerId)
+            .orderBy('created_at', descending: true)
+            .limit(_pageSize)
+            .get();
+      }
+      if (!mounted) return;
+
+      final now = DateTime.now();
+      final activeDocs = snapshot.docs
+          .where((doc) =>
+              _isItemActive(doc.data(), now) &&
+              _matchesQueriedStatus(doc.data(), widget.selectedStatus))
+          .toList(growable: false);
+
+      setState(() {
+        if (isInitial) _docs.clear();
+        final existingIds = _docs.map((doc) => doc.id).toSet();
+        _docs.addAll(
+          activeDocs.where((doc) => !existingIds.contains(doc.id)),
+        );
+        _lastDoc = snapshot.docs.isEmpty ? _lastDoc : snapshot.docs.last;
+        _hasMore = snapshot.docs.length == _pageSize;
+        _isLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = error;
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
+    if (_isLoading && _docs.isEmpty) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: _SellerProfilePostsSkeleton(),
+      );
+    }
 
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _itemsStream,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SliverFillRemaining(
-            hasScrollBody: false,
-            child: _SellerProfilePostsSkeleton(),
-          );
-        }
-        if (snapshot.hasError) {
-          return SliverFillRemaining(
-            hasScrollBody: false,
-            child: Center(child: Text('Error: ${snapshot.error}')),
-          );
-        }
+    if (_error != null && _docs.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(child: Text('Error: $_error')),
+      );
+    }
 
-        final docs = (snapshot.data?.docs ?? [])
-            .where((doc) {
-              final item = doc.data();
-              return _isItemActive(item, now) &&
-                  _matchesProfileStatus(item, widget.selectedStatus);
-            })
-            .toList()
-          ..sort((a, b) {
-            final aTime = a.data()['created_at'];
-            final bTime = b.data()['created_at'];
-            final aDate = aTime is Timestamp
-                ? aTime.toDate()
-                : DateTime.fromMillisecondsSinceEpoch(0);
-            final bDate = bTime is Timestamp
-                ? bTime.toDate()
-                : DateTime.fromMillisecondsSinceEpoch(0);
-            return bDate.compareTo(aDate);
-          });
-
-        if (docs.isEmpty) {
-          return const SliverFillRemaining(
-            hasScrollBody: false,
-            child: Center(
-              child: Text(
-                'No active posts',
-                style: TextStyle(color: Colors.grey, fontSize: 16),
-              ),
-            ),
-          );
-        }
-
-        return SliverPadding(
-          padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
-          sliver: SliverToBoxAdapter(
-            child: _SellerProfileGrid(docs: docs),
+    if (_docs.isEmpty) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Text(
+            'No active posts',
+            style: TextStyle(color: Colors.grey, fontSize: 16),
           ),
-        );
-      },
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+      sliver: SliverToBoxAdapter(
+        child: Column(
+          children: [
+            _SellerProfileGrid(docs: _docs),
+            if (_isLoading) const _SellerProfilePostsSkeleton(),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -767,7 +866,7 @@ class _SellerProfileColumn extends StatelessWidget {
   }
 }
 
-bool _matchesProfileStatus(Map<String, dynamic> item, String selectedStatus) {
+bool _matchesQueriedStatus(Map<String, dynamic> item, String selectedStatus) {
   final status = item['status']?.toString().trim().toLowerCase();
   if (selectedStatus == 'live') return status == 'live';
   return status == null || status.isEmpty || status == 'post';

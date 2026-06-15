@@ -38,10 +38,13 @@ class _SellerHomePageState extends State<SellerHomePage> {
   final _liveFeedKey = GlobalKey<SellerFeedTabState>();
   final _listingsKey = GlobalKey<SellerListingsTabState>();
   final _chromeVisible = ValueNotifier<bool>(true);
+  late final ValueNotifier<int> _activeTabIndex = ValueNotifier<int>(
+    widget.initialTabIndex,
+  );
   final _feedGridLayoutMode = ValueNotifier<bool>(true);
   late int _currentIndex = widget.initialTabIndex;
   int _feedRefreshTick = 0;
-  int _listingsRefreshTick = 0;
+  final int _listingsRefreshTick = 0;
   static SellerListingsTabState? latestListingsState;
   DateTime? _lastFeedBackPress;
   bool _isAddLiveMode = false;
@@ -57,6 +60,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   void dispose() {
     _feedGridLayoutMode.removeListener(_saveFeedGridLayoutMode);
+    _activeTabIndex.dispose();
     _feedGridLayoutMode.dispose();
     _chromeVisible.dispose();
     super.dispose();
@@ -80,13 +84,16 @@ class _SellerHomePageState extends State<SellerHomePage> {
       _currentIndex = 0;
       _feedRefreshTick++;
     });
+    _activeTabIndex.value = 0;
     _setChromeVisible(true);
   }
 
   void _showItemAddedTab(bool isLiveItem) {
+    final nextIndex = isLiveItem ? 1 : 0;
     setState(() {
-      _currentIndex = isLiveItem ? 1 : 0;
+      _currentIndex = nextIndex;
     });
+    _activeTabIndex.value = nextIndex;
     _setChromeVisible(true);
   }
 
@@ -94,10 +101,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
     if (isLiveItem) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _liveFeedKey.currentState?.reloadItems(forceFresh: true);
+        _listingsKey.currentState?.reloadItems();
       });
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _feedKey.currentState?.reloadItems(forceFresh: true);
+        _listingsKey.currentState?.reloadItems();
       });
     }
   }
@@ -111,6 +120,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
   void _showSettingsTab() {
     setState(() => _currentIndex = 4);
+    _activeTabIndex.value = 4;
   }
 
   void _handleInvalidSellerSession() {
@@ -125,6 +135,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
     setState(() {
       _currentIndex = 4;
     });
+    _activeTabIndex.value = 4;
     _setChromeVisible(true);
   }
 
@@ -174,19 +185,15 @@ class _SellerHomePageState extends State<SellerHomePage> {
       await _addItemKey.currentState?.openMediaFromBottomNav();
       if (!mounted) return;
       setState(() => _currentIndex = 2);
+      _activeTabIndex.value = 2;
       _setChromeVisible(true);
       return;
     }
 
     setState(() {
       _currentIndex = index;
-      if (index == 3 && widget.isSellerMode) {
-        _listingsRefreshTick++;
-        // Rebuild widget with new tick; GlobalKey keeps the state alive so the
-        // tab refreshes in place instead of tearing down and re-querying cold.
-        _pageCache[3] = _buildPageAt(3);
-      }
     });
+    _activeTabIndex.value = index;
     _setChromeVisible(true);
   }
 
@@ -296,6 +303,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
       0 => SellerFeedTab(
         key: _feedKey,
         chromeVisibleListenable: _chromeVisible,
+        activeTabListenable: _activeTabIndex,
+        tabIndex: 0,
         gridLayoutMode: _feedGridLayoutMode,
         onSearchActiveChanged: (isActive) {
           if (isActive) {
@@ -306,6 +315,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
       1 => SellerLiveTab(
         feedKey: _liveFeedKey,
         chromeVisibleListenable: _chromeVisible,
+        activeTabListenable: _activeTabIndex,
         gridLayoutMode: _feedGridLayoutMode,
         onSearchActiveChanged: (isActive) {
           if (isActive) {

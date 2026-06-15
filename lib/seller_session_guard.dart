@@ -8,6 +8,9 @@ class SellerSessionGuard {
 
   static const invalidMessage =
       'Another device has logged into this account, Please login again to continue';
+  static const _validCacheDuration = Duration(seconds: 45);
+  static String? _cachedValidSessionKey;
+  static DateTime? _cachedValidUntil;
 
   static Future<bool> ensureActive(
     BuildContext context, {
@@ -19,6 +22,15 @@ class SellerSessionGuard {
       return false;
     }
 
+    final sessionKey = _sessionKey(session);
+    final now = DateTime.now();
+    final cachedUntil = _cachedValidUntil;
+    if (_cachedValidSessionKey == sessionKey &&
+        cachedUntil != null &&
+        now.isBefore(cachedUntil)) {
+      return true;
+    }
+
     try {
       final ref = FirebaseFirestore.instance.collection('sellers').doc(session.sellerId);
       final doc = await ref.get();
@@ -27,13 +39,18 @@ class SellerSessionGuard {
 
       if (activeSessionId.isEmpty) {
         await writeActiveSession(session);
+        _cacheValidSession(session);
         return true;
       }
-      if (activeSessionId == session.sessionId) return true;
+      if (activeSessionId == session.sessionId) {
+        _cacheValidSession(session);
+        return true;
+      }
     } catch (_) {
       return true;
     }
 
+    _clearValidSessionCache();
     if (context.mounted) {
       await showDialog<void>(
         context: context,
@@ -80,11 +97,25 @@ class SellerSessionGuard {
   }
 
   static Future<void> writeActiveSession(SellerSession session) {
+    _cacheValidSession(session);
     return FirebaseFirestore.instance.collection('sellers').doc(session.sellerId).set({
       'active_session_id': session.sessionId,
       'active_device_id': session.deviceId,
       'active_login_at': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  static String _sessionKey(SellerSession session) =>
+      '${session.sellerId}|${session.sessionId}|${session.deviceId}';
+
+  static void _cacheValidSession(SellerSession session) {
+    _cachedValidSessionKey = _sessionKey(session);
+    _cachedValidUntil = DateTime.now().add(_validCacheDuration);
+  }
+
+  static void _clearValidSessionCache() {
+    _cachedValidSessionKey = null;
+    _cachedValidUntil = null;
   }
 }
