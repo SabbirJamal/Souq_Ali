@@ -24,7 +24,8 @@ class ItemDetailPage extends StatefulWidget {
   State<ItemDetailPage> createState() => _ItemDetailPageState();
 }
 
-class _ItemDetailPageState extends State<ItemDetailPage> {
+class _ItemDetailPageState extends State<ItemDetailPage>
+    with WidgetsBindingObserver {
   final Map<String, VideoPlayerController> _preloadedVideoControllers = {};
   final Map<String, Future<void>> _preloadedVideoInitializers = {};
   late final List<MediaItem> _media = mediaItemsFromMap(widget.itemData);
@@ -33,7 +34,17 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _preloadDetailVideos();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _stopDetailPlayback(updateUi: false);
+    }
   }
 
   @override
@@ -44,6 +55,7 @@ class _ItemDetailPageState extends State<ItemDetailPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _stopDetailPlayback(updateUi: false);
     for (final c in _preloadedVideoControllers.values) { c.dispose(); }
     super.dispose();

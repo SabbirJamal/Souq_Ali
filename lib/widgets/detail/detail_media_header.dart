@@ -394,6 +394,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
     final trimmedLocation = _displayLocation(widget.location.trim());
     // Use screen percentage for media header height
     final mediaHeight = MediaQuery.sizeOf(context).height * 0.8;
+    final liveBadgeTop = MediaQuery.paddingOf(context).top + 7;
     final imageCount = widget.mediaItems.where((media) => !media.isVideo).length;
     final videoCount = widget.mediaItems.where((media) => media.isVideo).length;
     final hideChrome = _isZooming || _isPinchIntent || _isHoldingMedia;
@@ -448,10 +449,10 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
               ),
             ),
           if (!hideChrome && widget.isLiveItem)
-            const Positioned(
-              top: 12,
+            Positioned(
+              top: liveBadgeTop,
               right: 14,
-              child: IgnorePointer(
+              child: const IgnorePointer(
                 child: _DetailLiveBadge(),
               ),
             ),
