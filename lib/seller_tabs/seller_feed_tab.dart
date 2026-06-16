@@ -66,6 +66,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   bool _hasMore = true;
   String _query = '';
   Timer? _searchDebounce;
+  Timer? _searchFocusTimer;
   Timer? _visibilityDebounce;
   Timer? _seenFlushTimer;
   String? _viewerId;
@@ -241,6 +242,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     widget.activeTabListenable?.removeListener(_handleActiveTabChanged);
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
+    _searchFocusTimer?.cancel();
     _visibilityDebounce?.cancel();
     _seenFlushTimer?.cancel();
     _flushSeenItems();
@@ -410,11 +412,19 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _openSearch() {
+    if (_isSearchOpen) return;
     setState(() => _isSearchOpen = true);
     widget.onSearchActiveChanged(true);
+    _searchFocusTimer?.cancel();
+    _searchFocusTimer = Timer(const Duration(milliseconds: 220), () {
+      if (mounted && _isSearchOpen) {
+        _searchFocusNode.requestFocus();
+      }
+    });
   }
 
   void _closeSearch() {
+    _searchFocusTimer?.cancel();
     _searchFocusNode.unfocus();
     _searchController.clear();
     widget.onSearchActiveChanged(false);
@@ -664,41 +674,71 @@ class _FloatingFeedSearchControl extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         border: isSearchOpen ? Border.all(color: const Color(0xFFFF7801)) : null,
       ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
-        child: isSearchOpen
-            ? Row(
-                key: const ValueKey('floating-search-field'),
-                children: [
-                  const SizedBox(width: 12),
-                  const Icon(Icons.search, color: Color(0xFFFF7801)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: searchController,
-                      focusNode: searchFocusNode,
-                      autofocus: true,
-                      onChanged: onQueryChanged,
-                      decoration: const InputDecoration(
-                        hintText: 'Search items...',
-                        border: InputBorder.none,
-                        isDense: true,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final showSearchField =
+                isSearchOpen && constraints.maxWidth > 140;
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: !showSearchField,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 140),
+                      opacity: showSearchField ? 1 : 0,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          const Icon(
+                            Icons.search,
+                            color: Color(0xFFFF7801),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: searchController,
+                              focusNode: searchFocusNode,
+                              onChanged: onQueryChanged,
+                              decoration: const InputDecoration(
+                                hintText: 'Search items...',
+                                border: InputBorder.none,
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: onCloseSearch,
+                            icon: const Icon(Icons.close),
+                            color: const Color(0xFFFF7801),
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: onCloseSearch,
-                    icon: const Icon(Icons.close),
-                    color: const Color(0xFFFF7801),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: isSearchOpen,
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 120),
+                      opacity: isSearchOpen ? 0 : 1,
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: IconButton(
+                          onPressed: onOpenSearch,
+                          icon: const Icon(Icons.search),
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
                   ),
-                ],
-              )
-            : IconButton(
-                key: const ValueKey('floating-search-button'),
-                onPressed: onOpenSearch,
-                icon: const Icon(Icons.search),
-                color: Colors.white,
-              ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
