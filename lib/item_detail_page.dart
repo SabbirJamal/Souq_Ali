@@ -28,6 +28,7 @@ class _ItemDetailPageState extends State<ItemDetailPage>
     with WidgetsBindingObserver {
   final Map<String, VideoPlayerController> _preloadedVideoControllers = {};
   final Map<String, Future<void>> _preloadedVideoInitializers = {};
+  final ValueNotifier<int> _externalPauseSignal = ValueNotifier<int>(0);
   late final List<MediaItem> _media = mediaItemsFromMap(widget.itemData);
   bool _isPreparingDetail = true, _didStartPreparingDetail = false, _lockDetailScroll = false;
 
@@ -44,6 +45,7 @@ class _ItemDetailPageState extends State<ItemDetailPage>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _stopDetailPlayback(updateUi: false);
+      _externalPauseSignal.value++;
     }
   }
 
@@ -57,6 +59,7 @@ class _ItemDetailPageState extends State<ItemDetailPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopDetailPlayback(updateUi: false);
+    _externalPauseSignal.dispose();
     for (final c in _preloadedVideoControllers.values) { c.dispose(); }
     super.dispose();
   }
@@ -168,6 +171,7 @@ class _ItemDetailPageState extends State<ItemDetailPage>
                 itemName: widget.itemData['item_name']?.toString().trim() ?? '', price: formatPrice(widget.itemData['item_price']),
                 location: widget.itemData['location']?.toString() ?? '', isLiveItem: widget.itemData['status']?.toString() == 'live',
                 isTransitItem: widget.itemData['is_transit'] == true || (widget.itemData['location']?.toString().toLowerCase().contains('transit') ?? false),
+                externalPauseSignal: _externalPauseSignal,
                 onZoomActiveChanged: (a) => setState(() => _lockDetailScroll = a),
               ),
               Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: _SellerAvatarIcon(name: widget.itemData['seller_name'], sellerId: widget.itemData['seller_uid'], sellerPhone: phone, onOpenProfile: _stopDetailPlayback)),

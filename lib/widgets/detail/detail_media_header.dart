@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
@@ -17,6 +18,7 @@ class DetailMediaHeader extends StatefulWidget {
     required this.location,
     required this.isLiveItem,
     required this.isTransitItem,
+    required this.externalPauseSignal,
     this.onZoomActiveChanged,
   });
 
@@ -28,6 +30,7 @@ class DetailMediaHeader extends StatefulWidget {
   final String location;
   final bool isLiveItem;
   final bool isTransitItem;
+  final ValueListenable<int> externalPauseSignal;
   final ValueChanged<bool>? onZoomActiveChanged;
 
   @override
@@ -62,14 +65,37 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    widget.externalPauseSignal.addListener(_handleExternalPause);
+  }
+
+  @override
+  void didUpdateWidget(covariant DetailMediaHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.externalPauseSignal != widget.externalPauseSignal) {
+      oldWidget.externalPauseSignal.removeListener(_handleExternalPause);
+      widget.externalPauseSignal.addListener(_handleExternalPause);
+    }
   }
 
   @override
   void dispose() {
+    widget.externalPauseSignal.removeListener(_handleExternalPause);
     _removeZoomOverlay();
     _pauseSignal.dispose();
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _handleExternalPause() {
+    if (_currentIndex < 0 || _currentIndex >= widget.mediaItems.length) return;
+    final media = widget.mediaItems[_currentIndex];
+    if (!media.isVideo) return;
+    _pauseSignal.value++;
+    if (mounted) {
+      setState(() => _pausedVideoUrls.add(media.url));
+    } else {
+      _pausedVideoUrls.add(media.url);
+    }
   }
 
   void _handlePageChanged(int index) {
