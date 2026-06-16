@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../seller_session.dart';
+import '../utils/network_status.dart';
 import '../widgets/app_toast.dart';
 
 class SellerSettingsTab extends StatefulWidget {
@@ -160,7 +161,12 @@ class _CrNumberFieldState extends State<_CrNumberField> {
       if (!mounted) {
         return;
       }
-      AppToast.show(context, 'Error: ${error.message ?? error.code}');
+      AppToast.show(
+        context,
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: ${error.message ?? error.code}',
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -321,7 +327,12 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
       if (!mounted) {
         return;
       }
-      AppToast.show(context, 'Error: ${error.message ?? error.code}');
+      AppToast.show(
+        context,
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: ${error.message ?? error.code}',
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);

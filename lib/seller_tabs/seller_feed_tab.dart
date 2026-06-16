@@ -9,9 +9,12 @@ import 'package:flutter/material.dart';
 import '../services/feed_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
+import '../utils/network_status.dart';
 import '../widgets/app_pull_refresh.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/item_card.dart';
 import '../widgets/media_carousel.dart';
+import '../widgets/offline_state.dart';
 
 class SellerFeedTab extends StatefulWidget {
   const SellerFeedTab({
@@ -66,6 +69,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   String? _viewerId;
   String? _viewerType;
   FeedCursor? _feedCursor;
+  Object? _loadError;
   final DateTime _openedAt = DateTime.now();
   int _refreshTick = 0;
 
@@ -162,6 +166,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _hasMore = result.hasMore || result.items.length >= requestedLimit;
         _isLoading = false;
         _cachedFilteredDocs = null;
+        _loadError = null;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -171,7 +176,14 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     } catch (error, stackTrace) {
       debugPrint('Feed load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
-      if (mounted) setState(() => _isLoading = false);
+      if (!mounted) return;
+      if (_allDocs.isNotEmpty && NetworkStatus.isOfflineError(error)) {
+        AppToast.show(context, NetworkStatus.noInternetMessage);
+      }
+      setState(() {
+        _loadError = error;
+        _isLoading = false;
+      });
     }
   }
 
@@ -517,7 +529,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                               : SliverList.builder(itemCount: 3, itemBuilder: (context, index) => const _SkeletonFeedItemCard()),
                         )
                       else if (docs.isEmpty && !_isLoading)
-                        SliverFillRemaining(hasScrollBody: false, child: Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))))
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: NetworkStatus.isOfflineError(_loadError ?? '')
+                              ? OfflineState(onRetry: _refreshFeed)
+                              : Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))),
+                        )
                       else ...[
                         SliverPadding(
                           padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),

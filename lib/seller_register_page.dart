@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'seller_session_guard.dart';
+import 'utils/network_status.dart';
 import 'widgets/app_toast.dart';
 
 class SellerRegisterPage extends StatefulWidget {
@@ -70,9 +71,17 @@ class _SellerRegisterPageState extends State<SellerRegisterPage> {
         (route) => false,
       );
     } on FirebaseException catch (error) {
-      _showMessage('Error: ${error.message ?? error.code}');
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: ${error.message ?? error.code}',
+      );
     } catch (error) {
-      _showMessage('Error: $error');
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: $error',
+      );
     } finally {
       if (mounted) {
         setState(() => _isRegistering = false);

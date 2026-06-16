@@ -5,9 +5,12 @@ import 'package:flutter/services.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'utils/item_status_cache.dart';
+import 'utils/network_status.dart';
 import 'widgets/app_pull_refresh.dart';
 import 'widgets/app_status_bar.dart';
+import 'widgets/app_toast.dart';
 import 'widgets/item_card.dart';
+import 'widgets/offline_state.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
 
 class SellerProfilePage extends StatelessWidget {
@@ -765,6 +768,9 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
       });
     } catch (error) {
       if (!mounted) return;
+      if (cache.docs.isNotEmpty && NetworkStatus.isOfflineError(error)) {
+        AppToast.show(context, NetworkStatus.noInternetMessage);
+      }
       setState(() {
         cache.error = error;
         cache.isLoading = false;
@@ -790,7 +796,9 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
         hasScrollBody: false,
         child: _SellerProfileContentBackground(
           isLive: widget.selectedStatus == 'live',
-          child: Center(child: Text('Error: ${cache.error}')),
+          child: NetworkStatus.isOfflineError(cache.error!)
+              ? OfflineState(onRetry: refreshAllStatuses)
+              : Center(child: Text('Error: ${cache.error}')),
         ),
       );
     }

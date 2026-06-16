@@ -15,6 +15,7 @@ import 'seller_session_guard.dart';
 import 'services/media_compression_service.dart';
 import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
+import 'utils/network_status.dart';
 import 'utils/price_input.dart';
 import 'utils/upload_status_thumbnail.dart';
 import 'widgets/item_edit/edit_widgets.dart';
@@ -302,6 +303,11 @@ class _ItemEditPageState extends State<ItemEditPage> {
       _showMessage('Please login again');
       return;
     }
+    if (!await NetworkStatus.hasConnection()) {
+      _showMessage(NetworkStatus.noInternetMessage);
+      return;
+    }
+    if (!mounted) return;
     if (!await SellerSessionGuard.ensureActive(
       context,
       onInvalid: widget.onSessionInvalid ?? () {},

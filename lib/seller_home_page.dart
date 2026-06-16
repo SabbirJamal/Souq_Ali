@@ -11,6 +11,7 @@ import 'seller_tabs/seller_settings_tab.dart';
 import 'seller_session.dart';
 import 'seller_session_guard.dart';
 import 'upload_status_manager.dart';
+import 'utils/network_status.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
@@ -518,9 +519,17 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
         (route) => false,
       );
     } on FirebaseException catch (error) {
-      _showMessage('Error: ${error.message ?? error.code}');
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: ${error.message ?? error.code}',
+      );
     } catch (error) {
-      _showMessage('Error: $error');
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: $error',
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoggingIn = false);

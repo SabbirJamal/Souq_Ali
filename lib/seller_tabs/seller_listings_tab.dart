@@ -7,10 +7,12 @@ import '../seller_session.dart';
 import '../seller_session_guard.dart';
 import '../utils/formatters.dart';
 import '../utils/item_status_cache.dart';
+import '../utils/network_status.dart';
 import '../utils/price_input.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/app_pull_refresh.dart';
 import '../widgets/item_card.dart';
+import '../widgets/offline_state.dart';
 import '../widgets/price_with_currency.dart';
 
 class SellerListingsTab extends StatefulWidget {
@@ -156,7 +158,14 @@ class SellerListingsTabState extends State<SellerListingsTab> {
           cache.error = null;
         });
       } catch (_) {
-        if (mounted) setState(() => cache.isLoading = false);
+        if (!mounted) return;
+        if (cache.docs.isNotEmpty && NetworkStatus.isOfflineError(e)) {
+          AppToast.show(context, NetworkStatus.noInternetMessage);
+        }
+        setState(() {
+          cache.error = e;
+          cache.isLoading = false;
+        });
       }
     }
   }
@@ -287,6 +296,10 @@ class SellerListingsTabState extends State<SellerListingsTab> {
 
   Future<void> _deleteItem(BuildContext context, String docId, Map<String, dynamic> item) async {
     if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
+    if (!await NetworkStatus.hasConnection()) {
+      if (context.mounted) AppToast.show(context, NetworkStatus.noInternetMessage);
+      return;
+    }
     await _deleteItemStorageFiles(item);
     await _deleteSeenRecord(docId);
     await FirebaseFirestore.instance.collection('items').doc(docId).delete();
@@ -382,6 +395,10 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     );
 
     if (result == null || !mounted) return;
+    if (!await NetworkStatus.hasConnection()) {
+      if (context.mounted) AppToast.show(context, NetworkStatus.noInternetMessage);
+      return;
+    }
 
     final formattedPrice = _formatRenewPrice(result.priceNumber);
     await FirebaseFirestore.instance.collection('items').doc(docId).update({
@@ -491,17 +508,20 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                         if (docs.isEmpty && !activeCache.isLoading)
                           SliverFillRemaining(
                             hasScrollBody: false,
-                            child: Center(
-                              child: Text(
-                                _selectedStatus == 'live'
-                                    ? 'No live items listed yet'
-                                    : 'No items listed yet',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ),
+                            child: activeCache.error != null &&
+                                    NetworkStatus.isOfflineError(activeCache.error!)
+                                ? OfflineState(onRetry: reloadItems)
+                                : Center(
+                                    child: Text(
+                                      _selectedStatus == 'live'
+                                          ? 'No live items listed yet'
+                                          : 'No items listed yet',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
                           )
                         else ...[
                           SliverPadding(

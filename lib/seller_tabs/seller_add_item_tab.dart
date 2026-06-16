@@ -15,6 +15,7 @@ import '../seller_session.dart';
 import '../seller_session_guard.dart';
 import '../services/media_compression_service.dart';
 import '../upload_status_manager.dart';
+import '../utils/network_status.dart';
 import '../utils/price_input.dart';
 import '../utils/upload_status_thumbnail.dart';
 import '../widgets/app_toast.dart';
@@ -201,6 +202,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         _showPriceError = isPriceInvalid;
       });
       if (isPriceInvalid) _priceFocusNode.requestFocus();
+      return;
+    }
+    if (!await NetworkStatus.hasConnection()) {
+      _showMessage(NetworkStatus.noInternetMessage);
       return;
     }
     final draft = _ItemUploadDraft(
