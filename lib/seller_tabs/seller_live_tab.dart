@@ -9,14 +9,12 @@ class SellerLiveTab extends StatelessWidget {
     this.feedKey,
     this.chromeVisibleListenable,
     this.activeTabListenable,
-    this.gridLayoutMode,
     required this.onSearchActiveChanged,
   });
 
   final GlobalKey<SellerFeedTabState>? feedKey;
   final ValueListenable<bool>? chromeVisibleListenable;
   final ValueListenable<int>? activeTabListenable;
-  final ValueNotifier<bool>? gridLayoutMode;
   final ValueChanged<bool> onSearchActiveChanged;
 
   @override
@@ -26,7 +24,6 @@ class SellerLiveTab extends StatelessWidget {
       chromeVisibleListenable: chromeVisibleListenable,
       activeTabListenable: activeTabListenable,
       tabIndex: 1,
-      gridLayoutMode: gridLayoutMode,
       onSearchActiveChanged: onSearchActiveChanged,
       itemStatus: 'live',
       emptyMessage: 'No live items available',

@@ -22,7 +22,6 @@ class SellerFeedTab extends StatefulWidget {
     this.chromeVisibleListenable,
     this.activeTabListenable,
     this.tabIndex = 0,
-    this.gridLayoutMode,
     required this.onSearchActiveChanged,
     this.itemStatus = 'post',
     this.emptyMessage = 'No items available',
@@ -31,7 +30,6 @@ class SellerFeedTab extends StatefulWidget {
   final ValueListenable<bool>? chromeVisibleListenable;
   final ValueListenable<int>? activeTabListenable;
   final int tabIndex;
-  final ValueNotifier<bool>? gridLayoutMode;
   final ValueChanged<bool> onSearchActiveChanged;
   final String itemStatus;
   final String emptyMessage;
@@ -57,7 +55,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final List<FeedItem> _allDocs = [];
   List<FeedItem>? _cachedFilteredDocs;
   String? _cachedQueryForFilter;
-  bool _isGridView = true;
   bool _isSearchOpen = false;
   bool _isLoading = false;
   bool _isMergingLatest = false;
@@ -79,8 +76,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void initState() {
     super.initState();
-    _isGridView = widget.gridLayoutMode?.value ?? _isGridView;
-    widget.gridLayoutMode?.addListener(_handleGridLayoutModeChanged);
     widget.activeTabListenable?.addListener(_handleActiveTabChanged);
     _scrollController.addListener(_onScroll);
     _loadInitial();
@@ -89,11 +84,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void didUpdateWidget(covariant SellerFeedTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.gridLayoutMode != widget.gridLayoutMode) {
-      oldWidget.gridLayoutMode?.removeListener(_handleGridLayoutModeChanged);
-      _isGridView = widget.gridLayoutMode?.value ?? _isGridView;
-      widget.gridLayoutMode?.addListener(_handleGridLayoutModeChanged);
-    }
     if (oldWidget.activeTabListenable != widget.activeTabListenable) {
       oldWidget.activeTabListenable?.removeListener(_handleActiveTabChanged);
       widget.activeTabListenable?.addListener(_handleActiveTabChanged);
@@ -238,7 +228,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
-    widget.gridLayoutMode?.removeListener(_handleGridLayoutModeChanged);
     widget.activeTabListenable?.removeListener(_handleActiveTabChanged);
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
@@ -252,27 +241,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     super.dispose();
   }
 
-  void _handleGridLayoutModeChanged() {
-    final nextValue = widget.gridLayoutMode?.value;
-    if (nextValue == null || nextValue == _isGridView || !mounted) {
-      return;
-    }
-    if (_isActiveTab) {
-      setState(() => _isGridView = nextValue);
-    } else {
-      _isGridView = nextValue;
-    }
-  }
-
   void _handleActiveTabChanged() {
     if (!mounted) return;
     if (!_isActiveTab) {
       if (_isSearchOpen) _closeSearch();
-      return;
     }
-    final nextValue = widget.gridLayoutMode?.value;
-    if (nextValue == null || nextValue == _isGridView) return;
-    setState(() => _isGridView = nextValue);
   }
 
   bool get _isActiveTab =>
@@ -443,17 +416,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     });
   }
 
-  void _toggleLayoutMode() {
-    final nextValue = !_isGridView;
-    final sharedMode = widget.gridLayoutMode;
-    if (sharedMode != null) {
-      setState(() => _isGridView = nextValue);
-      sharedMode.value = nextValue;
-    } else {
-      setState(() => _isGridView = nextValue);
-    }
-  }
-
   List<FeedItem> _getFilteredAndRankedDocs() {
     final query = _query.trim().toLowerCase();
     if (_cachedFilteredDocs != null && _cachedQueryForFilter == query) {
@@ -570,17 +532,15 @@ class SellerFeedTabState extends State<SellerFeedTab> {
               cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                      SliverToBoxAdapter(child: _FeedHeader(isGridView: _isGridView, isSearchOpen: _isSearchOpen, onToggleGrid: _toggleLayoutMode)),
+                      SliverToBoxAdapter(child: _FeedHeader(isSearchOpen: _isSearchOpen)),
                       if (_allDocs.isEmpty && showInlineLoading)
                         SliverPadding(
-                          padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
-                          sliver: _isGridView
-                              ? SliverGrid.builder(
-                                  itemCount: 6,
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                  itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
-                                )
-                              : SliverList.builder(itemCount: 3, itemBuilder: (context, index) => const _SkeletonFeedItemCard()),
+                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+                          sliver: SliverGrid.builder(
+                            itemCount: 6,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
+                            itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
+                          ),
                         )
                       else if (docs.isEmpty && !_isLoading)
                         SliverFillRemaining(
@@ -591,23 +551,15 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                         )
                       else ...[
                         SliverPadding(
-                          padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
-                          sliver: _isGridView
-                              ? SliverGrid.builder(
-                                  itemCount: docs.length,
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                  itemBuilder: (context, index) {
-                                    _maybeLoadMoreFromBuilder(index, docs.length);
-                                    return ItemCard(key: _keyForItem(docs[index].id), docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage);
-                                  },
-                                )
-                              : SliverList.builder(
-                                  itemCount: docs.length,
-                                  itemBuilder: (context, index) {
-                                    _maybeLoadMoreFromBuilder(index, docs.length);
-                                    return ItemCard(key: _keyForItem(docs[index].id), docId: docs[index].id, item: docs[index].data, isLivePage: isLivePage);
-                                  },
-                                ),
+                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+                          sliver: SliverGrid.builder(
+                            itemCount: docs.length,
+                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
+                            itemBuilder: (context, index) {
+                              _maybeLoadMoreFromBuilder(index, docs.length);
+                              return ItemCard(key: _keyForItem(docs[index].id), docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage);
+                            },
+                          ),
                         ),
                         if (_isOfflinePaginationBlocked &&
                             _allDocs.isNotEmpty &&
@@ -623,15 +575,13 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                               2,
                               0,
                               2,
-                              _isGridView ? 8 : 12,
+                              8,
                             ),
-                            sliver: _isGridView
-                                ? SliverGrid.builder(
-                                    itemCount: 4,
-                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                                    itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
-                                  )
-                                : SliverList.builder(itemCount: 2, itemBuilder: (context, index) => const _SkeletonFeedItemCard()),
+                            sliver: SliverGrid.builder(
+                              itemCount: 4,
+                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
+                              itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
+                            ),
                           ),
                       ],
                       SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
@@ -760,14 +710,10 @@ class _FloatingFeedSearchControl extends StatelessWidget {
 
 class _FeedHeader extends StatelessWidget {
   const _FeedHeader({
-    required this.isGridView,
     required this.isSearchOpen,
-    required this.onToggleGrid,
   });
 
-  final bool isGridView;
   final bool isSearchOpen;
-  final VoidCallback onToggleGrid;
 
   @override
   Widget build(BuildContext context) {
@@ -789,15 +735,6 @@ class _FeedHeader extends StatelessWidget {
               ),
             ),
           ),
-          if (!isSearchOpen)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _GridToggleButton(
-                isGridView: isGridView,
-                onTap: onToggleGrid,
-                bottomPadding: 0,
-              ),
-            ),
         ],
       ),
     );
@@ -896,38 +833,4 @@ class _FeedViewerIdentity {
 
   final String id;
   final String type;
-}
-
-class _GridToggleButton extends StatelessWidget {
-  const _GridToggleButton({
-    required this.isGridView,
-    required this.onTap,
-    this.bottomPadding = 23,
-  });
-
-  final bool isGridView;
-  final VoidCallback onTap;
-  final double bottomPadding;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomPadding),
-      child: Material(
-        color: const Color(0xFF001341),
-        shape: const CircleBorder(),
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: IconButton(
-            onPressed: onTap,
-            icon: Icon(
-              isGridView ? Icons.view_agenda : Icons.grid_view,
-            ),
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
 }

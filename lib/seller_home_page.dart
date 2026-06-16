@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'seller_tabs/seller_add_item_tab.dart';
 import 'seller_tabs/seller_feed_tab.dart';
@@ -42,9 +41,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   late final ValueNotifier<int> _activeTabIndex = ValueNotifier<int>(
     widget.initialTabIndex,
   );
-  final _feedGridLayoutMode = ValueNotifier<bool>(true);
   late int _currentIndex = widget.initialTabIndex;
-  int _feedRefreshTick = 0;
   final int _listingsRefreshTick = 0;
   static SellerListingsTabState? latestListingsState;
   DateTime? _lastFeedBackPress;
@@ -54,36 +51,18 @@ class _SellerHomePageState extends State<SellerHomePage> {
   @override
   void initState() {
     super.initState();
-    _feedGridLayoutMode.addListener(_saveFeedGridLayoutMode);
-    _loadFeedGridLayoutMode();
   }
 
   @override
   void dispose() {
-    _feedGridLayoutMode.removeListener(_saveFeedGridLayoutMode);
     _activeTabIndex.dispose();
-    _feedGridLayoutMode.dispose();
     _chromeVisible.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadFeedGridLayoutMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedValue = prefs.getBool('feed_grid_layout_mode');
-    if (savedValue != null) {
-      _feedGridLayoutMode.value = savedValue;
-    }
-  }
-
-  Future<void> _saveFeedGridLayoutMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('feed_grid_layout_mode', _feedGridLayoutMode.value);
   }
 
   void _showFeedTab() {
     setState(() {
       _currentIndex = 0;
-      _feedRefreshTick++;
     });
     _activeTabIndex.value = 0;
     _setChromeVisible(true);
@@ -294,7 +273,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
     }
 
     _lastFeedBackPress = now;
-    setState(() => _feedRefreshTick++);
     _setChromeVisible(true);
     AppToast.show(context, 'Please click back again to exit');
   }
@@ -306,7 +284,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
         chromeVisibleListenable: _chromeVisible,
         activeTabListenable: _activeTabIndex,
         tabIndex: 0,
-        gridLayoutMode: _feedGridLayoutMode,
         onSearchActiveChanged: (isActive) {
           if (isActive) {
             _setChromeVisible(true);
@@ -317,7 +294,6 @@ class _SellerHomePageState extends State<SellerHomePage> {
         feedKey: _liveFeedKey,
         chromeVisibleListenable: _chromeVisible,
         activeTabListenable: _activeTabIndex,
-        gridLayoutMode: _feedGridLayoutMode,
         onSearchActiveChanged: (isActive) {
           if (isActive) {
             _setChromeVisible(true);
