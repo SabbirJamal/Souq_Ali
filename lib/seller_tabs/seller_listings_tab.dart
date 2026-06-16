@@ -453,7 +453,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         }
         final session = sessionSnapshot.data;
         if (session == null) return const Center(child: Text('Please login again'));
-        final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 75;
+        final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 90;
 
         return Stack(
           children: [
@@ -482,12 +482,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                       controller: _scrollController,
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
-                        const SliverToBoxAdapter(
-                          child: _ListingsScrollableHeader(),
-                        ),
-                        SliverToBoxAdapter(
-                          child: _SellerInfoHeader(session: session),
-                        ),
+                        const SliverToBoxAdapter(child: SizedBox(height: 8)),
                         SliverToBoxAdapter(
                           child: _ListingsStatusTabs(
                             selectedStatus: _selectedStatus,
@@ -573,97 +568,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                 );
               },
             ),
-            const Positioned(top: 8, right: 14, child: _FloatingShareButton()),
           ],
-        );
-      },
-    );
-  }
-}
-
-class _ListingsScrollableHeader extends StatelessWidget {
-  const _ListingsScrollableHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 56,
-      width: double.infinity,
-      color: const Color(0xFFF4FBF7),
-      alignment: Alignment.center,
-      child: const SizedBox(
-        height: 56,
-        width: 152,
-        child: Image(
-          image: AssetImage('assets/branding/logo.png'),
-          fit: BoxFit.cover,
-        ),
-      ),
-    );
-  }
-}
-
-class _FloatingShareButton extends StatelessWidget {
-  const _FloatingShareButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: () {},
-      style: OutlinedButton.styleFrom(
-        backgroundColor: const Color(0xFFFF7801),
-        foregroundColor: Colors.white,
-        side: BorderSide.none,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        minimumSize: const Size(82, 38),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-      child: const Text('Share', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-class _SellerInfoHeader extends StatefulWidget {
-  const _SellerInfoHeader({required this.session});
-
-  final SellerSession session;
-
-  @override
-  State<_SellerInfoHeader> createState() => _SellerInfoHeaderState();
-}
-
-class _SellerInfoHeaderState extends State<_SellerInfoHeader> {
-  SellerSession get session => widget.session;
-
-  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _sellerStream =
-      FirebaseFirestore.instance.collection('sellers').doc(widget.session.sellerId).snapshots();
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: _sellerStream,
-      builder: (context, snapshot) {
-        final seller = snapshot.data?.data() ?? {};
-        final sellerName = seller['name']?.toString().trim() ?? session.name;
-        final crNumber = seller['cr_number']?.toString().trim().isNotEmpty == true ? seller['cr_number'].toString().trim() : seller['crNumber']?.toString().trim() ?? '';
-        final topLine = [if (sellerName.trim().isNotEmpty) sellerName.trim(), if (crNumber.isNotEmpty) 'CR No. $crNumber'].join(' | ');
-        final phoneNumber = formatSellerPhone(session.phoneNumber);
-
-        return Container(
-          width: double.infinity,
-          color: const Color(0xFFF4FBF7),
-          padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (topLine.isNotEmpty) FittedBox(fit: BoxFit.scaleDown, child: Text(topLine, maxLines: 1, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black, fontSize: 15, fontWeight: FontWeight.bold))),
-              if (phoneNumber.isNotEmpty) ...[
-                if (topLine.isNotEmpty) const SizedBox(height: 5),
-                Text(phoneNumber, textAlign: TextAlign.center, style: const TextStyle(color: Colors.black, fontSize: 14, fontWeight: FontWeight.bold)),
-              ],
-            ],
-          ),
         );
       },
     );
@@ -679,7 +584,6 @@ class _ListingsStatusTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.fromLTRB(18, 4, 18, 10),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),

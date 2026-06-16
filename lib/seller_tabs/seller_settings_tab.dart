@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -7,9 +8,16 @@ import '../utils/network_status.dart';
 import '../widgets/app_toast.dart';
 
 class SellerSettingsTab extends StatefulWidget {
-  const SellerSettingsTab({super.key, required this.onLogout});
+  const SellerSettingsTab({
+    super.key,
+    required this.onLogout,
+    this.activeTabListenable,
+    this.tabIndex = 4,
+  });
 
   final VoidCallback onLogout;
+  final ValueListenable<int>? activeTabListenable;
+  final int tabIndex;
 
   @override
   State<SellerSettingsTab> createState() => _SellerSettingsTabState();
@@ -18,11 +26,36 @@ class SellerSettingsTab extends StatefulWidget {
 class _SellerSettingsTabState extends State<SellerSettingsTab> {
   late final Future<SellerSession?> _sessionFuture;
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _sellerStream;
+  final _nameFieldKey = GlobalKey<_SellerInfoFieldState>();
+  final _crFieldKey = GlobalKey<_CrNumberFieldState>();
 
   @override
   void initState() {
     super.initState();
     _sessionFuture = SellerSession.current();
+    widget.activeTabListenable?.addListener(_handleActiveTabChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant SellerSettingsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeTabListenable != widget.activeTabListenable) {
+      oldWidget.activeTabListenable?.removeListener(_handleActiveTabChanged);
+      widget.activeTabListenable?.addListener(_handleActiveTabChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.activeTabListenable?.removeListener(_handleActiveTabChanged);
+    super.dispose();
+  }
+
+  void _handleActiveTabChanged() {
+    final activeTab = widget.activeTabListenable?.value;
+    if (activeTab == null || activeTab == widget.tabIndex) return;
+    _nameFieldKey.currentState?.cancelEditing();
+    _crFieldKey.currentState?.cancelEditing();
   }
 
   @override
@@ -45,6 +78,10 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
         return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
           stream: _sellerStream,
           builder: (context, sellerSnapshot) {
+            if (sellerSnapshot.connectionState == ConnectionState.waiting &&
+                !sellerSnapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
             final seller = sellerSnapshot.data?.data() ?? {};
             final sellerName = seller['name']?.toString() ?? session.name;
             final crNumber =
@@ -66,6 +103,7 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                   ),
                   const SizedBox(height: 22),
                   _SellerInfoField(
+                    key: _nameFieldKey,
                     sellerId: session.sellerId,
                     fieldKey: 'name',
                     label: 'Company Name',
@@ -77,6 +115,7 @@ class _SellerSettingsTabState extends State<SellerSettingsTab> {
                   ),
                   const SizedBox(height: 12),
                   _CrNumberField(
+                    key: _crFieldKey,
                     sellerId: session.sellerId,
                     initialValue: crNumber,
                   ),
@@ -102,7 +141,11 @@ String _formatSettingsPhone(String value) {
 }
 
 class _CrNumberField extends StatefulWidget {
-  const _CrNumberField({required this.sellerId, required this.initialValue});
+  const _CrNumberField({
+    super.key,
+    required this.sellerId,
+    required this.initialValue,
+  });
 
   final String sellerId;
   final String initialValue;
@@ -137,6 +180,13 @@ class _CrNumberFieldState extends State<_CrNumberField> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void cancelEditing() {
+    if (!_isEditing || _isSaving) return;
+    _controller.text = widget.initialValue;
+    FocusScope.of(context).unfocus();
+    if (mounted) setState(() => _isEditing = false);
   }
 
   Future<void> _saveCrNumber() async {
@@ -249,6 +299,7 @@ class _CrNumberFieldState extends State<_CrNumberField> {
 
 class _SellerInfoField extends StatefulWidget {
   const _SellerInfoField({
+    super.key,
     required this.sellerId,
     required this.fieldKey,
     required this.label,
@@ -298,6 +349,13 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void cancelEditing() {
+    if (!_isEditing || _isSaving) return;
+    _controller.text = widget.initialValue;
+    FocusScope.of(context).unfocus();
+    if (mounted) setState(() => _isEditing = false);
   }
 
   Future<void> _save() async {

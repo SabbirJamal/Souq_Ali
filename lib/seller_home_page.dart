@@ -319,7 +319,10 @@ class _SellerHomePageState extends State<SellerHomePage> {
             )
           : const _SellerAccessPrompt(),
       4 => widget.isSellerMode
-          ? SellerSettingsTab(onLogout: _confirmLogout)
+          ? SellerSettingsTab(
+              onLogout: _confirmLogout,
+              activeTabListenable: _activeTabIndex,
+            )
           : const _SellerAccessPrompt(),
       _ => const SizedBox.shrink(),
     };

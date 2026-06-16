@@ -33,11 +33,14 @@ class SellerProfilePage extends StatelessWidget {
       return;
     }
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => SellerHomePage(
-          isSellerMode: session != null,
-          initialTabIndex: index,
-        ),
+      PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            SellerHomePage(
+              isSellerMode: session != null,
+              initialTabIndex: index,
+            ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
       (route) => false,
     );
@@ -49,7 +52,12 @@ class SellerProfilePage extends StatelessWidget {
       return;
     }
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
+      PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const SellerHomePage(isSellerMode: false),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
       (route) => false,
     );
   }
@@ -124,11 +132,14 @@ class SellerProfilePage extends StatelessWidget {
 
   void _openSettings(BuildContext context) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const SellerHomePage(
+      PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const SellerHomePage(
           isSellerMode: true,
           initialTabIndex: 4,
         ),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
       ),
       (route) => false,
     );
@@ -270,6 +281,7 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
                 indicatorTop: 132,
                 child: CustomScrollView(
                   controller: _scrollController,
+                  physics: const AlwaysScrollableScrollPhysics(),
                   slivers: [
                     if (!isOwnProfile)
                       SliverToBoxAdapter(
@@ -291,6 +303,11 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
                         onChanged: (status) {
                           if (status == _selectedStatus) return;
                           setState(() => _selectedStatus = status);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (_scrollController.hasClients) {
+                              _scrollController.jumpTo(0);
+                            }
+                          });
                         },
                       ),
                     ),
@@ -314,11 +331,6 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
               left: 14,
               child: _ProfileFloatingBackButton(onBack: onBack!),
             ),
-          Positioned(
-            top: headerButtonTop,
-            right: 14,
-            child: const _ProfileFloatingShareButton(),
-          ),
         ],
       ],
     );
@@ -425,45 +437,16 @@ class _ProfileFloatingBackButton extends StatelessWidget {
   }
 }
 
-class _ProfileFloatingShareButton extends StatelessWidget {
-  const _ProfileFloatingShareButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: _BorderedHeaderButton(
-        width: 88,
-        onTap: () {},
-        backgroundColor: const Color(0xFFFF7801),
-        borderColor: null,
-        child: const Text(
-          'Share',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _BorderedHeaderButton extends StatelessWidget {
   const _BorderedHeaderButton({
     required this.onTap,
     required this.child,
-    this.width = 44,
-    this.backgroundColor = Colors.white,
     this.borderColor = Colors.black,
     this.circular = false,
   });
 
   final VoidCallback onTap;
   final Widget child;
-  final double width;
-  final Color backgroundColor;
   final Color? borderColor;
   final bool circular;
 
@@ -471,14 +454,14 @@ class _BorderedHeaderButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final borderRadius = BorderRadius.circular(circular ? 999 : 10);
     return Material(
-      color: backgroundColor,
+      color: Colors.white,
       borderRadius: borderRadius,
       child: InkWell(
         onTap: onTap,
         borderRadius: borderRadius,
         child: Container(
-          width: width,
-          height: circular ? width : 42,
+          width: 44,
+          height: circular ? 44 : 42,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             border: borderColor == null
@@ -681,6 +664,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   bool _isOfflinePaginationBlocked = false;
   bool _didShowOfflinePaginationToast = false;
   ItemStatusCache get _activeCache => _itemCaches.forStatus(widget.selectedStatus);
+  String get _inactiveStatus => widget.selectedStatus == 'live' ? 'post' : 'live';
 
   @override
   void initState() {
@@ -709,9 +693,9 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
     await _loadInitial();
   }
 
-  Future<void> _loadInitial() => _fetchPage(isInitial: true);
+  Future<void> _loadInitial() => _fetchPageForStatus(widget.selectedStatus, isInitial: true);
 
-  Future<void> loadMore() => _fetchPage(isInitial: false);
+  Future<void> loadMore() => _fetchPageForStatus(widget.selectedStatus, isInitial: false);
 
   Future<void> refreshAllStatuses() async {
     setState(() {
@@ -719,7 +703,8 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
       _isOfflinePaginationBlocked = false;
       _didShowOfflinePaginationToast = false;
     });
-    await _loadInitial();
+    await _fetchPageForStatus(widget.selectedStatus, isInitial: true);
+    await _fetchPageForStatus(_inactiveStatus, isInitial: true);
   }
 
   Future<void> retryLoadMore() async {
@@ -730,8 +715,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
     await loadMore();
   }
 
-  Future<void> _fetchPage({required bool isInitial}) async {
-    final requestedStatus = widget.selectedStatus;
+  Future<void> _fetchPageForStatus(String requestedStatus, {required bool isInitial}) async {
     final cache = _itemCaches.forStatus(requestedStatus);
     if (cache.isLoading ||
         (!isInitial && !cache.hasMore) ||
