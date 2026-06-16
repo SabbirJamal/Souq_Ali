@@ -678,6 +678,8 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   static const _pageSize = 20;
 
   final ItemStatusCaches _itemCaches = ItemStatusCaches();
+  bool _isOfflinePaginationBlocked = false;
+  bool _didShowOfflinePaginationToast = false;
   ItemStatusCache get _activeCache => _itemCaches.forStatus(widget.selectedStatus);
 
   @override
@@ -701,6 +703,8 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   Future<void> _resetAndLoad() async {
     setState(() {
       _itemCaches.resetAll();
+      _isOfflinePaginationBlocked = false;
+      _didShowOfflinePaginationToast = false;
     });
     await _loadInitial();
   }
@@ -710,14 +714,29 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   Future<void> loadMore() => _fetchPage(isInitial: false);
 
   Future<void> refreshAllStatuses() async {
-    setState(_itemCaches.resetAll);
+    setState(() {
+      _itemCaches.resetAll();
+      _isOfflinePaginationBlocked = false;
+      _didShowOfflinePaginationToast = false;
+    });
     await _loadInitial();
+  }
+
+  Future<void> retryLoadMore() async {
+    if (_activeCache.isLoading) return;
+    setState(() {
+      _isOfflinePaginationBlocked = false;
+    });
+    await loadMore();
   }
 
   Future<void> _fetchPage({required bool isInitial}) async {
     final requestedStatus = widget.selectedStatus;
     final cache = _itemCaches.forStatus(requestedStatus);
-    if (cache.isLoading || (!isInitial && !cache.hasMore) || widget.sellerId.isEmpty) {
+    if (cache.isLoading ||
+        (!isInitial && !cache.hasMore) ||
+        (!isInitial && _isOfflinePaginationBlocked) ||
+        widget.sellerId.isEmpty) {
       return;
     }
 
@@ -765,15 +784,27 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
         cache.hasMore = snapshot.docs.length == _pageSize;
         cache.isLoading = false;
         cache.error = null;
+        if (isInitial) {
+          _didShowOfflinePaginationToast = false;
+        }
+        _isOfflinePaginationBlocked = false;
       });
     } catch (error) {
       if (!mounted) return;
-      if (cache.docs.isNotEmpty && NetworkStatus.isOfflineError(error)) {
+      final isOfflineError = NetworkStatus.isOfflineError(error);
+      if (!isInitial &&
+          cache.docs.isNotEmpty &&
+          isOfflineError &&
+          !_didShowOfflinePaginationToast) {
         AppToast.show(context, NetworkStatus.noInternetMessage);
       }
       setState(() {
         cache.error = error;
         cache.isLoading = false;
+        if (!isInitial && cache.docs.isNotEmpty && isOfflineError) {
+          _isOfflinePaginationBlocked = true;
+          _didShowOfflinePaginationToast = true;
+        }
       });
     }
   }
@@ -847,7 +878,12 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
                 );
               },
             ),
-            if (cache.isLoading) const _SellerProfilePostsSkeleton(),
+            if (_isOfflinePaginationBlocked &&
+                docs.isNotEmpty &&
+                NetworkStatus.isOfflineError(cache.error ?? ''))
+              _SellerProfileOfflineLoadMore(onRetry: retryLoadMore)
+            else if (cache.isLoading)
+              const _SellerProfilePostsSkeleton(),
           ],
         ),
       ),
@@ -899,6 +935,58 @@ class _SellerProfilePostsSkeleton extends StatelessWidget {
         childAspectRatio: 0.58,
       ),
       itemBuilder: (context, index) => const ItemCardSkeleton(isCompact: true),
+    );
+  }
+}
+
+class _SellerProfileOfflineLoadMore extends StatelessWidget {
+  const _SellerProfileOfflineLoadMore({required this.onRetry});
+
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.wifi_off_rounded,
+            size: 34,
+            color: Color(0xFF9A9A9A),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'No internet connection',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Color(0xFF777777),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 38,
+            child: ElevatedButton(
+              onPressed: () => onRetry(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF7801),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+              ),
+              child: const Text(
+                'Retry',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

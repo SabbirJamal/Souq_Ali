@@ -61,6 +61,8 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   bool _isSearchOpen = false;
   bool _isLoading = false;
   bool _isMergingLatest = false;
+  bool _isOfflinePaginationBlocked = false;
+  bool _didShowOfflinePaginationToast = false;
   bool _hasMore = true;
   String _query = '';
   Timer? _searchDebounce;
@@ -99,7 +101,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   void _onScroll() {
     _scheduleVisibleSeenCheck();
-    if (!_scrollController.hasClients || _isLoading || !_hasMore) return;
+    if (!_scrollController.hasClients ||
+        _isLoading ||
+        !_hasMore ||
+        _isOfflinePaginationBlocked) {
+      return;
+    }
     final pos = _scrollController.position.pixels;
     final max = _scrollController.position.maxScrollExtent;
     if (pos > max - 800) {
@@ -123,6 +130,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         total - index > 12 ||
         _isLoading ||
         !_hasMore ||
+        _isOfflinePaginationBlocked ||
         _isSearchOpen) {
       return;
     }
@@ -167,6 +175,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         _isLoading = false;
         _cachedFilteredDocs = null;
         _loadError = null;
+        if (isInitial) {
+          _didShowOfflinePaginationToast = false;
+        }
+        _isOfflinePaginationBlocked = false;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -177,12 +189,20 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       debugPrint('Feed load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
       if (!mounted) return;
-      if (_allDocs.isNotEmpty && NetworkStatus.isOfflineError(error)) {
+      final isOfflineError = NetworkStatus.isOfflineError(error);
+      if (!isInitial &&
+          _allDocs.isNotEmpty &&
+          isOfflineError &&
+          !_didShowOfflinePaginationToast) {
         AppToast.show(context, NetworkStatus.noInternetMessage);
       }
       setState(() {
         _loadError = error;
         _isLoading = false;
+        if (!isInitial && _allDocs.isNotEmpty && isOfflineError) {
+          _isOfflinePaginationBlocked = true;
+          _didShowOfflinePaginationToast = true;
+        }
       });
     }
   }
@@ -320,6 +340,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       _hasMore = true;
       _feedCursor = null;
       _cachedFilteredDocs = null;
+      _loadError = null;
+      _isOfflinePaginationBlocked = false;
+      _didShowOfflinePaginationToast = false;
     });
     await _fetchPage(isInitial: true);
   }
@@ -333,8 +356,20 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       _hasMore = true;
       _feedCursor = null;
       _cachedFilteredDocs = null;
+      _loadError = null;
+      _isOfflinePaginationBlocked = false;
+      _didShowOfflinePaginationToast = false;
     });
     await _fetchPage(isInitial: true, useWarmup: !forceFresh);
+  }
+
+  Future<void> _retryLoadMore() async {
+    if (_isLoading) return;
+    setState(() {
+      _loadError = null;
+      _isOfflinePaginationBlocked = false;
+    });
+    await _loadMore();
   }
 
   Future<void> mergeLatestItems() async {
@@ -555,7 +590,15 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                                   },
                                 ),
                         ),
-                        if (showInlineLoading && _allDocs.isNotEmpty)
+                        if (_isOfflinePaginationBlocked &&
+                            _allDocs.isNotEmpty &&
+                            NetworkStatus.isOfflineError(_loadError ?? ''))
+                          SliverToBoxAdapter(
+                            child: _FeedOfflineLoadMore(
+                              onRetry: _retryLoadMore,
+                            ),
+                          )
+                        else if (showInlineLoading && _allDocs.isNotEmpty)
                           SliverPadding(
                             padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
                             sliver: _isGridView
@@ -717,6 +760,58 @@ class _SkeletonFeedItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ItemCardSkeleton(isCompact: isCompact);
+  }
+}
+
+class _FeedOfflineLoadMore extends StatelessWidget {
+  const _FeedOfflineLoadMore({required this.onRetry});
+
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.wifi_off_rounded,
+            size: 34,
+            color: Color(0xFF9A9A9A),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'No internet connection',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Color(0xFF777777),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 38,
+            child: ElevatedButton(
+              onPressed: () => onRetry(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF7801),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+              ),
+              child: const Text(
+                'Retry',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
