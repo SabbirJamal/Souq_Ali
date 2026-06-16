@@ -69,12 +69,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   Timer? _searchFocusTimer;
   Timer? _visibilityDebounce;
   Timer? _seenFlushTimer;
+  Future<void>? _activeRefreshFuture;
   String? _viewerId;
   String? _viewerType;
   FeedCursor? _feedCursor;
   Object? _loadError;
   final DateTime _openedAt = DateTime.now();
-  int _refreshTick = 0;
 
   @override
   void initState() {
@@ -334,10 +334,22 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   Future<void> _refreshFeed() async {
+    if (_activeRefreshFuture != null) return _activeRefreshFuture!;
+    final future = _performRefresh(useWarmup: false);
+    _activeRefreshFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_activeRefreshFuture, future)) {
+        _activeRefreshFuture = null;
+      }
+    }
+  }
+
+  Future<void> _performRefresh({required bool useWarmup}) async {
     _markVisibleItemsSeen();
     await _flushSeenItems();
     setState(() {
-      _refreshTick++;
       _allDocs.clear();
       _hasMore = true;
       _feedCursor = null;
@@ -346,23 +358,20 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       _isOfflinePaginationBlocked = false;
       _didShowOfflinePaginationToast = false;
     });
-    await _fetchPage(isInitial: true);
+    await _fetchPage(isInitial: true, useWarmup: useWarmup);
   }
 
   Future<void> reloadItems({bool forceFresh = false}) async {
-    _markVisibleItemsSeen();
-    await _flushSeenItems();
-    setState(() {
-      _refreshTick++;
-      _allDocs.clear();
-      _hasMore = true;
-      _feedCursor = null;
-      _cachedFilteredDocs = null;
-      _loadError = null;
-      _isOfflinePaginationBlocked = false;
-      _didShowOfflinePaginationToast = false;
-    });
-    await _fetchPage(isInitial: true, useWarmup: !forceFresh);
+    if (_activeRefreshFuture != null) return _activeRefreshFuture!;
+    final future = _performRefresh(useWarmup: !forceFresh);
+    _activeRefreshFuture = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_activeRefreshFuture, future)) {
+        _activeRefreshFuture = null;
+      }
+    }
   }
 
   Future<void> _retryLoadMore() async {
@@ -556,7 +565,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
             child: CustomScrollView(
-              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}-$_refreshTick'),
+              key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}'),
               controller: _scrollController,
               cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
@@ -610,7 +619,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                           )
                         else if (showInlineLoading && _allDocs.isNotEmpty)
                           SliverPadding(
-                            padding: EdgeInsets.symmetric(horizontal: 2, vertical: _isGridView ? 8 : 12),
+                            padding: EdgeInsets.fromLTRB(
+                              2,
+                              0,
+                              2,
+                              _isGridView ? 8 : 12,
+                            ),
                             sliver: _isGridView
                                 ? SliverGrid.builder(
                                     itemCount: 4,
