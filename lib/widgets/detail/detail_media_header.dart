@@ -374,6 +374,7 @@ class _DetailMediaHeaderState extends State<DetailMediaHeader> {
     return _DetailMediaPage(
       media: media,
       height: mediaHeight,
+      imageSize: media.isVideo ? null : _sourceSizeFor(media),
       autoPlay: index == _currentIndex,
       pauseSignal: _pauseSignal,
       preloadedController: widget.preloadedVideoControllers[media.url],
@@ -552,6 +553,7 @@ class _DetailMediaPage extends StatelessWidget {
   const _DetailMediaPage({
     required this.media,
     required this.height,
+    required this.imageSize,
     required this.autoPlay,
     required this.pauseSignal,
     required this.onScaleStart,
@@ -568,6 +570,7 @@ class _DetailMediaPage extends StatelessWidget {
 
   final MediaItem media;
   final double height;
+  final Size? imageSize;
   final bool autoPlay;
   final ValueNotifier<int> pauseSignal;
   final VideoPlayerController? preloadedController;
@@ -610,24 +613,10 @@ class _DetailMediaPage extends StatelessWidget {
                       controller: preloadedController,
                       initializeFuture: preloadFuture,
                     )
-                  : CachedNetworkImage(
+                  : _DetailSnappedImage(
                       imageUrl: media.url,
-                      width: double.infinity,
+                      sourceSize: imageSize,
                       height: height,
-                      memCacheWidth: 1200,
-                      maxWidthDiskCache: 1600,
-                      fit: BoxFit.contain,
-                      fadeInDuration: const Duration(milliseconds: 1),
-                      fadeOutDuration: const Duration(milliseconds: 1),
-                      placeholder: (context, url) => const MediaSkeletonPlaceholder(),
-                      errorWidget: (context, url, error) => Container(
-                        color: const Color(0xFFDCF8C6),
-                        child: const Icon(
-                          Icons.broken_image,
-                          size: 50,
-                          color: Color(0xFF075E54),
-                        ),
-                      ),
                     ),
             ],
           ),
@@ -636,6 +625,85 @@ class _DetailMediaPage extends StatelessWidget {
     );
   }
 
+}
+
+class _DetailSnappedImage extends StatelessWidget {
+  const _DetailSnappedImage({
+    required this.imageUrl,
+    required this.sourceSize,
+    required this.height,
+  });
+
+  final String imageUrl;
+  final Size? sourceSize;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxSize = Size(constraints.maxWidth, constraints.maxHeight);
+        final resolvedSource = sourceSize;
+        if (resolvedSource == null ||
+            resolvedSource.isEmpty ||
+            maxSize.isEmpty) {
+          return CachedNetworkImage(
+            imageUrl: imageUrl,
+            width: double.infinity,
+            height: height,
+            memCacheWidth: 1200,
+            maxWidthDiskCache: 1600,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            fadeInDuration: const Duration(milliseconds: 1),
+            fadeOutDuration: const Duration(milliseconds: 1),
+            placeholder: (context, url) => const MediaSkeletonPlaceholder(),
+            errorWidget: (context, url, error) => Container(
+              color: const Color(0xFFDCF8C6),
+              child: const Icon(
+                Icons.broken_image,
+                size: 50,
+                color: Color(0xFF075E54),
+              ),
+            ),
+          );
+        }
+
+        final fitted = applyBoxFit(BoxFit.contain, resolvedSource, maxSize);
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final snappedWidth =
+            (fitted.destination.width * dpr).roundToDouble() / dpr;
+        final snappedHeight =
+            (fitted.destination.height * dpr).roundToDouble() / dpr;
+
+        return Center(
+          child: SizedBox(
+            width: snappedWidth,
+            height: snappedHeight,
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              memCacheWidth: 1200,
+              maxWidthDiskCache: 1600,
+              fit: BoxFit.fill,
+              filterQuality: FilterQuality.medium,
+              fadeInDuration: const Duration(milliseconds: 1),
+              fadeOutDuration: const Duration(milliseconds: 1),
+              placeholder: (context, url) =>
+                  const MediaSkeletonPlaceholder(),
+              errorWidget: (context, url, error) => Container(
+                color: const Color(0xFFDCF8C6),
+                child: const Icon(
+                  Icons.broken_image,
+                  size: 50,
+                  color: Color(0xFF075E54),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _DetailMediaCountBadge extends StatelessWidget {
