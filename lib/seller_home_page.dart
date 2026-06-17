@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'seller_tabs/seller_add_item_tab.dart';
 import 'seller_tabs/seller_feed_tab.dart';
@@ -447,6 +448,7 @@ class _SellerAccessPrompt extends StatefulWidget {
 class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
+  bool _acceptedTerms = false;
   bool _isLoggingIn = false;
 
   @override
@@ -525,6 +527,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
 
   @override
   Widget build(BuildContext context) {
+    final canContinue = _acceptedTerms && !_isLoggingIn;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -580,8 +583,64 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                 ),
               ),
               const SizedBox(height: 12),
+              InkWell(
+                onTap: () => setState(() => _acceptedTerms = !_acceptedTerms),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Icon(
+                        _acceptedTerms
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        color: _acceptedTerms
+                            ? const Color(0xFFFF7801)
+                            : Colors.grey,
+                        size: 24,
+                      ),
+                      Expanded(
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            const Text(
+                              'I agree with ',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                launchUrl(
+                                  Uri.parse(
+                                    'https://bizsooq.com/terms-and-conditions',
+                                  ),
+                                  mode: LaunchMode.externalApplication,
+                                );
+                              },
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF0A84FF),
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                'Terms and Conditions',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               FilledButton.icon(
-                onPressed: _isLoggingIn ? null : _login,
+                onPressed: canContinue ? _login : null,
                 icon: _isLoggingIn
                     ? const SizedBox(
                         width: 18,

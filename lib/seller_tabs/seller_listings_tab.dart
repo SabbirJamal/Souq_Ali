@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
@@ -294,67 +294,22 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     return '${buffer.toString()}.${parts.length > 1 ? parts.last : '000'}';
   }
 
-  Future<void> _deleteItem(BuildContext context, String docId, Map<String, dynamic> item) async {
+  Future<void> _deleteItem(BuildContext context, String docId) async {
     if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
     if (!await NetworkStatus.hasConnection()) {
       if (context.mounted) AppToast.show(context, NetworkStatus.noInternetMessage);
       return;
     }
-    await _deleteItemStorageFiles(item);
-    await _deleteSeenRecord(docId);
-    await FirebaseFirestore.instance.collection('items').doc(docId).delete();
+    final session = await _sessionFuture;
+    await FirebaseFunctions.instance.httpsCallable('deleteItemCompletely').call({
+      'itemId': docId,
+      'sellerUid': session?.sellerId ?? '',
+    });
     if (mounted) {
       setState(() => _itemCaches.removeDoc(docId));
     }
     if (!context.mounted) return;
     AppToast.show(context, 'Item deleted');
-  }
-
-  Future<void> _deleteItemStorageFiles(Map<String, dynamic> item) async {
-    final urls = <String>{};
-    final imageUrls = item['image_urls'];
-    if (imageUrls is List) {
-      for (final url in imageUrls) {
-        final text = url?.toString().trim() ?? '';
-        if (text.isNotEmpty) urls.add(text);
-      }
-    }
-
-    final mediaFiles = item['media_files'];
-    if (mediaFiles is List) {
-      for (final media in mediaFiles) {
-        if (media is! Map) continue;
-        final url = media['url']?.toString().trim() ?? '';
-        final thumbnailUrl = media['thumbnail_url']?.toString().trim() ?? '';
-        if (url.isNotEmpty) urls.add(url);
-        if (thumbnailUrl.isNotEmpty) urls.add(thumbnailUrl);
-      }
-    }
-
-    final legacyAudioUrl = item['audio_description_url']?.toString().trim() ?? '';
-    if (legacyAudioUrl.isNotEmpty) urls.add(legacyAudioUrl);
-
-    await Future.wait(
-      urls.map((url) async {
-        try {
-          await FirebaseStorage.instance.refFromURL(url).delete();
-        } catch (_) {}
-      }),
-    );
-  }
-
-  Future<void> _deleteSeenRecord(String docId) async {
-    try {
-      final seenRef = FirebaseFirestore.instance.collection('item_seen').doc(docId);
-      final viewers = await seenRef.collection('viewers').limit(100).get();
-      final batch = FirebaseFirestore.instance.batch();
-      for (final viewer in viewers.docs) {
-        batch.delete(viewer.reference);
-        batch.delete(FirebaseFirestore.instance.collection('viewer_seen').doc(viewer.id).collection('items').doc(docId));
-      }
-      batch.delete(seenRef);
-      await batch.commit();
-    } catch (_) {}
   }
 
   Future<void> _confirmDelete(BuildContext context, String docId, Map<String, dynamic> item) async {
@@ -383,7 +338,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       ),
     );
 
-    if (confirm == true && context.mounted) await _deleteItem(context, docId, item);
+    if (confirm == true && context.mounted) await _deleteItem(context, docId);
   }
 
   Future<void> _confirmRenew(BuildContext context, String docId, Map<String, dynamic> item) async {

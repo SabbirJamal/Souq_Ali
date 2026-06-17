@@ -220,6 +220,51 @@ exports.markFeedItemsSeen = onCall(
   },
 );
 
+exports.deleteItemCompletely = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 120,
+    memory: "512MiB",
+  },
+  async (request) => {
+    const itemId = stringValue(request.data && request.data.itemId);
+    const sellerUid = stringValue(request.data && request.data.sellerUid);
+
+    try {
+      if (!itemId) {
+        throw new HttpsError("invalid-argument", "itemId is required.");
+      }
+
+      const itemRef = db.collection("items").doc(itemId);
+      const itemDoc = await itemRef.get();
+      if (!itemDoc.exists) {
+        return { deleted: false, reason: "not_found" };
+      }
+
+      const item = itemDoc.data() || {};
+      if (sellerUid && stringValue(item.seller_uid) && stringValue(item.seller_uid) !== sellerUid) {
+        throw new HttpsError("permission-denied", "sellerUid does not match item owner.");
+      }
+
+      await cleanupItem(itemDoc);
+      return { deleted: true };
+    } catch (error) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      logger.error("deleteItemCompletely failed", {
+        itemId,
+        sellerUid,
+        error,
+      });
+      throw new HttpsError(
+        "internal",
+        error && error.message ? error.message : "Item delete failed.",
+      );
+    }
+  },
+);
+
 exports.processNewItemMedia = onDocumentCreated(
   {
     document: "items/{itemId}",
@@ -310,7 +355,7 @@ exports.processUpdatedItemMedia = onDocumentUpdated(
 
 exports.cleanupExpiredItems = onSchedule(
   {
-    schedule: "every 6 hours",
+    schedule: "every 1 hours",
     timeZone: "Asia/Muscat",
     region: "us-central1",
     timeoutSeconds: 540,
@@ -318,24 +363,33 @@ exports.cleanupExpiredItems = onSchedule(
   },
   async () => {
     const now = Timestamp.now();
-    const expiredItems = await db
-      .collection("items")
-      .where("expires_at", "<=", now)
-      .limit(50)
-      .get();
+    let cleaned = 0;
 
-    if (expiredItems.empty) {
-      logger.info("No expired items found.");
-      return;
-    }
+    while (true) {
+      const expiredItems = await db
+        .collection("items")
+        .where("expires_at", "<=", now)
+        .limit(50)
+        .get();
 
-    logger.info(`Cleaning ${expiredItems.size} expired item(s).`);
+      if (expiredItems.empty) {
+        if (cleaned === 0) {
+          logger.info("No expired items found.");
+        } else {
+          logger.info(`Expired cleanup completed. Deleted ${cleaned} item(s).`);
+        }
+        return;
+      }
 
-    for (const itemDoc of expiredItems.docs) {
-      if (isItemExpired(itemDoc.data(), now)) {
-        await cleanupItem(itemDoc);
-      } else {
-        logger.info(`Skipping item ${itemDoc.id}; selected time period is still active.`);
+      logger.info(`Cleaning ${expiredItems.size} expired item(s) in current batch.`);
+
+      for (const itemDoc of expiredItems.docs) {
+        if (isItemExpired(itemDoc.data(), now)) {
+          await cleanupItem(itemDoc);
+          cleaned += 1;
+        } else {
+          logger.info(`Skipping item ${itemDoc.id}; selected time period is still active.`);
+        }
       }
     }
   },
@@ -378,16 +432,18 @@ async function cleanupItem(itemDoc) {
 
   logger.info(`Cleaning expired item ${itemId}.`);
 
-  const mediaUrls = collectMediaUrls(item);
-  await deleteStorageFiles(mediaUrls);
+  const mediaRefs = collectMediaStorageRefs(itemId, item);
+  await deleteStorageFiles(mediaRefs);
   await removeItemSeenRecords(itemId);
 
   await itemDoc.ref.delete();
   logger.info(`Deleted expired item ${itemId}.`);
 }
 
-function collectMediaUrls(item) {
+function collectMediaStorageRefs(itemId, item) {
   const urls = new Set();
+  const paths = new Set();
+  const prefixes = new Set();
 
   if (Array.isArray(item.image_urls)) {
     for (const url of item.image_urls) {
@@ -398,7 +454,8 @@ function collectMediaUrls(item) {
   }
 
   if (Array.isArray(item.media_files)) {
-    for (const media of item.media_files) {
+    for (let index = 0; index < item.media_files.length; index += 1) {
+      const media = item.media_files[index];
       if (media && typeof media.url === "string" && media.url.trim()) {
         urls.add(media.url);
       }
@@ -423,13 +480,44 @@ function collectMediaUrls(item) {
       ) {
         urls.add(media.raw_thumbnail_url);
       }
+
+      for (const key of ["path", "raw_path", "optimized_path", "thumbnail_path"]) {
+        if (media && typeof media[key] === "string" && media[key].trim()) {
+          paths.add(media[key].trim());
+        }
+      }
+
+      const rawPath =
+        media && typeof media.raw_path === "string" && media.raw_path.trim()
+          ? media.raw_path.trim()
+          : media && typeof media.path === "string" && media.path.trim()
+            ? media.path.trim()
+            : "";
+      const optimizedPrefix = optimizedStoragePrefix(itemId, index, rawPath);
+      if (optimizedPrefix) {
+        prefixes.add(optimizedPrefix);
+      }
     }
   }
 
-  return [...urls];
+  return {
+    urls: [...urls],
+    paths: [...paths],
+    prefixes: [...prefixes],
+  };
 }
 
-async function deleteStorageFiles(urls) {
+function optimizedStoragePrefix(itemId, index, rawPath) {
+  if (!rawPath) {
+    return `items/${itemId}/optimized/${itemId}_${index}`;
+  }
+
+  const lastSlash = rawPath.lastIndexOf("/");
+  const rawDir = lastSlash === -1 ? `items/${itemId}` : rawPath.slice(0, lastSlash);
+  return `${rawDir}/optimized/${itemId}_${index}`;
+}
+
+async function deleteStorageFiles({ urls, paths, prefixes }) {
   for (const url of urls) {
     const filePath = storagePathFromUrl(url);
     if (!filePath) {
@@ -437,12 +525,52 @@ async function deleteStorageFiles(urls) {
       continue;
     }
 
-    try {
-      await bucket.file(filePath).delete({ ignoreNotFound: true });
-      logger.info(`Deleted storage file: ${filePath}`);
-    } catch (error) {
-      logger.error(`Failed deleting storage file: ${filePath}`, error);
+    await deleteStoragePath(filePath);
+  }
+
+  for (const filePath of paths) {
+    await deleteStoragePath(filePath);
+  }
+
+  for (const prefix of prefixes) {
+    await deleteStoragePrefix(prefix);
+  }
+}
+
+async function deleteStoragePath(filePath) {
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await bucket.file(filePath).delete({ ignoreNotFound: true });
+    logger.info(`Deleted storage file: ${filePath}`);
+  } catch (error) {
+    logger.error(`Failed deleting storage file: ${filePath}`, error);
+  }
+}
+
+async function deleteStoragePrefix(prefix) {
+  if (!prefix) {
+    return;
+  }
+
+  try {
+    const [files] = await bucket.getFiles({ prefix });
+    if (!files.length) {
+      return;
     }
+
+    for (const file of files) {
+      try {
+        await file.delete({ ignoreNotFound: true });
+        logger.info(`Deleted storage file via prefix ${prefix}: ${file.name}`);
+      } catch (error) {
+        logger.error(`Failed deleting storage file via prefix ${prefix}: ${file.name}`, error);
+      }
+    }
+  } catch (error) {
+    logger.error(`Failed listing storage prefix: ${prefix}`, error);
   }
 }
 
@@ -474,44 +602,57 @@ function storagePathFromUrl(url) {
 
 async function removeItemSeenRecords(itemId) {
   const seenDocRef = db.collection("item_seen").doc(itemId);
-  const viewers = await seenDocRef.collection("viewers").get();
+  let deletedViewers = 0;
 
-  if (!viewers.empty) {
-    let batch = db.batch();
-    let count = 0;
+  while (true) {
+    const viewers = await seenDocRef.collection("viewers").limit(400).get();
+    if (viewers.empty) {
+      break;
+    }
+
+    const batch = db.batch();
     for (const viewer of viewers.docs) {
       batch.delete(viewer.ref);
-      count += 1;
-      if (count % 450 === 0) {
-        await batch.commit();
-        batch = db.batch();
-      }
+      batch.delete(
+        db.collection("viewer_seen").doc(viewer.id).collection("items").doc(itemId),
+      );
     }
     await batch.commit();
-    logger.info(`Deleted ${viewers.size} seen viewer document(s) for item ${itemId}.`);
+    deletedViewers += viewers.size;
+  }
+
+  if (deletedViewers > 0) {
+    logger.info(`Deleted ${deletedViewers} seen viewer document(s) for item ${itemId}.`);
   }
 
   await seenDocRef.delete();
 
-  const mirrored = await db
-    .collectionGroup("items")
-    .where("item_id", "==", itemId)
-    .limit(500)
-    .get();
+  try {
+    let deletedMirrored = 0;
+    while (true) {
+      const mirrored = await db
+        .collectionGroup("items")
+        .where("item_id", "==", itemId)
+        .limit(400)
+        .get();
 
-  if (!mirrored.empty) {
-    let batch = db.batch();
-    let count = 0;
-    for (const doc of mirrored.docs) {
-      batch.delete(doc.ref);
-      count += 1;
-      if (count % 450 === 0) {
-        await batch.commit();
-        batch = db.batch();
+      if (mirrored.empty) {
+        break;
       }
+
+      const batch = db.batch();
+      for (const doc of mirrored.docs) {
+        batch.delete(doc.ref);
+      }
+      await batch.commit();
+      deletedMirrored += mirrored.size;
     }
-    await batch.commit();
-    logger.info(`Deleted ${mirrored.size} mirrored seen document(s) for item ${itemId}.`);
+
+    if (deletedMirrored > 0) {
+      logger.info(`Deleted ${deletedMirrored} mirrored seen document(s) for item ${itemId}.`);
+    }
+  } catch (error) {
+    logger.error(`Failed mirrored seen cleanup for item ${itemId}.`, error);
   }
 }
 

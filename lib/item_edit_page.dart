@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -532,9 +533,10 @@ class _ItemEditPageState extends State<ItemEditPage> {
   Future<void> _deleteItem() async {
     setState(() => _isDeleting = true);
     try {
-      await _deleteItemStorageFiles();
-      await _deleteSeenRecord();
-      await FirebaseFirestore.instance.collection('items').doc(widget.docId).delete();
+      await FirebaseFunctions.instance.httpsCallable('deleteItemCompletely').call({
+        'itemId': widget.docId,
+        'sellerUid': widget.itemData['seller_uid']?.toString() ?? '',
+      });
       if (!mounted) return;
       AppToast.show(context, 'Item deleted');
       Navigator.of(context).pushAndRemoveUntil(
@@ -546,59 +548,6 @@ class _ItemEditPageState extends State<ItemEditPage> {
     } finally {
       if (mounted) setState(() => _isDeleting = false);
     }
-  }
-
-  Future<void> _deleteItemStorageFiles() async {
-    final urls = <String>{};
-    final imageUrls = widget.itemData['image_urls'];
-    if (imageUrls is List) {
-      for (final url in imageUrls) {
-        final text = url?.toString().trim() ?? '';
-        if (text.isNotEmpty) urls.add(text);
-      }
-    }
-
-    final mediaFiles = widget.itemData['media_files'];
-    if (mediaFiles is List) {
-      for (final media in mediaFiles) {
-        if (media is! Map) continue;
-        final url = media['url']?.toString().trim() ?? '';
-        final thumbnailUrl = media['thumbnail_url']?.toString().trim() ?? '';
-        if (url.isNotEmpty) urls.add(url);
-        if (thumbnailUrl.isNotEmpty) urls.add(thumbnailUrl);
-      }
-    }
-
-    final legacyAudioUrl =
-        widget.itemData['audio_description_url']?.toString().trim() ?? '';
-    if (legacyAudioUrl.isNotEmpty) urls.add(legacyAudioUrl);
-
-    await Future.wait(urls.map((url) async {
-      try {
-        await FirebaseStorage.instance.refFromURL(url).delete();
-      } catch (_) {}
-    }));
-  }
-
-  Future<void> _deleteSeenRecord() async {
-    try {
-      final seenRef =
-          FirebaseFirestore.instance.collection('item_seen').doc(widget.docId);
-      final viewers = await seenRef.collection('viewers').limit(100).get();
-      final batch = FirebaseFirestore.instance.batch();
-      for (final viewer in viewers.docs) {
-        batch.delete(viewer.reference);
-        batch.delete(
-          FirebaseFirestore.instance
-              .collection('viewer_seen')
-              .doc(viewer.id)
-              .collection('items')
-              .doc(widget.docId),
-        );
-      }
-      batch.delete(seenRef);
-      await batch.commit();
-    } catch (_) {}
   }
 
   void _showMessage(String msg) {
