@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -10,6 +11,7 @@ import 'widgets/app_pull_refresh.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/item_card.dart';
+import 'widgets/media_carousel.dart';
 import 'widgets/offline_state.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
 
@@ -704,6 +706,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   static const _pageSize = 20;
 
   final ItemStatusCaches _itemCaches = ItemStatusCaches();
+  final Set<String> _prefetchedImageUrls = {};
   bool _isOfflinePaginationBlocked = false;
   bool _didShowOfflinePaginationToast = false;
   ItemStatusCache get _activeCache => _itemCaches.forStatus(widget.selectedStatus);
@@ -819,10 +822,18 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
       if (isInitial) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
+            _prefetchProfileThumbnails(cache.docs, isInitial: true);
+          }
+          if (mounted) {
             _preloadStatusIfNeeded(
               requestedStatus == 'live' ? 'post' : 'live',
             );
           }
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _prefetchProfileThumbnails(activeDocs, isInitial: false);
         });
       }
     } catch (error) {
@@ -851,6 +862,33 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
       return;
     }
     await _fetchPageForStatus(status, isInitial: true);
+  }
+
+  void _prefetchProfileThumbnails(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, {
+    required bool isInitial,
+  }) {
+    final limit = isInitial ? 6 : 4;
+    var queued = 0;
+
+    for (var index = 0; index < docs.length && queued < limit; index++) {
+      final media = mediaItemsFromMap(docs[index].data());
+      if (media.isEmpty) continue;
+
+      final first = media.first;
+      final thumbnailUrl = first.thumbnailUrl?.trim() ?? '';
+      final fallbackUrl = first.url.trim();
+      final url = thumbnailUrl.isNotEmpty
+          ? thumbnailUrl
+          : (!first.isVideo && index < 4 ? fallbackUrl : '');
+      if (url.isEmpty || !_prefetchedImageUrls.add(url)) continue;
+
+      queued += 1;
+      precacheImage(
+        CachedNetworkImageProvider(url, maxWidth: 500),
+        context,
+      ).catchError((_) {});
+    }
   }
 
   @override

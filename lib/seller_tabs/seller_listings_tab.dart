@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../item_edit_page.dart';
@@ -12,6 +13,7 @@ import '../utils/price_input.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/app_pull_refresh.dart';
 import '../widgets/item_card.dart';
+import '../widgets/media_carousel.dart';
 import '../widgets/offline_state.dart';
 import '../widgets/price_with_currency.dart';
 
@@ -41,6 +43,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   final ValueNotifier<DateTime> _nowNotifier = ValueNotifier(DateTime.now());
   final _scrollController = ScrollController();
   final ItemStatusCaches _itemCaches = ItemStatusCaches();
+  final Set<String> _prefetchedImageUrls = {};
   late String _selectedStatus = widget.initialStatus == 'live' ? 'live' : 'post';
   ItemStatusCache get _activeCache => _itemCaches.forStatus(_selectedStatus);
 
@@ -133,11 +136,21 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         cache.isLoading = false;
         cache.error = null;
       });
+      final matchingDocs = newDocs
+          .where((doc) => _matchesStatus(doc.data(), requestedStatus))
+          .toList(growable: false);
       if (isInitial) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _prefetchListingThumbnails(cache.docs, isInitial: true);
           if (mounted) {
             _preloadStatusIfNeeded(session, requestedStatus == 'live' ? 'post' : 'live');
           }
+        });
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _prefetchListingThumbnails(matchingDocs, isInitial: false);
         });
       }
     } catch (e) {
@@ -167,11 +180,21 @@ class SellerListingsTabState extends State<SellerListingsTab> {
           cache.isLoading = false;
           cache.error = null;
         });
+        final matchingDocs = newDocs
+            .where((doc) => _matchesStatus(doc.data(), requestedStatus))
+            .toList(growable: false);
         if (isInitial) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _prefetchListingThumbnails(cache.docs, isInitial: true);
             if (mounted) {
               _preloadStatusIfNeeded(session, requestedStatus == 'live' ? 'post' : 'live');
             }
+          });
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _prefetchListingThumbnails(matchingDocs, isInitial: false);
           });
         }
       } catch (_) {
@@ -194,6 +217,33 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     final cache = _itemCaches.forStatus(status);
     if (cache.docs.isNotEmpty || cache.isLoading) return;
     await _fetchPageForStatus(session, status, isInitial: true);
+  }
+
+  void _prefetchListingThumbnails(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, {
+    required bool isInitial,
+  }) {
+    final limit = isInitial ? 6 : 4;
+    var queued = 0;
+
+    for (var index = 0; index < docs.length && queued < limit; index++) {
+      final media = mediaItemsFromMap(docs[index].data());
+      if (media.isEmpty) continue;
+
+      final first = media.first;
+      final thumbnailUrl = first.thumbnailUrl?.trim() ?? '';
+      final fallbackUrl = first.url.trim();
+      final url = thumbnailUrl.isNotEmpty
+          ? thumbnailUrl
+          : (!first.isVideo && index < 4 ? fallbackUrl : '');
+      if (url.isEmpty || !_prefetchedImageUrls.add(url)) continue;
+
+      queued += 1;
+      precacheImage(
+        CachedNetworkImageProvider(url, maxWidth: 500),
+        context,
+      ).catchError((_) {});
+    }
   }
 
   // Precompute sort keys once instead of converting Timestamps per comparison.
