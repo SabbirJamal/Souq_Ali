@@ -594,7 +594,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                   ),
                 ),
         ),
-        Positioned(top: 10, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
+        Positioned(top: 6, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
       ],
     );
     if (!isLivePage) return content;
@@ -725,7 +725,7 @@ class _FeedHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
+      height: 50,
       color: isLivePage ? Colors.transparent : const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Stack(
@@ -734,11 +734,11 @@ class _FeedHeader extends StatelessWidget {
           const Align(
             alignment: Alignment.center,
             child: SizedBox(
-              height: 56,
+              height: 44,
               width: 152,
               child: Image(
                 image: AssetImage('assets/branding/logo.png'),
-                fit: BoxFit.cover,
+                fit: BoxFit.contain,
               ),
             ),
           ),

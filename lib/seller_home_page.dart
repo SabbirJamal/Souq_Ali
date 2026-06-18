@@ -691,7 +691,7 @@ class _SellerTabHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 56,
+      height: 50,
       width: double.infinity,
       color: const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -699,11 +699,11 @@ class _SellerTabHeader extends StatelessWidget {
         alignment: Alignment.center,
         children: [
           const SizedBox(
-            height: 56,
+            height: 44,
             width: 152,
             child: Image(
               image: AssetImage('assets/branding/logo.png'),
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
             ),
           ),
           Positioned(

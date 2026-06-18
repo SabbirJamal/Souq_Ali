@@ -406,18 +406,18 @@ class _ProfileScrollableHeader extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          height: 56,
+          height: 50,
           color: isLive ? Colors.transparent : const Color(0xFFF4FBF7),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Stack(
             alignment: Alignment.center,
             children: [
               const SizedBox(
-                height: 56,
+                height: 44,
                 width: 152,
                 child: Image(
                   image: AssetImage('assets/branding/logo.png'),
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
                 ),
               ),
             ],
