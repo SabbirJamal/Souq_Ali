@@ -448,7 +448,7 @@ class _SellerAccessPrompt extends StatefulWidget {
 class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
-  bool _acceptedTerms = false;
+  bool _acceptedTerms = true;
   bool _isLoggingIn = false;
 
   @override
@@ -589,6 +589,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Icon(
@@ -600,39 +601,39 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                             : Colors.grey,
                         size: 24,
                       ),
-                      Expanded(
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            const Text(
-                              'I agree with ',
-                              style: TextStyle(fontSize: 14),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                launchUrl(
-                                  Uri.parse(
-                                    'https://bizsooq.com/terms-and-conditions',
-                                  ),
-                                  mode: LaunchMode.externalApplication,
-                                );
-                              },
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF0A84FF),
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: const Text(
-                                'Terms and Conditions',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                      const SizedBox(width: 2),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        alignment: WrapAlignment.center,
+                        children: [
+                          const Text(
+                            'Agree with ',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              launchUrl(
+                                Uri.parse(
+                                  'https://bizsooq.com/terms-and-conditions',
                                 ),
+                                mode: LaunchMode.externalApplication,
+                              );
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF0A84FF),
+                              padding: EdgeInsets.zero,
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: const Text(
+                              'Terms and Conditions',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -728,19 +729,50 @@ class _HeaderLogoutButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
-      onPressed: onLogout,
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFFF7801),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        minimumSize: const Size(86, 38),
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-      child: const Text(
-        'Log out',
-        style: TextStyle(fontWeight: FontWeight.w700),
+    return PopupMenuButton<String>(
+      tooltip: '',
+      onSelected: (value) {
+        if (value == 'logout') {
+          onLogout();
+        }
+      },
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      itemBuilder: (context) => const [
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Text(
+            'LOG OUT',
+            style: TextStyle(
+              color: Colors.red,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'delete_account',
+          child: Text(
+            'DELETE ACCOUNT',
+            style: TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF7801),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: const Icon(
+          Icons.settings,
+          color: Colors.white,
+          size: 22,
+        ),
       ),
     );
   }

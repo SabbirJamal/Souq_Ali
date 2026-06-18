@@ -256,7 +256,6 @@ class _CrNumberFieldState extends State<_CrNumberField> {
           textInputAction: TextInputAction.done,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           decoration: InputDecoration(
-            hintText: 'CR No.',
             filled: true,
             fillColor: Colors.white,
             border: OutlineInputBorder(
@@ -430,7 +429,6 @@ class _SellerInfoFieldState extends State<_SellerInfoField> {
           textInputAction: TextInputAction.done,
           inputFormatters: widget.inputFormatters,
           decoration: InputDecoration(
-            hintText: widget.hint,
             filled: true,
             fillColor: Colors.white,
             border: OutlineInputBorder(
@@ -560,36 +558,26 @@ class _SettingsEditHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                'Update this information.',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-              ),
-            ],
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
         TextButton(
           onPressed: onCancel,
           style: TextButton.styleFrom(
-            foregroundColor: Colors.black,
+            foregroundColor: Colors.red,
             padding: EdgeInsets.zero,
             minimumSize: const Size(54, 28),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
           child: const Text(
             'Cancel',
-            style: TextStyle(decoration: TextDecoration.underline),
+            style: TextStyle(),
           ),
         ),
       ],
