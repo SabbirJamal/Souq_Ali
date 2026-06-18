@@ -263,69 +263,54 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
       isLive: _selectedStatus == 'live',
       child: Stack(
         children: [
-          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: _sellerStream,
-            builder: (context, sellerSnapshot) {
-              final seller = sellerSnapshot.data?.data() ?? {};
-              final sellerName =
-                  seller['name']?.toString().trim().isNotEmpty == true
-                  ? seller['name'].toString().trim()
-                  : fallbackName;
-              final crNumber =
-                  seller['cr_number']?.toString().trim().isNotEmpty == true
-                  ? seller['cr_number'].toString().trim()
-                  : seller['crNumber']?.toString().trim() ?? '';
-
-              return ColoredBox(
-                color: Colors.transparent,
-                child: AppPullRefresh(
-                  onRefresh: _refreshPosts,
-                  indicatorTop: 132,
-                  child: CustomScrollView(
-                    controller: _scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    slivers: [
-                      if (!isOwnProfile)
-                        SliverToBoxAdapter(
-                          child: _ProfileScrollableHeader(
-                            onBack: onBack,
-                            isLive: _selectedStatus == 'live',
-                          ),
-                        ),
-                      SliverToBoxAdapter(
-                        child: _SellerProfileTop(
-                          sellerName: sellerName,
-                          crNumber: crNumber,
-                          sellerPhone: sellerPhone,
-                          topPadding: isOwnProfile
-                              ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
-                              : 16,
-                        ),
+          ColoredBox(
+            color: Colors.transparent,
+            child: AppPullRefresh(
+              onRefresh: _refreshPosts,
+              indicatorTop: 132,
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  if (!isOwnProfile)
+                    SliverToBoxAdapter(
+                      child: _ProfileScrollableHeader(
+                        onBack: onBack,
+                        isLive: _selectedStatus == 'live',
                       ),
-                      SliverToBoxAdapter(
-                        child: _ProfileStatusTabs(
-                          selectedStatus: _selectedStatus,
-                          onChanged: (status) {
-                            if (status == _selectedStatus) return;
-                            setState(() => _selectedStatus = status);
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (_scrollController.hasClients) {
-                                _scrollController.jumpTo(0);
-                              }
-                            });
-                          },
-                        ),
-                      ),
-                      _SellerActivePosts(
-                        key: _activePostsKey,
-                        sellerId: sellerDocId,
-                        selectedStatus: _selectedStatus,
-                      ),
-                    ],
+                    ),
+                  SliverToBoxAdapter(
+                    child: _SellerProfileTopStream(
+                      sellerStream: _sellerStream,
+                      fallbackName: fallbackName,
+                      sellerPhone: sellerPhone,
+                      topPadding: isOwnProfile
+                          ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
+                          : 16,
+                    ),
                   ),
-                ),
-              );
-            },
+                  SliverToBoxAdapter(
+                    child: _ProfileStatusTabs(
+                      selectedStatus: _selectedStatus,
+                      onChanged: (status) {
+                        if (status == _selectedStatus) return;
+                        setState(() => _selectedStatus = status);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (_scrollController.hasClients) {
+                            _scrollController.jumpTo(0);
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  _SellerActivePosts(
+                    key: _activePostsKey,
+                    sellerId: sellerDocId,
+                    selectedStatus: _selectedStatus,
+                  ),
+                ],
+              ),
+            ),
           ),
           if (isOwnProfile)
             _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
@@ -339,6 +324,54 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _SellerProfileTopStream extends StatelessWidget {
+  const _SellerProfileTopStream({
+    required this.sellerStream,
+    required this.fallbackName,
+    required this.sellerPhone,
+    required this.topPadding,
+  });
+
+  final Stream<DocumentSnapshot<Map<String, dynamic>>>? sellerStream;
+  final String fallbackName;
+  final String sellerPhone;
+  final double topPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    if (sellerStream == null) {
+      return _SellerProfileTop(
+        sellerName: fallbackName,
+        crNumber: '',
+        sellerPhone: sellerPhone,
+        topPadding: topPadding,
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: sellerStream,
+      builder: (context, sellerSnapshot) {
+        final seller = sellerSnapshot.data?.data() ?? {};
+        final sellerName =
+            seller['name']?.toString().trim().isNotEmpty == true
+            ? seller['name'].toString().trim()
+            : fallbackName;
+        final crNumber =
+            seller['cr_number']?.toString().trim().isNotEmpty == true
+            ? seller['cr_number'].toString().trim()
+            : seller['crNumber']?.toString().trim() ?? '';
+
+        return _SellerProfileTop(
+          sellerName: sellerName,
+          crNumber: crNumber,
+          sellerPhone: sellerPhone,
+          topPadding: topPadding,
+        );
+      },
     );
   }
 }
@@ -783,6 +816,15 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
         }
         _isOfflinePaginationBlocked = false;
       });
+      if (isInitial) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _preloadStatusIfNeeded(
+              requestedStatus == 'live' ? 'post' : 'live',
+            );
+          }
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       final isOfflineError = NetworkStatus.isOfflineError(error);
@@ -801,6 +843,14 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
         }
       });
     }
+  }
+
+  Future<void> _preloadStatusIfNeeded(String status) async {
+    final cache = _itemCaches.forStatus(status);
+    if (cache.docs.isNotEmpty || cache.isLoading || widget.sellerId.isEmpty) {
+      return;
+    }
+    await _fetchPageForStatus(status, isInitial: true);
   }
 
   @override

@@ -66,7 +66,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   Future<void> _loadInitial() async {
     final session = await _sessionFuture;
     if (session == null) return;
-    await _fetchPage(session, isInitial: true);
+    await _fetchPageForStatus(session, _selectedStatus, isInitial: true);
   }
 
   Future<void> reloadItems() async {
@@ -94,12 +94,15 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   Future<void> _loadMore() async {
     final session = await _sessionFuture;
     if (session == null) return;
-    await _fetchPage(session, isInitial: false);
+    await _fetchPageForStatus(session, _selectedStatus, isInitial: false);
   }
 
-  Future<void> _fetchPage(SellerSession session, {required bool isInitial}) async {
-    final requestedStatus = _selectedStatus;
-    final cache = _activeCache;
+  Future<void> _fetchPageForStatus(
+    SellerSession session,
+    String requestedStatus, {
+    required bool isInitial,
+  }) async {
+    final cache = _itemCaches.forStatus(requestedStatus);
     if (cache.isLoading || (!isInitial && !cache.hasMore)) return;
     setState(() => cache.isLoading = true);
 
@@ -130,6 +133,13 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         cache.isLoading = false;
         cache.error = null;
       });
+      if (isInitial) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _preloadStatusIfNeeded(session, requestedStatus == 'live' ? 'post' : 'live');
+          }
+        });
+      }
     } catch (e) {
       try {
         var fallbackQuery = FirebaseFirestore.instance
@@ -157,6 +167,13 @@ class SellerListingsTabState extends State<SellerListingsTab> {
           cache.isLoading = false;
           cache.error = null;
         });
+        if (isInitial) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _preloadStatusIfNeeded(session, requestedStatus == 'live' ? 'post' : 'live');
+            }
+          });
+        }
       } catch (_) {
         if (!mounted) return;
         if (cache.docs.isNotEmpty && NetworkStatus.isOfflineError(e)) {
@@ -168,6 +185,15 @@ class SellerListingsTabState extends State<SellerListingsTab> {
         });
       }
     }
+  }
+
+  Future<void> _preloadStatusIfNeeded(
+    SellerSession session,
+    String status,
+  ) async {
+    final cache = _itemCaches.forStatus(status);
+    if (cache.docs.isNotEmpty || cache.isLoading) return;
+    await _fetchPageForStatus(session, status, isInitial: true);
   }
 
   // Precompute sort keys once instead of converting Timestamps per comparison.
