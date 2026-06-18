@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../services/feed_service.dart';
 import '../seller_session.dart';
@@ -42,12 +43,10 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   static const _initialFetchLimit = 16;
   static const _nextFetchLimit = 32;
   static const _mergeLatestLimit = 20;
-  static const _visibilityCheckDelay = Duration(milliseconds: 320);
 
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   final _scrollController = ScrollController();
-  final Map<String, GlobalKey> _itemKeys = {};
   final Set<String> _seenItemIds = {};
   final Set<String> _pendingSeenItemIds = {};
   final Set<String> _prefetchedImageUrls = {};
@@ -64,7 +63,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   String _query = '';
   Timer? _searchDebounce;
   Timer? _searchFocusTimer;
-  Timer? _visibilityDebounce;
   Timer? _seenFlushTimer;
   Future<void>? _activeRefreshFuture;
   String? _viewerId;
@@ -91,7 +89,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   void _onScroll() {
-    _scheduleVisibleSeenCheck();
     if (!_scrollController.hasClients ||
         _isLoading ||
         !_hasMore ||
@@ -160,7 +157,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
           _allDocs.clear();
         }
         final existingIds = _allDocs.map((doc) => doc.id).toSet();
-        _allDocs.addAll(result.items.where((doc) => !existingIds.contains(doc.id)));
+        _allDocs.addAll(
+          result.items.where((doc) => !existingIds.contains(doc.id)),
+        );
         _feedCursor = result.cursor;
         _hasMore = result.hasMore || result.items.length >= requestedLimit;
         _isLoading = false;
@@ -175,7 +174,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         if (!mounted) return;
         _prefetchFeedThumbnails(result.items, isInitial: isInitial);
       });
-      _scheduleVisibleSeenCheck();
     } catch (error, stackTrace) {
       debugPrint('Feed load failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -232,7 +230,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     widget.onSearchActiveChanged(false);
     _searchDebounce?.cancel();
     _searchFocusTimer?.cancel();
-    _visibilityDebounce?.cancel();
     _seenFlushTimer?.cancel();
     _flushSeenItems();
     _scrollController.dispose();
@@ -295,7 +292,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
 
   void scrollToTop() {
     if (!_scrollController.hasClients) return;
-    _scrollController.animateTo(0, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Future<void> scrollToTopOrRefresh() async {
@@ -320,7 +321,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   }
 
   Future<void> _performRefresh({required bool useWarmup}) async {
-    _markVisibleItemsSeen();
     await _flushSeenItems();
     setState(() {
       _allDocs.clear();
@@ -422,7 +422,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       return _cachedFilteredDocs!;
     }
 
-    final activeDocs = _allDocs.where((doc) => _isItemActive(doc.data, _openedAt)).toList();
+    final activeDocs = _allDocs
+        .where((doc) => _isItemActive(doc.data, _openedAt))
+        .toList();
     var filtered = activeDocs.where((doc) {
       final status = doc.data['status']?.toString();
       return status == widget.itemStatus;
@@ -431,10 +433,11 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     if (query.isNotEmpty) {
       filtered = filtered.where((doc) {
         final item = doc.data;
-        final searchableText = [item['item_name'], item['item_price'], item['location']]
-            .whereType<Object>()
-            .map((value) => value.toString().toLowerCase())
-            .join(' ');
+        final searchableText =
+            [item['item_name'], item['item_price'], item['location']]
+                .whereType<Object>()
+                .map((value) => value.toString().toLowerCase())
+                .join(' ');
         return searchableText.contains(query);
       }).toList();
     }
@@ -444,55 +447,37 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     return filtered;
   }
 
-  void _scheduleVisibleSeenCheck() {
-    _visibilityDebounce?.cancel();
-    _visibilityDebounce = Timer(_visibilityCheckDelay, _markVisibleItemsSeen);
-  }
-
-  void _markVisibleItemsSeen() {
+  void _handleItemVisibility(String itemId, VisibilityInfo info) {
     final viewerId = _viewerId;
     if (viewerId == null ||
         viewerId.isEmpty ||
-        _itemKeys.isEmpty ||
-        !_scrollController.hasClients ||
-        !mounted) {
+        !mounted ||
+        !_isActiveTab ||
+        _seenItemIds.contains(itemId) ||
+        _pendingSeenItemIds.contains(itemId)) {
       return;
     }
 
-    final viewportTop = MediaQuery.paddingOf(context).top + 56;
-    final viewportBottom = MediaQuery.sizeOf(context).height - 58;
-
-    for (final entry in _itemKeys.entries) {
-      final itemId = entry.key;
-      if (_seenItemIds.contains(itemId) || _pendingSeenItemIds.contains(itemId)) continue;
-      if (_isItemCardMostlyVisible(entry.value, viewportTop, viewportBottom)) {
-        _seenItemIds.add(itemId);
-        _pendingSeenItemIds.add(itemId);
-      }
+    if (info.visibleFraction >= 0.35) {
+      _seenItemIds.add(itemId);
+      _pendingSeenItemIds.add(itemId);
     }
 
     if (_pendingSeenItemIds.isNotEmpty) {
-      _seenFlushTimer ??= Timer(const Duration(milliseconds: 800), _flushSeenItems);
+      _seenFlushTimer ??= Timer(
+        const Duration(milliseconds: 800),
+        _flushSeenItems,
+      );
     }
-  }
-
-  bool _isItemCardMostlyVisible(GlobalKey key, double viewportTop, double viewportBottom) {
-    final context = key.currentContext;
-    if (context == null) return false;
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null || !renderBox.attached || !renderBox.hasSize) return false;
-    final top = renderBox.localToGlobal(Offset.zero).dy;
-    final height = renderBox.size.height;
-    final bottom = top + height;
-    final visibleHeight = bottom.clamp(viewportTop, viewportBottom) - top.clamp(viewportTop, viewportBottom);
-    return visibleHeight > 0 && visibleHeight / height >= 0.35;
   }
 
   Future<void> _flushSeenItems() async {
     _seenFlushTimer?.cancel();
     _seenFlushTimer = null;
     final viewerId = _viewerId;
-    if (viewerId == null || viewerId.isEmpty || _pendingSeenItemIds.isEmpty) return;
+    if (viewerId == null || viewerId.isEmpty || _pendingSeenItemIds.isEmpty) {
+      return;
+    }
 
     final pending = List<String>.from(_pendingSeenItemIds);
     _pendingSeenItemIds.clear();
@@ -512,8 +497,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   @override
   Widget build(BuildContext context) {
     final docs = _getFilteredAndRankedDocs();
-    final docIds = docs.map((doc) => doc.id).toSet();
-    _itemKeys.removeWhere((itemId, _) => !docIds.contains(itemId));
     final isLivePage = widget.itemStatus == 'live';
     final showInlineLoading =
         _isLoading && UploadStatusManager.current.value == null;
@@ -525,76 +508,131 @@ class SellerFeedTabState extends State<SellerFeedTab> {
           onRefresh: _refreshFeed,
           indicatorTop: 96,
           child: NotificationListener<ScrollEndNotification>(
-            onNotification: (_) { _scheduleVisibleSeenCheck(); return false; },
+            onNotification: (_) => false,
             child: CustomScrollView(
               key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}'),
               controller: _scrollController,
               cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                      SliverToBoxAdapter(
-                        child: _FeedHeader(
-                          isSearchOpen: _isSearchOpen,
-                          isLivePage: isLivePage,
-                        ),
-                      ),
-                      if (_allDocs.isEmpty && showInlineLoading)
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
-                          sliver: SliverGrid.builder(
-                            itemCount: 6,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                            itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
-                          ),
-                        )
-                      else if (docs.isEmpty && !_isLoading)
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: NetworkStatus.isOfflineError(_loadError ?? '')
-                              ? OfflineState(onRetry: _refreshFeed)
-                              : Center(child: Text(widget.emptyMessage, style: const TextStyle(fontSize: 16, color: Colors.grey))),
-                        )
-                      else ...[
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
-                          sliver: SliverGrid.builder(
-                            itemCount: docs.length,
-                            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                            itemBuilder: (context, index) {
-                              _maybeLoadMoreFromBuilder(index, docs.length);
-                              return ItemCard(key: _keyForItem(docs[index].id), docId: docs[index].id, item: docs[index].data, isCompact: true, isLivePage: isLivePage);
-                            },
-                          ),
-                        ),
-                        if (_isOfflinePaginationBlocked &&
-                            _allDocs.isNotEmpty &&
-                            NetworkStatus.isOfflineError(_loadError ?? ''))
-                          SliverToBoxAdapter(
-                            child: _FeedOfflineLoadMore(
-                              onRetry: _retryLoadMore,
-                            ),
-                          )
-                        else if (showInlineLoading && _allDocs.isNotEmpty)
-                          SliverPadding(
-                            padding: EdgeInsets.fromLTRB(
-                              2,
-                              0,
-                              2,
-                              8,
-                            ),
-                            sliver: SliverGrid.builder(
-                              itemCount: 4,
-                              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 4, mainAxisSpacing: 2, childAspectRatio: 0.58),
-                              itemBuilder: (context, index) => const _SkeletonFeedItemCard(isCompact: true),
-                            ),
-                          ),
-                      ],
-                      SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
-                    ],
+                SliverToBoxAdapter(
+                  child: _FeedHeader(
+                    isSearchOpen: _isSearchOpen,
+                    isLivePage: isLivePage,
                   ),
                 ),
+                if (_allDocs.isEmpty && showInlineLoading)
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 8,
+                    ),
+                    sliver: SliverGrid.builder(
+                      itemCount: 6,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 4,
+                            mainAxisSpacing: 2,
+                            childAspectRatio: 0.58,
+                          ),
+                      itemBuilder: (context, index) =>
+                          const _SkeletonFeedItemCard(isCompact: true),
+                    ),
+                  )
+                else if (docs.isEmpty && !_isLoading)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: NetworkStatus.isOfflineError(_loadError ?? '')
+                        ? OfflineState(onRetry: _refreshFeed)
+                        : Center(
+                            child: Text(
+                              widget.emptyMessage,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+                  )
+                else ...[
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 8,
+                    ),
+                    sliver: SliverGrid.builder(
+                      itemCount: docs.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 4,
+                            mainAxisSpacing: 2,
+                            childAspectRatio: 0.58,
+                          ),
+                      itemBuilder: (context, index) {
+                        _maybeLoadMoreFromBuilder(index, docs.length);
+                        final item = docs[index];
+                        return VisibilityDetector(
+                          key: ValueKey(
+                            'feed-visible-${widget.itemStatus}-${item.id}',
+                          ),
+                          onVisibilityChanged: (info) =>
+                              _handleItemVisibility(item.id, info),
+                          child: ItemCard(
+                            docId: item.id,
+                            item: item.data,
+                            isCompact: true,
+                            isLivePage: isLivePage,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (_isOfflinePaginationBlocked &&
+                      _allDocs.isNotEmpty &&
+                      NetworkStatus.isOfflineError(_loadError ?? ''))
+                    SliverToBoxAdapter(
+                      child: _FeedOfflineLoadMore(onRetry: _retryLoadMore),
+                    )
+                  else if (showInlineLoading && _allDocs.isNotEmpty)
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(2, 0, 2, 8),
+                      sliver: SliverGrid.builder(
+                        itemCount: 4,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 4,
+                              mainAxisSpacing: 2,
+                              childAspectRatio: 0.58,
+                            ),
+                        itemBuilder: (context, index) =>
+                            const _SkeletonFeedItemCard(isCompact: true),
+                      ),
+                    ),
+                ],
+                SliverToBoxAdapter(child: SizedBox(height: bottomSpacerHeight)),
+              ],
+            ),
+          ),
         ),
-        Positioned(top: 6, left: 12, right: 12, child: Align(alignment: Alignment.topRight, child: _FloatingFeedSearchControl(isSearchOpen: _isSearchOpen, searchController: _searchController, searchFocusNode: _searchFocusNode, onOpenSearch: _openSearch, onCloseSearch: _closeSearch, onQueryChanged: _handleSearchChanged))),
+        Positioned(
+          top: 6,
+          left: 12,
+          right: 12,
+          child: Align(
+            alignment: Alignment.topRight,
+            child: _FloatingFeedSearchControl(
+              isSearchOpen: _isSearchOpen,
+              searchController: _searchController,
+              searchFocusNode: _searchFocusNode,
+              onOpenSearch: _openSearch,
+              onCloseSearch: _closeSearch,
+              onQueryChanged: _handleSearchChanged,
+            ),
+          ),
+        ),
       ],
     );
     if (!isLivePage) return content;
@@ -609,8 +647,6 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       child: content,
     );
   }
-
-  GlobalKey _keyForItem(String itemId) => _itemKeys.putIfAbsent(itemId, GlobalKey.new);
 }
 
 class _FloatingFeedSearchControl extends StatelessWidget {
@@ -641,14 +677,15 @@ class _FloatingFeedSearchControl extends StatelessWidget {
       decoration: BoxDecoration(
         color: isSearchOpen ? Colors.white : const Color(0xFFFF7801),
         borderRadius: BorderRadius.circular(24),
-        border: isSearchOpen ? Border.all(color: const Color(0xFFFF7801)) : null,
+        border: isSearchOpen
+            ? Border.all(color: const Color(0xFFFF7801))
+            : null,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final showSearchField =
-                isSearchOpen && constraints.maxWidth > 140;
+            final showSearchField = isSearchOpen && constraints.maxWidth > 140;
             return Stack(
               children: [
                 Positioned.fill(
@@ -660,10 +697,7 @@ class _FloatingFeedSearchControl extends StatelessWidget {
                       child: Row(
                         children: [
                           const SizedBox(width: 12),
-                          const Icon(
-                            Icons.search,
-                            color: Color(0xFFFF7801),
-                          ),
+                          const Icon(Icons.search, color: Color(0xFFFF7801)),
                           const SizedBox(width: 8),
                           Expanded(
                             child: TextField(
@@ -714,10 +748,7 @@ class _FloatingFeedSearchControl extends StatelessWidget {
 }
 
 class _FeedHeader extends StatelessWidget {
-  const _FeedHeader({
-    required this.isSearchOpen,
-    required this.isLivePage,
-  });
+  const _FeedHeader({required this.isSearchOpen, required this.isLivePage});
 
   final bool isSearchOpen;
   final bool isLivePage;
@@ -749,9 +780,7 @@ class _FeedHeader extends StatelessWidget {
 }
 
 class _SkeletonFeedItemCard extends StatelessWidget {
-  const _SkeletonFeedItemCard({
-    this.isCompact = false,
-  });
+  const _SkeletonFeedItemCard({this.isCompact = false});
 
   final bool isCompact;
 
@@ -833,10 +862,7 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
 }
 
 class _FeedViewerIdentity {
-  const _FeedViewerIdentity({
-    required this.id,
-    required this.type,
-  });
+  const _FeedViewerIdentity({required this.id, required this.type});
 
   final String id;
   final String type;
