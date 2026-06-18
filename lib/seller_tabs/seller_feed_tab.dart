@@ -532,7 +532,12 @@ class SellerFeedTabState extends State<SellerFeedTab> {
               cacheExtent: 900,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                      SliverToBoxAdapter(child: _FeedHeader(isSearchOpen: _isSearchOpen)),
+                      SliverToBoxAdapter(
+                        child: _FeedHeader(
+                          isSearchOpen: _isSearchOpen,
+                          isLivePage: isLivePage,
+                        ),
+                      ),
                       if (_allDocs.isEmpty && showInlineLoading)
                         SliverPadding(
                           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
@@ -711,15 +716,17 @@ class _FloatingFeedSearchControl extends StatelessWidget {
 class _FeedHeader extends StatelessWidget {
   const _FeedHeader({
     required this.isSearchOpen,
+    required this.isLivePage,
   });
 
   final bool isSearchOpen;
+  final bool isLivePage;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 56,
-      color: const Color(0xFFF4FBF7),
+      color: isLivePage ? Colors.transparent : const Color(0xFFF4FBF7),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Stack(
         alignment: Alignment.center,

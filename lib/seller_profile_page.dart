@@ -155,7 +155,7 @@ class SellerProfilePage extends StatelessWidget {
         statusBarBrightness: Brightness.dark,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4FBF7),
+        backgroundColor: Colors.transparent,
         body: Stack(
           children: [
             Padding(
@@ -259,80 +259,86 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
     final sellerDocId = _sellerDocId;
     const headerButtonTop = 7.0;
 
-    return Stack(
-      children: [
-        StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-          stream: _sellerStream,
-          builder: (context, sellerSnapshot) {
-            final seller = sellerSnapshot.data?.data() ?? {};
-            final sellerName =
-                seller['name']?.toString().trim().isNotEmpty == true
-                ? seller['name'].toString().trim()
-                : fallbackName;
-            final crNumber =
-                seller['cr_number']?.toString().trim().isNotEmpty == true
-                ? seller['cr_number'].toString().trim()
-                : seller['crNumber']?.toString().trim() ?? '';
+    return _SellerProfileContentBackground(
+      isLive: _selectedStatus == 'live',
+      child: Stack(
+        children: [
+          StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: _sellerStream,
+            builder: (context, sellerSnapshot) {
+              final seller = sellerSnapshot.data?.data() ?? {};
+              final sellerName =
+                  seller['name']?.toString().trim().isNotEmpty == true
+                  ? seller['name'].toString().trim()
+                  : fallbackName;
+              final crNumber =
+                  seller['cr_number']?.toString().trim().isNotEmpty == true
+                  ? seller['cr_number'].toString().trim()
+                  : seller['crNumber']?.toString().trim() ?? '';
 
-            return ColoredBox(
-              color: const Color(0xFFF4FBF7),
-              child: AppPullRefresh(
-                onRefresh: _refreshPosts,
-                indicatorTop: 132,
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    if (!isOwnProfile)
+              return ColoredBox(
+                color: Colors.transparent,
+                child: AppPullRefresh(
+                  onRefresh: _refreshPosts,
+                  indicatorTop: 132,
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      if (!isOwnProfile)
+                        SliverToBoxAdapter(
+                          child: _ProfileScrollableHeader(
+                            onBack: onBack,
+                            isLive: _selectedStatus == 'live',
+                          ),
+                        ),
                       SliverToBoxAdapter(
-                        child: _ProfileScrollableHeader(onBack: onBack),
+                        child: _SellerProfileTop(
+                          sellerName: sellerName,
+                          crNumber: crNumber,
+                          sellerPhone: sellerPhone,
+                          topPadding: isOwnProfile
+                              ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
+                              : 16,
+                        ),
                       ),
-                    SliverToBoxAdapter(
-                      child: _SellerProfileTop(
-                        sellerName: sellerName,
-                        crNumber: crNumber,
-                        sellerPhone: sellerPhone,
-                        topPadding: isOwnProfile
-                            ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
-                            : 16,
+                      SliverToBoxAdapter(
+                        child: _ProfileStatusTabs(
+                          selectedStatus: _selectedStatus,
+                          onChanged: (status) {
+                            if (status == _selectedStatus) return;
+                            setState(() => _selectedStatus = status);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (_scrollController.hasClients) {
+                                _scrollController.jumpTo(0);
+                              }
+                            });
+                          },
+                        ),
                       ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _ProfileStatusTabs(
+                      _SellerActivePosts(
+                        key: _activePostsKey,
+                        sellerId: sellerDocId,
                         selectedStatus: _selectedStatus,
-                        onChanged: (status) {
-                          if (status == _selectedStatus) return;
-                          setState(() => _selectedStatus = status);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (_scrollController.hasClients) {
-                              _scrollController.jumpTo(0);
-                            }
-                          });
-                        },
                       ),
-                    ),
-                    _SellerActivePosts(
-                      key: _activePostsKey,
-                      sellerId: sellerDocId,
-                      selectedStatus: _selectedStatus,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
+              );
+            },
+          ),
+          if (isOwnProfile)
+            _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
+          else ...[
+            if (onBack != null)
+              Positioned(
+                top: headerButtonTop,
+                left: 14,
+                child: _ProfileFloatingBackButton(onBack: onBack!),
               ),
-            );
-          },
-        ),
-        if (isOwnProfile)
-          _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
-        else ...[
-          if (onBack != null)
-            Positioned(
-              top: headerButtonTop,
-              left: 14,
-              child: _ProfileFloatingBackButton(onBack: onBack!),
-            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -386,9 +392,13 @@ class _ProfileSettingsMenu extends StatelessWidget {
 }
 
 class _ProfileScrollableHeader extends StatelessWidget {
-  const _ProfileScrollableHeader({required this.onBack});
+  const _ProfileScrollableHeader({
+    required this.onBack,
+    required this.isLive,
+  });
 
   final VoidCallback? onBack;
+  final bool isLive;
 
   @override
   Widget build(BuildContext context) {
@@ -397,7 +407,7 @@ class _ProfileScrollableHeader extends StatelessWidget {
       children: [
         Container(
           height: 56,
-          color: const Color(0xFFF4FBF7),
+          color: isLive ? Colors.transparent : const Color(0xFFF4FBF7),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Stack(
             alignment: Alignment.center,
