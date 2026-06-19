@@ -1,9 +1,16 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
+import 'utils/formatters.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
@@ -25,13 +32,8 @@ class ShareListingPage extends StatefulWidget {
 }
 
 class _ShareListingPageState extends State<ShareListingPage> {
-  bool _isCollage = true;
-  int _selectedImageIndex = 0;
-
-  List<String> get _imageUrls => widget.mediaItems
-      .where((media) => !media.isVideo)
-      .map((media) => media.url)
-      .toList(growable: false);
+  final GlobalKey _previewKey = GlobalKey();
+  bool _isSharing = false;
 
   String get _itemName => widget.itemData['item_name']?.toString() ?? 'Item';
 
@@ -46,42 +48,74 @@ class _ShareListingPageState extends State<ShareListingPage> {
         : 'Check this listing: $_itemName - $price\n$_shareLink';
   }
 
-  Future<void> _shareToWhatsApp() async {
-    await launchUrl(
-      Uri.parse('https://wa.me/?text=${Uri.encodeComponent(_shareText)}'),
-      mode: LaunchMode.externalApplication,
-    );
+  String get _previewImageUrl {
+    if (widget.mediaItems.isEmpty) return '';
+    final media = widget.mediaItems.first;
+    if (media.isVideo) {
+      return media.thumbnailUrl?.trim() ?? '';
+    }
+    return media.url.trim();
   }
 
-  Future<void> _shareToSms() async {
-    await launchUrl(Uri(scheme: 'sms', queryParameters: {'body': _shareText}));
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final url = _previewImageUrl;
+    if (url.isNotEmpty) {
+      precacheImage(CachedNetworkImageProvider(url), context);
+    }
   }
 
-  Future<void> _shareToEmail() async {
-    await launchUrl(
-      Uri(
-        scheme: 'mailto',
-        queryParameters: {'subject': _itemName, 'body': _shareText},
-      ),
-    );
+  Future<File?> _capturePreviewFile() async {
+    final url = _previewImageUrl;
+    if (url.isNotEmpty) {
+      await precacheImage(CachedNetworkImageProvider(url), context);
+    }
+    await WidgetsBinding.instance.endOfFrame;
+    final previewContext = _previewKey.currentContext;
+    final renderObject = previewContext?.findRenderObject();
+    if (renderObject is! RenderRepaintBoundary) return null;
+
+    final image = await renderObject.toImage(pixelRatio: 3);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (bytes == null) return null;
+
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/bizsooq_${widget.itemId}_share.png');
+    return file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
+  }
+
+  Future<void> _sharePreviewImage() async {
+    if (_isSharing) return;
+    setState(() => _isSharing = true);
+    try {
+      final file = await _capturePreviewFile();
+      if (file == null) {
+        if (mounted) AppToast.show(context, 'Unable to prepare image');
+        return;
+      }
+      await SharePlus.instance.share(
+        ShareParams(
+          text: _shareText,
+          files: [XFile(file.path, mimeType: 'image/png')],
+        ),
+      );
+    } catch (_) {
+      if (mounted) AppToast.show(context, 'Unable to share image');
+    } finally {
+      if (mounted) setState(() => _isSharing = false);
+    }
   }
 
   Future<void> _copyLink() async {
     await Clipboard.setData(ClipboardData(text: _shareLink));
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     AppToast.show(context, 'Link copied');
-  }
-
-  void _showComingSoon(String label) {
-    AppToast.show(context, '$label sharing will be added next');
   }
 
   @override
   Widget build(BuildContext context) {
-    final imageUrls = _imageUrls;
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -106,50 +140,23 @@ class _ShareListingPageState extends State<ShareListingPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 4),
-            _ModeSelector(
-              isCollage: _isCollage,
-              onCollageTap: () => setState(() => _isCollage = true),
-              onSingleTap: () => setState(() => _isCollage = false),
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 22),
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: _isCollage
-                          ? _CollagePreview(
-                              key: const ValueKey('collage'),
-                              imageUrls: imageUrls.take(5).toList(),
-                              itemName: _itemName,
-                              itemPrice: _itemPrice,
-                            )
-                          : _SinglePicturePreview(
-                              key: const ValueKey('single'),
-                              imageUrls: imageUrls,
-                              itemName: _itemName,
-                              itemPrice: _itemPrice,
-                              selectedIndex: _selectedImageIndex,
-                              onChanged: (index) {
-                                setState(() => _selectedImageIndex = index);
-                              },
-                            ),
+                    RepaintBoundary(
+                      key: _previewKey,
+                      child: _ShareItemCardPreview(
+                        item: widget.itemData,
+                        mediaItems: widget.mediaItems,
+                      ),
                     ),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 28),
                     _ShareActions(
-                      onWhatsApp: _shareToWhatsApp,
-                      onInstagram: () => _showComingSoon('Instagram'),
-                      onX: () => _showComingSoon('X'),
-                      onFacebook: () => _showComingSoon('Facebook'),
-                      onMessenger: () => _showComingSoon('Messenger'),
-                      onTikTok: () => _showComingSoon('TikTok'),
-                      onSms: _shareToSms,
-                      onEmail: _shareToEmail,
-                      onDownload: () => _showComingSoon('Download'),
+                      isSharing: _isSharing,
+                      onShareImage: _sharePreviewImage,
                       onCopyLink: _copyLink,
-                      onOthers: () => _showComingSoon('More'),
                     ),
                     const SizedBox(height: 26),
                   ],
@@ -163,249 +170,347 @@ class _ShareListingPageState extends State<ShareListingPage> {
   }
 }
 
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({
-    required this.isCollage,
-    required this.onCollageTap,
-    required this.onSingleTap,
+class _ShareItemCardPreview extends StatelessWidget {
+  const _ShareItemCardPreview({
+    required this.item,
+    required this.mediaItems,
   });
 
-  final bool isCollage;
-  final VoidCallback onCollageTap;
-  final VoidCallback onSingleTap;
+  final Map<String, dynamic> item;
+  final List<MediaItem> mediaItems;
+
+  @override
+  Widget build(BuildContext context) {
+    const width = 260.0;
+    const height = 390.0;
+    final firstMedia = mediaItems.isEmpty ? null : mediaItems.first;
+    final imageCount = mediaItems.where((media) => !media.isVideo).length;
+    final videoCount = mediaItems.where((media) => media.isVideo).length;
+    final isLiveItem = item['status']?.toString() == 'live';
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.16),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Stack(
+            children: [
+              Positioned.fill(child: _ShareMediaBackground(media: firstMedia)),
+              Positioned(
+                top: 10,
+                left: 10,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _ShareMediaCountBadges(
+                      imageCount: imageCount,
+                      videoCount: videoCount,
+                    ),
+                    if (isLiveItem) ...[
+                      const SizedBox(height: 7),
+                      const _ShareLiveBadge(),
+                    ],
+                  ],
+                ),
+              ),
+              if (!isLiveItem)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: _ShareUploadedAgoBadge(
+                    uploadedAgo: _uploadedAgo(item['created_at']),
+                  ),
+                ),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 14,
+                child: _ShareCardDetails(item: item),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _uploadedAgo(Object? value) {
+    DateTime? uploadedAt;
+    if (value is Timestamp) {
+      uploadedAt = value.toDate();
+    } else if (value is DateTime) {
+      uploadedAt = value;
+    }
+
+    if (uploadedAt == null) return 'just now';
+    final difference = DateTime.now().difference(uploadedAt);
+    if (difference.inMinutes < 1) return 'just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes} min ago';
+    if (difference.inHours < 24) return '${difference.inHours} hrs ago';
+    if (difference.inDays < 7) return '${difference.inDays} days ago';
+    if (difference.inDays < 30) return '${difference.inDays ~/ 7} weeks ago';
+    return '${difference.inDays ~/ 30} months ago';
+  }
+}
+
+class _ShareMediaBackground extends StatelessWidget {
+  const _ShareMediaBackground({required this.media});
+
+  final MediaItem? media;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = this.media;
+    final imageUrl = media?.isVideo == true
+        ? (media?.thumbnailUrl?.trim().isNotEmpty == true
+            ? media!.thumbnailUrl!.trim()
+            : '')
+        : media?.url.trim() ?? '';
+
+    if (imageUrl.isEmpty) {
+      return Container(
+        color: const Color(0xFFECECEC),
+        child: const Center(
+          child: Icon(Icons.image_not_supported, color: Colors.grey, size: 46),
+        ),
+      );
+    }
+
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      memCacheWidth: 800,
+      maxWidthDiskCache: 1000,
+      placeholder: (_, _) => Container(color: const Color(0xFFECECEC)),
+      errorWidget: (_, _, _) => Container(
+        color: const Color(0xFFECECEC),
+        child: const Center(
+          child: Icon(Icons.broken_image, color: Colors.grey, size: 46),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareCardDetails extends StatelessWidget {
+  const _ShareCardDetails({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    final itemName = item['item_name']?.toString().trim() ?? '';
+    final isTransit = item['is_transit'] == true;
+    final rawLocation = item['location']?.toString().trim() ?? '';
+    final location = _displayLocation(rawLocation, isTransit);
+    final price = isTransit ? '' : formatPrice(item['item_price']);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (location.isNotEmpty)
+          _ShareTextChip(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(isTransit ? '🚚' : '📍', style: const TextStyle(fontSize: 17)),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    location,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        if (price.isNotEmpty) ...[
+          const SizedBox(height: 7),
+          _ShareTextChip(
+            child: PriceWithCurrency(
+              price: price,
+              style: const TextStyle(
+                color: Color(0xFFD00000),
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+        if (itemName.isNotEmpty) ...[
+          const SizedBox(height: 7),
+          _ShareTextChip(
+            child: Text(
+              itemName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _displayLocation(String location, bool isTransit) {
+    if (!isTransit) return location;
+    final text = location.replaceFirst(RegExp(r'^[🚚📍\s]+'), '').trim();
+    return text.isEmpty ? 'Transit' : text;
+  }
+}
+
+class _ShareTextChip extends StatelessWidget {
+  const _ShareTextChip({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ShareMediaCountBadges extends StatelessWidget {
+  const _ShareMediaCountBadges({
+    required this.imageCount,
+    required this.videoCount,
+  });
+
+  final int imageCount;
+  final int videoCount;
 
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _ModeButton(label: 'Collage', isSelected: isCollage, onTap: onCollageTap),
-        const SizedBox(width: 8),
-        _ModeButton(
-          label: 'Single Picture',
-          isSelected: !isCollage,
-          onTap: onSingleTap,
-        ),
+        if (imageCount > 0)
+          _ShareTopBadge(icon: Icons.photo_camera, count: imageCount),
+        if (imageCount > 0 && videoCount > 0) const SizedBox(width: 5),
+        if (videoCount > 0)
+          _ShareTopBadge(icon: Icons.videocam, count: videoCount),
       ],
     );
   }
 }
 
-class _ModeButton extends StatelessWidget {
-  const _ModeButton({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
+class _ShareTopBadge extends StatelessWidget {
+  const _ShareTopBadge({required this.icon, required this.count});
 
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: onTap,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.black,
-        side: BorderSide(
-          color: isSelected ? const Color(0xFF0A84FF) : const Color(0xFFE2E2E2),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      ),
-      child: Text(label),
-    );
-  }
-}
-
-class _CollagePreview extends StatelessWidget {
-  const _CollagePreview({
-    super.key,
-    required this.imageUrls,
-    required this.itemName,
-    required this.itemPrice,
-  });
-
-  final List<String> imageUrls;
-  final String itemName;
-  final String itemPrice;
+  final IconData icon;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 210,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.black.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1E1E1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(
-            height: 176,
-            child: imageUrls.isEmpty
-                ? const _EmptyPreview()
-                : GridView.builder(
-                    padding: EdgeInsets.zero,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: imageUrls.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 1,
-                          mainAxisSpacing: 1,
-                        ),
-                    itemBuilder: (context, index) {
-                      return CachedNetworkImage(
-                        imageUrl: imageUrls[index],
-                        fit: BoxFit.cover,
-                      );
-                    },
-                  ),
-          ),
-          _PreviewCaption(itemName: itemName, itemPrice: itemPrice),
-        ],
-      ),
-    );
-  }
-}
-
-class _SinglePicturePreview extends StatelessWidget {
-  const _SinglePicturePreview({
-    super.key,
-    required this.imageUrls,
-    required this.itemName,
-    required this.itemPrice,
-    required this.selectedIndex,
-    required this.onChanged,
-  });
-
-  final List<String> imageUrls;
-  final String itemName;
-  final String itemPrice;
-  final int selectedIndex;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    if (imageUrls.isEmpty) {
-      return const SizedBox(width: 210, height: 260, child: _EmptyPreview());
-    }
-
-    return SizedBox(
-      height: 290,
-      child: PageView.builder(
-        controller: PageController(
-          viewportFraction: 0.58,
-          initialPage: selectedIndex.clamp(0, imageUrls.length - 1),
-        ),
-        itemCount: imageUrls.length,
-        onPageChanged: onChanged,
-        itemBuilder: (context, index) {
-          final isSelected = selectedIndex == index;
-          return AnimatedScale(
-            scale: isSelected ? 1 : 0.92,
-            duration: const Duration(milliseconds: 180),
-            child: Opacity(
-              opacity: isSelected ? 1 : 0.48,
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE1E1E1)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.10),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(8),
-                        ),
-                        child: CachedNetworkImage(
-                          imageUrl: imageUrls[index],
-                          width: double.infinity,
-                          memCacheWidth: 640,
-                          maxWidthDiskCache: 900,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    _PreviewCaption(itemName: itemName, itemPrice: itemPrice),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _PreviewCaption extends StatelessWidget {
-  const _PreviewCaption({required this.itemName, required this.itemPrice});
-
-  final String itemName;
-  final String itemPrice;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+          Icon(icon, color: Colors.white, size: 15),
+          const SizedBox(width: 4),
           Text(
-            itemName,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          if (itemPrice.trim().isNotEmpty) ...[
-            const SizedBox(height: 3),
-            PriceWithCurrency(
-              price: itemPrice,
-              style: const TextStyle(
-                color: Color(0xFFD00000),
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
+            '$count',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _EmptyPreview extends StatelessWidget {
-  const _EmptyPreview();
+class _ShareLiveBadge extends StatelessWidget {
+  const _ShareLiveBadge();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFF4F4F4),
-      child: const Center(
-        child: Icon(Icons.image_not_supported, color: Colors.grey, size: 42),
+      height: 27,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE92808),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.sensors, color: Colors.white, size: 16),
+          SizedBox(width: 5),
+          Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShareUploadedAgoBadge extends StatelessWidget {
+  const _ShareUploadedAgoBadge({required this.uploadedAgo});
+
+  final String uploadedAgo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        uploadedAgo,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
@@ -413,94 +518,29 @@ class _EmptyPreview extends StatelessWidget {
 
 class _ShareActions extends StatelessWidget {
   const _ShareActions({
-    required this.onWhatsApp,
-    required this.onInstagram,
-    required this.onX,
-    required this.onFacebook,
-    required this.onMessenger,
-    required this.onTikTok,
-    required this.onSms,
-    required this.onEmail,
-    required this.onDownload,
+    required this.isSharing,
+    required this.onShareImage,
     required this.onCopyLink,
-    required this.onOthers,
   });
 
-  final VoidCallback onWhatsApp;
-  final VoidCallback onInstagram;
-  final VoidCallback onX;
-  final VoidCallback onFacebook;
-  final VoidCallback onMessenger;
-  final VoidCallback onTikTok;
-  final VoidCallback onSms;
-  final VoidCallback onEmail;
-  final VoidCallback onDownload;
+  final bool isSharing;
+  final VoidCallback onShareImage;
   final VoidCallback onCopyLink;
-  final VoidCallback onOthers;
 
   @override
   Widget build(BuildContext context) {
     final actions = [
       _ShareActionData(
-        label: 'Whatsapp',
+        label: 'WhatsApp',
         icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white),
         color: const Color(0xFF5DD95D),
-        onTap: onWhatsApp,
+        onTap: onShareImage,
       ),
       _ShareActionData(
-        label: 'WhatsAp...',
+        label: 'WhatsApp Business',
         icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white),
-        color: const Color(0xFF5DD95D),
-        onTap: onWhatsApp,
-      ),
-      _ShareActionData(
-        label: 'Instagram',
-        icon: const Icon(Icons.camera_alt, color: Colors.white),
-        color: const Color(0xFFE4405F),
-        onTap: onInstagram,
-      ),
-      _ShareActionData(
-        label: 'X',
-        icon: const FaIcon(FontAwesomeIcons.xTwitter, color: Colors.white),
-        color: Colors.black,
-        onTap: onX,
-      ),
-      _ShareActionData(
-        label: 'Facebook',
-        icon: const FaIcon(FontAwesomeIcons.facebookF, color: Colors.white),
-        color: const Color(0xFF4267B2),
-        onTap: onFacebook,
-      ),
-      _ShareActionData(
-        label: 'Messenger',
-        icon: const Icon(Icons.messenger, color: Colors.white),
-        color: const Color(0xFF8C5CF6),
-        onTap: onMessenger,
-      ),
-      _ShareActionData(
-        label: 'TikTok',
-        icon: const FaIcon(FontAwesomeIcons.tiktok, color: Colors.white),
-        color: Colors.black,
-        onTap: onTikTok,
-      ),
-      _ShareActionData(
-        label: 'SMS',
-        icon: const Icon(Icons.sms, color: Colors.white),
-        color: const Color(0xFF4D86C8),
-        onTap: onSms,
-      ),
-      _ShareActionData(
-        label: 'Email',
-        icon: const Icon(Icons.email, color: Colors.white),
-        color: const Color(0xFF8B20B8),
-        onTap: onEmail,
-      ),
-      _ShareActionData(
-        label: 'Download',
-        icon: const Icon(Icons.file_download_outlined, color: Colors.black),
-        color: Colors.white,
-        hasBorder: true,
-        onTap: onDownload,
+        color: const Color(0xFF25D366),
+        onTap: onShareImage,
       ),
       _ShareActionData(
         label: 'Copy link',
@@ -509,29 +549,37 @@ class _ShareActions extends StatelessWidget {
         hasBorder: true,
         onTap: onCopyLink,
       ),
-      _ShareActionData(
-        label: 'Others',
-        icon: const Icon(Icons.more_vert, color: Colors.black),
-        color: Colors.white,
-        hasBorder: true,
-        onTap: onOthers,
-      ),
     ];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: actions.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          mainAxisSpacing: 18,
-          crossAxisSpacing: 18,
-          childAspectRatio: 0.82,
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < actions.length; i++) ...[
+                SizedBox(width: 82, child: _ShareAction(action: actions[i])),
+                if (i != actions.length - 1) const SizedBox(width: 18),
+              ],
+            ],
+          ),
         ),
-        itemBuilder: (context, index) => _ShareAction(action: actions[index]),
-      ),
+        if (isSharing)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.86),
+              shape: BoxShape.circle,
+            ),
+            child: const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.6),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -579,9 +627,10 @@ class _ShareAction extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             action.label,
-            maxLines: 1,
+            textAlign: TextAlign.center,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11),
+            style: const TextStyle(fontSize: 11, height: 1.1),
           ),
         ],
       ),
