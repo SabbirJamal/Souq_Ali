@@ -18,6 +18,7 @@ import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
 import 'utils/network_status.dart';
 import 'utils/price_input.dart';
+import 'utils/system_ui_styles.dart';
 import 'utils/upload_status_thumbnail.dart';
 import 'widgets/item_edit/edit_widgets.dart';
 import 'widgets/item_add/selected_media_preview_dialog.dart';
@@ -135,18 +136,27 @@ class _ItemEditPageState extends State<ItemEditPage> {
     setState(() => _showEmbeddedCamera = true);
   }
 
+  void _closeEmbeddedCamera() {
+    if (!_showEmbeddedCamera) return;
+    setState(() => _showEmbeddedCamera = false);
+    AppSystemUi.restoreNormalAfterFrame();
+  }
+
   Future<void> _handleEmbeddedGallery() async {
     setState(() => _showEmbeddedCamera = false);
+    AppSystemUi.restoreNormalAfterFrame();
     await _openGallerySheet();
   }
 
   Future<void> _handleEmbeddedCapture(CapturedMedia result) async {
     if (!_canAddMedia()) {
       setState(() => _showEmbeddedCamera = false);
+      AppSystemUi.restoreNormalAfterFrame();
       return;
     }
     if (result.isVideo && !await _isVideoWithinLimit(result.file)) {
       setState(() => _showEmbeddedCamera = false);
+      AppSystemUi.restoreNormalAfterFrame();
       _showMessage('Video cannot be more than 1 minute');
       return;
     }
@@ -155,6 +165,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
       media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
     });
     setState(() => _showEmbeddedCamera = false);
+    AppSystemUi.restoreNormalAfterFrame();
   }
 
   void _handleEmbeddedCaptureAndContinue(CapturedMedia result) {
@@ -164,7 +175,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
     _updateMedia((media) {
       media.add(EditableMedia.newMedia(SelectedMedia(file: result.file, type: result.type)));
     });
-    setState(() => _showEmbeddedCamera = _media.length < _maxMediaCount);
+    final keepCameraOpen = _media.length < _maxMediaCount;
+    setState(() => _showEmbeddedCamera = keepCameraOpen);
+    if (!keepCameraOpen) AppSystemUi.restoreNormalAfterFrame();
   }
 
   Future<void> _openMediaSheet() async {
@@ -603,11 +616,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     final statusBarHeight = AppStatusBar.heightOf(context);
     if (_showEmbeddedCamera) {
       return AnnotatedRegion<SystemUiOverlayStyle>(
-        value: const SystemUiOverlayStyle(
-          statusBarColor: Colors.black,
-          statusBarIconBrightness: Brightness.light,
-          statusBarBrightness: Brightness.dark,
-        ),
+        value: AppSystemUi.cameraStyle,
         child: Scaffold(
           backgroundColor: Colors.black,
           body: Stack(
@@ -621,7 +630,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                       selectedCount: _media.length,
                       maxCount: _maxMediaCount,
                       maxSelectionMessage: _maxMediaMessage,
-                      onClose: () => setState(() => _showEmbeddedCamera = false),
+                      onClose: _closeEmbeddedCamera,
                       onOpenGallery: _handleEmbeddedGallery,
                       onCaptured: _handleEmbeddedCapture,
                       onCapturedAndContinue: _handleEmbeddedCaptureAndContinue,
@@ -658,7 +667,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
           : null,
     );
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(statusBarColor: Colors.black, statusBarIconBrightness: Brightness.light),
+      value: AppSystemUi.normalStyle,
       child: Scaffold(
         backgroundColor: pageColor,
         body: Stack(

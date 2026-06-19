@@ -14,19 +14,12 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'services/app_update_service.dart';
 import 'services/feed_service.dart';
+import 'utils/system_ui_styles.dart';
 
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.manual,
-    overlays: SystemUiOverlay.values,
-  );
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.black,
-    statusBarIconBrightness: Brightness.light,
-    statusBarBrightness: Brightness.dark,
-  ));
+  AppSystemUi.applyNormal();
 
   // Parallelize Firebase and Session loading
   final firebaseFuture = Firebase.initializeApp();

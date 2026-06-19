@@ -14,6 +14,7 @@ import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/item_add/media_picker_sheet.dart';
 import 'widgets/video_seek_bar.dart';
+import 'utils/system_ui_styles.dart';
 
 class CapturedMedia {
   const CapturedMedia({required this.file, required this.type, this.caption});
@@ -292,22 +293,9 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
 
   void _setImmersive(bool active) {
     if (active) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        statusBarColor: Colors.black,
-        statusBarIconBrightness: Brightness.light,
-        systemNavigationBarColor: Colors.black,
-        systemNavigationBarIconBrightness: Brightness.light,
-      ));
+      AppSystemUi.applyCamera();
     } else {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: SystemUiOverlay.values);
-      SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-        statusBarColor: Colors.black,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarIconBrightness: Brightness.dark,
-      ));
+      AppSystemUi.applyNormal();
     }
   }
 

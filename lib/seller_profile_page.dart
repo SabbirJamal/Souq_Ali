@@ -7,6 +7,7 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'utils/item_status_cache.dart';
 import 'utils/network_status.dart';
+import 'utils/system_ui_styles.dart';
 import 'widgets/app_pull_refresh.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
@@ -151,11 +152,7 @@ class SellerProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final statusBarHeight = AppStatusBar.heightOf(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.black,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-      ),
+      value: AppSystemUi.normalStyle,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         body: Stack(

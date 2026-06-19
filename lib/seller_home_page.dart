@@ -12,6 +12,7 @@ import 'seller_session.dart';
 import 'seller_session_guard.dart';
 import 'upload_status_manager.dart';
 import 'utils/network_status.dart';
+import 'utils/system_ui_styles.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
@@ -360,13 +361,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
     final uploadStatusTarget = _currentUploadStatusTarget();
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: Colors.black,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: bottomBarColor,
-        systemNavigationBarIconBrightness: Brightness.dark,
-      ),
+      value: AppSystemUi.normalStyle,
       child: PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {

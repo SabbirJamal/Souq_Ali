@@ -17,6 +17,7 @@ import '../services/media_compression_service.dart';
 import '../upload_status_manager.dart';
 import '../utils/network_status.dart';
 import '../utils/price_input.dart';
+import '../utils/system_ui_styles.dart';
 import '../utils/upload_status_thumbnail.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_add/selected_media_preview_dialog.dart';
@@ -132,17 +133,22 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
   }
 
   void closeEmbeddedCamera() {
-    if (_showEmbeddedCamera) setState(() => _showEmbeddedCamera = false);
+    if (_showEmbeddedCamera) {
+      setState(() => _showEmbeddedCamera = false);
+      AppSystemUi.restoreNormalAfterFrame();
+    }
   }
 
   Future<void> _handleEmbeddedGallery() async {
     setState(() => _showEmbeddedCamera = false);
+    AppSystemUi.restoreNormalAfterFrame();
     await _openGallerySheet();
   }
 
   void _handleEmbeddedCapture(CapturedMedia media) {
     if (_selectedMedia.length >= _maxMediaCount) {
       setState(() => _showEmbeddedCamera = false);
+      AppSystemUi.restoreNormalAfterFrame();
       _showMessage('8 Media selected, please delete media to select new media');
       return;
     }
@@ -150,6 +156,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       items.add(SelectedMedia(file: media.file, type: media.type));
     });
     setState(() => _showEmbeddedCamera = false);
+    AppSystemUi.restoreNormalAfterFrame();
   }
 
   void _handleEmbeddedCaptureAndContinue(CapturedMedia media) {
@@ -160,7 +167,9 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     _updateSelectedMedia((items) {
       items.add(SelectedMedia(file: media.file, type: media.type));
     });
-    setState(() => _showEmbeddedCamera = _selectedMedia.length < _maxMediaCount);
+    final keepCameraOpen = _selectedMedia.length < _maxMediaCount;
+    setState(() => _showEmbeddedCamera = keepCameraOpen);
+    if (!keepCameraOpen) AppSystemUi.restoreNormalAfterFrame();
   }
 
   Future<void> _openSelectedMediaPreview(int index) async {
@@ -400,7 +409,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
         embedded: true,
         selectedCount: _selectedMedia.length,
         maxCount: _maxMediaCount,
-        onClose: () => setState(() => _showEmbeddedCamera = false),
+        onClose: closeEmbeddedCamera,
         onOpenGallery: _handleEmbeddedGallery,
         onCaptured: _handleEmbeddedCapture,
         onCapturedAndContinue: _handleEmbeddedCaptureAndContinue,
