@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:flutter/services.dart';
@@ -94,6 +95,7 @@ class SouqaliApp extends StatefulWidget {
 }
 
 class _SouqaliAppState extends State<SouqaliApp> {
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   // Hoisted so a root rebuild can't recreate the future and re-show the splash.
   late final Future<AppUpdateDecision> _updateFuture =
       widget.firebaseFuture.then((_) => AppUpdateService.check());
@@ -103,12 +105,35 @@ class _SouqaliAppState extends State<SouqaliApp> {
     _updateFuture,
     widget.cameraPrewarmFuture,
   ]);
+  Timer? _androidUpdatePollTimer;
   bool _didShowUpdateDialog = false;
   bool _didRemoveNativeSplash = false;
+  bool _didStartFlexibleUpdate = false;
+  bool _isShowingFlexibleInstallPrompt = false;
+  bool _deferFlexibleInstallPromptUntilResume = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(_appLifecycleObserver);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_appLifecycleObserver);
+    _androidUpdatePollTimer?.cancel();
+    super.dispose();
+  }
+
+  late final WidgetsBindingObserver _appLifecycleObserver =
+      _SouqaliAppLifecycleObserver(
+        onResumed: _handleAppResumed,
+      );
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'BIZSOOQ',
       // Lock Text Scaling to 1.0 globally to prevent UI breakage on phones with "Large Text" settings
@@ -149,8 +174,8 @@ class _SouqaliAppState extends State<SouqaliApp> {
               ? const SellerHomePage()
               : const SellerHomePage(isSellerMode: false);
           _removeNativeSplashOnce();
-          if (updateDecision?.isRequired == true) {
-            _showUpdateDialogOnce(context, updateDecision!);
+          if (updateDecision != null) {
+            _handleUpdateDecision(updateDecision);
           }
           return home;
         },
@@ -167,10 +192,11 @@ class _SouqaliAppState extends State<SouqaliApp> {
   }
 
   void _showUpdateDialogOnce(
-    BuildContext context,
     AppUpdateDecision decision,
   ) {
     if (_didShowUpdateDialog) return;
+    final context = _navigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
     _didShowUpdateDialog = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!context.mounted) return;
@@ -180,6 +206,88 @@ class _SouqaliAppState extends State<SouqaliApp> {
         builder: (_) => _ForcedUpdateDialog(decision: decision),
       );
     });
+  }
+
+  void _handleUpdateDecision(AppUpdateDecision decision) {
+    if (decision.isRequired) {
+      _showUpdateDialogOnce(decision);
+      return;
+    }
+
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return;
+    }
+
+    if (decision.shouldStartFlexibleUpdate) {
+      _startFlexibleUpdateOnce();
+    }
+    if (decision.shouldPromptFlexibleInstall &&
+        !_deferFlexibleInstallPromptUntilResume) {
+      _androidUpdatePollTimer?.cancel();
+      _showFlexibleInstallPrompt();
+    }
+  }
+
+  Future<void> _startFlexibleUpdateOnce() async {
+    if (_didStartFlexibleUpdate) return;
+    _didStartFlexibleUpdate = true;
+    final started = await AppUpdateService.startFlexibleUpdate();
+    if (!started) return;
+    _startAndroidUpdatePolling();
+  }
+
+  void _startAndroidUpdatePolling() {
+    _androidUpdatePollTimer?.cancel();
+    _androidUpdatePollTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _refreshAndroidUpdateState(),
+    );
+  }
+
+  Future<void> _handleAppResumed() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    _deferFlexibleInstallPromptUntilResume = false;
+    await _refreshAndroidUpdateState();
+  }
+
+  Future<void> _refreshAndroidUpdateState() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    final decision = await AppUpdateService.check();
+    if (!mounted) return;
+    _handleUpdateDecision(decision);
+  }
+
+  Future<void> _showFlexibleInstallPrompt() async {
+    if (_isShowingFlexibleInstallPrompt) return;
+    final context = _navigatorKey.currentContext;
+    if (context == null || !context.mounted) return;
+    _isShowingFlexibleInstallPrompt = true;
+    final installNow = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => const _FlexibleUpdateReadyDialog(),
+    );
+    _isShowingFlexibleInstallPrompt = false;
+
+    if (installNow == true) {
+      await AppUpdateService.completeFlexibleUpdate();
+      return;
+    }
+
+    _deferFlexibleInstallPromptUntilResume = true;
+  }
+}
+
+class _SouqaliAppLifecycleObserver with WidgetsBindingObserver {
+  _SouqaliAppLifecycleObserver({required this.onResumed});
+
+  final Future<void> Function() onResumed;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(onResumed());
+    }
   }
 }
 
@@ -231,5 +339,64 @@ class _ForcedUpdateDialog extends StatelessWidget {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
+
+class _FlexibleUpdateReadyDialog extends StatelessWidget {
+  const _FlexibleUpdateReadyDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      title: const Text(
+        'Update Ready',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      content: const Text(
+        'A new update has been downloaded. Restart now to install it.',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 16, height: 1.35),
+      ),
+      actionsPadding: EdgeInsets.zero,
+      actions: [
+        SizedBox(
+          height: 54,
+          child: Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text(
+                    'Later',
+                    style: TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text(
+                    'Install',
+                    style: TextStyle(
+                      color: Color(0xFFFF7801),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

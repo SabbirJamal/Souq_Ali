@@ -133,6 +133,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
           newDocs.where((doc) => _matchesStatus(doc.data(), requestedStatus)),
         );
         cache.hasMore = false;
+        if (isInitial) cache.hasLoadedInitial = true;
         cache.isLoading = false;
         cache.error = null;
       });
@@ -177,6 +178,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
             newDocs.where((doc) => _matchesStatus(doc.data(), requestedStatus)),
           );
           cache.hasMore = false;
+          if (isInitial) cache.hasLoadedInitial = true;
           cache.isLoading = false;
           cache.error = null;
         });
@@ -215,7 +217,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     String status,
   ) async {
     final cache = _itemCaches.forStatus(status);
-    if (cache.docs.isNotEmpty || cache.isLoading) return;
+    if (cache.hasLoadedInitial || cache.isLoading) return;
     await _fetchPageForStatus(session, status, isInitial: true);
   }
 

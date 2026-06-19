@@ -7,6 +7,7 @@ class ItemStatusCache {
   ItemDocument? lastDoc;
   bool isLoading = false;
   bool hasMore = true;
+  bool hasLoadedInitial = false;
   Object? error;
 
   void reset() {
@@ -14,6 +15,7 @@ class ItemStatusCache {
     lastDoc = null;
     isLoading = false;
     hasMore = true;
+    hasLoadedInitial = false;
     error = null;
   }
 

@@ -812,6 +812,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
         cache.addUnique(activeDocs);
         cache.lastDoc = snapshot.docs.isEmpty ? cache.lastDoc : snapshot.docs.last;
         cache.hasMore = snapshot.docs.length == _pageSize;
+        if (isInitial) cache.hasLoadedInitial = true;
         cache.isLoading = false;
         cache.error = null;
         if (isInitial) {
@@ -858,7 +859,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
 
   Future<void> _preloadStatusIfNeeded(String status) async {
     final cache = _itemCaches.forStatus(status);
-    if (cache.docs.isNotEmpty || cache.isLoading || widget.sellerId.isEmpty) {
+    if (cache.hasLoadedInitial || cache.isLoading || widget.sellerId.isEmpty) {
       return;
     }
     await _fetchPageForStatus(status, isInitial: true);

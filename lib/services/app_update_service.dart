@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:in_app_update/in_app_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class AppUpdateDecision {
@@ -7,11 +8,15 @@ class AppUpdateDecision {
     required this.isRequired,
     required this.storeUrl,
     required this.message,
+    this.shouldStartFlexibleUpdate = false,
+    this.shouldPromptFlexibleInstall = false,
   });
 
   final bool isRequired;
   final String storeUrl;
   final String message;
+  final bool shouldStartFlexibleUpdate;
+  final bool shouldPromptFlexibleInstall;
 }
 
 class AppUpdateService {
@@ -24,40 +29,18 @@ class AppUpdateService {
 
   static Future<AppUpdateDecision> check() async {
     try {
-      final platform = _platformConfigId;
-      if (platform == null) {
-        return const AppUpdateDecision(
-          isRequired: false,
-          storeUrl: '',
-          message: _defaultMessage,
-        );
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.android:
+          return _checkAndroidPlayUpdate();
+        case TargetPlatform.iOS:
+          return _checkIosFirestoreUpdate();
+        default:
+          return const AppUpdateDecision(
+            isRequired: false,
+            storeUrl: '',
+            message: _defaultMessage,
+          );
       }
-
-      final results = await Future.wait([
-        PackageInfo.fromPlatform(),
-        FirebaseFirestore.instance.collection('app_config').doc(platform).get(),
-      ]);
-
-      final packageInfo = results[0] as PackageInfo;
-      final snapshot = results[1] as DocumentSnapshot<Map<String, dynamic>>;
-      final data = snapshot.data();
-      if (data == null) {
-        return const AppUpdateDecision(
-          isRequired: false,
-          storeUrl: _defaultAndroidStoreUrl,
-          message: _defaultMessage,
-        );
-      }
-
-      final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
-      final minimumBuild = _readInt(data['minimum_version_code']);
-      final forceUpdate = data['force_update'] == true;
-
-      return AppUpdateDecision(
-        isRequired: forceUpdate && currentBuild < minimumBuild,
-        storeUrl: _readString(data['play_store_url']) ?? _defaultAndroidStoreUrl,
-        message: _readString(data['message']) ?? _defaultMessage,
-      );
     } catch (error) {
       debugPrint('Update check skipped: $error');
       return const AppUpdateDecision(
@@ -68,15 +51,79 @@ class AppUpdateService {
     }
   }
 
-  static String? get _platformConfigId {
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-        return 'android';
-      case TargetPlatform.iOS:
-        return 'ios';
-      default:
-        return null;
+  static Future<bool> startFlexibleUpdate() async {
+    try {
+      await InAppUpdate.startFlexibleUpdate();
+      return true;
+    } catch (error) {
+      debugPrint('Flexible update start skipped: $error');
+      return false;
     }
+  }
+
+  static Future<bool> completeFlexibleUpdate() async {
+    try {
+      await InAppUpdate.completeFlexibleUpdate();
+      return true;
+    } catch (error) {
+      debugPrint('Flexible update completion skipped: $error');
+      return false;
+    }
+  }
+
+  static Future<AppUpdateDecision> _checkAndroidPlayUpdate() async {
+    try {
+      final info = await InAppUpdate.checkForUpdate();
+      final shouldPromptFlexibleInstall =
+          info.installStatus == InstallStatus.downloaded;
+      final shouldStartFlexibleUpdate =
+          info.updateAvailability == UpdateAvailability.updateAvailable &&
+          info.flexibleUpdateAllowed &&
+          !shouldPromptFlexibleInstall;
+
+      return AppUpdateDecision(
+        isRequired: false,
+        storeUrl: _defaultAndroidStoreUrl,
+        message: _defaultMessage,
+        shouldStartFlexibleUpdate: shouldStartFlexibleUpdate,
+        shouldPromptFlexibleInstall: shouldPromptFlexibleInstall,
+      );
+    } catch (error) {
+      debugPrint('Play in-app update check skipped: $error');
+      return const AppUpdateDecision(
+        isRequired: false,
+        storeUrl: _defaultAndroidStoreUrl,
+        message: _defaultMessage,
+      );
+    }
+  }
+
+  static Future<AppUpdateDecision> _checkIosFirestoreUpdate() async {
+    final results = await Future.wait([
+      PackageInfo.fromPlatform(),
+      FirebaseFirestore.instance.collection('app_config').doc('ios').get(),
+    ]);
+
+    final packageInfo = results[0] as PackageInfo;
+    final snapshot = results[1] as DocumentSnapshot<Map<String, dynamic>>;
+    final data = snapshot.data();
+    if (data == null) {
+      return const AppUpdateDecision(
+        isRequired: false,
+        storeUrl: _defaultAndroidStoreUrl,
+        message: _defaultMessage,
+      );
+    }
+
+    final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+    final minimumBuild = _readInt(data['minimum_version_code']);
+    final forceUpdate = data['force_update'] == true;
+
+    return AppUpdateDecision(
+      isRequired: forceUpdate && currentBuild < minimumBuild,
+      storeUrl: _readString(data['play_store_url']) ?? _defaultAndroidStoreUrl,
+      message: _readString(data['message']) ?? _defaultMessage,
+    );
   }
 
   static int _readInt(Object? value) {
