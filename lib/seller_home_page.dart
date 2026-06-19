@@ -540,18 +540,15 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
               Center(
                 child: Transform.translate(
                   offset: const Offset(0, -28),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
-                    child: Image.asset(
-                      'assets/branding/logo.png',
-                      width: 240,
-                      height: 100,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const Icon(
-                        Icons.storefront,
-                        size: 82,
-                        color: Color(0xFFFF7801),
-                      ),
+                  child: Image.asset(
+                    'assets/branding/logo.png',
+                    width: 240,
+                    height: 100,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const Icon(
+                      Icons.storefront,
+                      size: 82,
+                      color: Color(0xFFFF7801),
                     ),
                   ),
                 ),
