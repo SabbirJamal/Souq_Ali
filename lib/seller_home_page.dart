@@ -571,7 +571,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.phone),
+                          Text('🇴🇲', style: TextStyle(fontSize: 20)),
                           SizedBox(width: 8),
                           Text('+968 ', style: TextStyle(fontSize: 16)),
                         ],
