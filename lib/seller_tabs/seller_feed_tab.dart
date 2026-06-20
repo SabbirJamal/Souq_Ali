@@ -843,6 +843,14 @@ class _FeedOfflineLoadMore extends StatelessWidget {
 }
 
 bool _isItemActive(Map<String, dynamic> item, DateTime now) {
+  final expiresAt = item['expires_at'];
+  if (expiresAt is Timestamp) {
+    return expiresAt.toDate().isAfter(now);
+  }
+  if (expiresAt is DateTime) {
+    return expiresAt.isAfter(now);
+  }
+
   final createdAt = item['created_at'];
   final timePeriodHours = item['time_period_hours'];
   if (createdAt is Timestamp && timePeriodHours is num) {
@@ -850,13 +858,6 @@ bool _isItemActive(Map<String, dynamic> item, DateTime now) {
         .toDate()
         .add(Duration(hours: timePeriodHours.toInt()))
         .isAfter(now);
-  }
-  final expiresAt = item['expires_at'];
-  if (expiresAt is Timestamp) {
-    return expiresAt.toDate().isAfter(now);
-  }
-  if (expiresAt is DateTime) {
-    return expiresAt.isAfter(now);
   }
   return true;
 }

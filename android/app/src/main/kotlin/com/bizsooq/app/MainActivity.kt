@@ -1,14 +1,43 @@
 package com.bizsooq.app
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
+    private val shareChannelName = "com.bizsooq.app/direct_share"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, shareChannelName)
+            .setMethodCallHandler { call, result ->
+                if (call.method != "shareImageToPackage") {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+
+                val filePath = call.argument<String>("filePath")
+                val packageName = call.argument<String>("packageName")
+                val text = call.argument<String>("text") ?: ""
+                if (filePath.isNullOrBlank() || packageName.isNullOrBlank()) {
+                    result.error("invalid_args", "Missing share file or package.", null)
+                    return@setMethodCallHandler
+                }
+
+                shareImageToPackage(filePath, packageName, text, result)
+            }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         keepSystemBarsVisible()
@@ -43,4 +72,64 @@ class MainActivity : FlutterActivity() {
             )
         }
     }
+
+    private fun shareImageToPackage(
+        filePath: String,
+        packageName: String,
+        text: String,
+        result: MethodChannel.Result,
+    ) {
+        val file = File(filePath)
+        if (!file.exists()) {
+            result.error("file_missing", "Share image was not found.", null)
+            return
+        }
+        if (!isPackageInstalled(packageName)) {
+            result.error("not_installed", "Target app is not installed.", null)
+            return
+        }
+
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageNameValue.share_file_provider",
+            file,
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            setPackage(packageName)
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        try {
+            grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(intent)
+            result.success(true)
+        } catch (_: ActivityNotFoundException) {
+            result.error("not_installed", "Target app is not installed.", null)
+        } catch (error: Exception) {
+            result.error("share_failed", error.message ?: "Unable to share.", null)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(0),
+                )
+            } else {
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private val packageNameValue: String
+        get() = applicationContext.packageName
 }

@@ -32,6 +32,10 @@ class ShareListingPage extends StatefulWidget {
 }
 
 class _ShareListingPageState extends State<ShareListingPage> {
+  static const _directShareChannel = MethodChannel('com.bizsooq.app/direct_share');
+  static const _whatsAppPackage = 'com.whatsapp';
+  static const _whatsAppBusinessPackage = 'com.whatsapp.w4b';
+
   final GlobalKey _previewKey = GlobalKey();
   bool _isSharing = false;
 
@@ -86,7 +90,10 @@ class _ShareListingPageState extends State<ShareListingPage> {
     return file.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
   }
 
-  Future<void> _sharePreviewImage() async {
+  Future<void> _sharePreviewImage({
+    String? androidPackage,
+    required String appName,
+  }) async {
     if (_isSharing) return;
     setState(() => _isSharing = true);
     try {
@@ -95,12 +102,27 @@ class _ShareListingPageState extends State<ShareListingPage> {
         if (mounted) AppToast.show(context, 'Unable to prepare image');
         return;
       }
-      await SharePlus.instance.share(
-        ShareParams(
-          text: _shareText,
-          files: [XFile(file.path, mimeType: 'image/png')],
-        ),
-      );
+      if (Platform.isAndroid && androidPackage != null) {
+        await _directShareChannel.invokeMethod<bool>('shareImageToPackage', {
+          'filePath': file.path,
+          'packageName': androidPackage,
+          'text': _shareText,
+        });
+      } else {
+        await SharePlus.instance.share(
+          ShareParams(
+            text: _shareText,
+            files: [XFile(file.path, mimeType: 'image/png')],
+          ),
+        );
+      }
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'not_installed') {
+        AppToast.show(context, '$appName is not installed');
+      } else {
+        AppToast.show(context, 'Unable to share image');
+      }
     } catch (_) {
       if (mounted) AppToast.show(context, 'Unable to share image');
     } finally {
@@ -155,7 +177,14 @@ class _ShareListingPageState extends State<ShareListingPage> {
                     const SizedBox(height: 28),
                     _ShareActions(
                       isSharing: _isSharing,
-                      onShareImage: _sharePreviewImage,
+                      onShareWhatsApp: () => _sharePreviewImage(
+                        androidPackage: _whatsAppPackage,
+                        appName: 'WhatsApp',
+                      ),
+                      onShareWhatsAppBusiness: () => _sharePreviewImage(
+                        androidPackage: _whatsAppBusinessPackage,
+                        appName: 'WhatsApp Business',
+                      ),
                       onCopyLink: _copyLink,
                     ),
                     const SizedBox(height: 26),
@@ -519,12 +548,14 @@ class _ShareUploadedAgoBadge extends StatelessWidget {
 class _ShareActions extends StatelessWidget {
   const _ShareActions({
     required this.isSharing,
-    required this.onShareImage,
+    required this.onShareWhatsApp,
+    required this.onShareWhatsAppBusiness,
     required this.onCopyLink,
   });
 
   final bool isSharing;
-  final VoidCallback onShareImage;
+  final VoidCallback onShareWhatsApp;
+  final VoidCallback onShareWhatsAppBusiness;
   final VoidCallback onCopyLink;
 
   @override
@@ -534,13 +565,13 @@ class _ShareActions extends StatelessWidget {
         label: 'WhatsApp',
         icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white),
         color: const Color(0xFF5DD95D),
-        onTap: onShareImage,
+        onTap: onShareWhatsApp,
       ),
       _ShareActionData(
         label: 'WhatsApp Business',
         icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Colors.white),
         color: const Color(0xFF25D366),
-        onTap: onShareImage,
+        onTap: onShareWhatsAppBusiness,
       ),
       _ShareActionData(
         label: 'Copy link',

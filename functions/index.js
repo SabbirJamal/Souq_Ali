@@ -404,6 +404,11 @@ function isItemExpired(item, now) {
 }
 
 function effectiveExpiryTimestamp(item) {
+  const expiresAt = item.expires_at;
+  if (expiresAt && typeof expiresAt.toMillis === "function") {
+    return expiresAt;
+  }
+
   const createdAt = item.created_at;
   const timePeriodHours = Number(item.time_period_hours);
 
@@ -416,11 +421,6 @@ function effectiveExpiryTimestamp(item) {
     return Timestamp.fromMillis(
       createdAt.toMillis() + (timePeriodHours * 60 * 60 * 1000),
     );
-  }
-
-  const expiresAt = item.expires_at;
-  if (expiresAt && typeof expiresAt.toMillis === "function") {
-    return expiresAt;
   }
 
   return null;

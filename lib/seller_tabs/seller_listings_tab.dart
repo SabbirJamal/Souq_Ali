@@ -438,9 +438,9 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       'item_price': 'OMR $formattedPrice ${result.priceUnit}',
       'price_number': result.priceNumber,
       'price_unit': result.priceUnit,
-      'time_period_days': 0,
-      'time_period_extra_hours': 2,
-      'time_period_hours': 2,
+      'time_period_days': FieldValue.delete(),
+      'time_period_extra_hours': FieldValue.delete(),
+      'time_period_hours': FieldValue.delete(),
       'expires_at': Timestamp.fromDate(DateTime.now().add(const Duration(hours: 3))),
       'updated_at': FieldValue.serverTimestamp(),
     });
