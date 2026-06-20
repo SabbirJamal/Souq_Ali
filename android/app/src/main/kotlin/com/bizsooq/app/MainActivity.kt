@@ -11,11 +11,16 @@ import android.view.WindowInsetsController
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val shareChannelName = "com.bizsooq.app/direct_share"
+    private val deepLinkMethodChannelName = "com.bizsooq.app/deep_links"
+    private val deepLinkEventChannelName = "com.bizsooq.app/deep_link_events"
+    private var linkEventSink: EventChannel.EventSink? = null
+    private var pendingInitialLink: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -36,11 +41,40 @@ class MainActivity : FlutterActivity() {
 
                 shareImageToPackage(filePath, packageName, text, result)
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deepLinkMethodChannelName)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "getInitialLink") {
+                    result.success(pendingInitialLink)
+                    pendingInitialLink = null
+                } else {
+                    result.notImplemented()
+                }
+            }
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, deepLinkEventChannelName)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    linkEventSink = events
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    linkEventSink = null
+                }
+            })
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingInitialLink = linkFromIntent(intent)
         keepSystemBarsVisible()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val link = linkFromIntent(intent)
+        if (link != null) {
+            linkEventSink?.success(link) ?: run { pendingInitialLink = link }
+        }
     }
 
     override fun onPostResume() {
@@ -132,4 +166,11 @@ class MainActivity : FlutterActivity() {
 
     private val packageNameValue: String
         get() = applicationContext.packageName
+
+    private fun linkFromIntent(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_VIEW) {
+            return null
+        }
+        return intent.data?.toString()
+    }
 }

@@ -43,7 +43,7 @@ class _ShareListingPageState extends State<ShareListingPage> {
 
   String get _itemPrice => widget.itemData['item_price']?.toString() ?? '';
 
-  String get _shareLink => 'https://souqali.app/listing/${widget.itemId}';
+  String get _shareLink => 'https://bizsooq.com/listing/${widget.itemId}';
 
   String get _shareText {
     final price = _itemPrice.trim();

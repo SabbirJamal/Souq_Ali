@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart' as permissions;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'camera_capture_page.dart';
+import 'item_detail_page.dart';
 import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'services/app_update_service.dart';
@@ -88,6 +90,9 @@ class SouqaliApp extends StatefulWidget {
 }
 
 class _SouqaliAppState extends State<SouqaliApp> {
+  static const _deepLinkMethodChannel = MethodChannel('com.bizsooq.app/deep_links');
+  static const _deepLinkEventChannel = EventChannel('com.bizsooq.app/deep_link_events');
+
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   // Hoisted so a root rebuild can't recreate the future and re-show the splash.
   late final Future<AppUpdateDecision> _updateFuture =
@@ -104,17 +109,22 @@ class _SouqaliAppState extends State<SouqaliApp> {
   bool _didStartFlexibleUpdate = false;
   bool _isShowingFlexibleInstallPrompt = false;
   bool _deferFlexibleInstallPromptUntilResume = false;
+  StreamSubscription<dynamic>? _deepLinkSubscription;
+  String? _pendingDeepLink;
+  bool _isOpeningDeepLink = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(_appLifecycleObserver);
+    _initDeepLinks();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(_appLifecycleObserver);
     _androidUpdatePollTimer?.cancel();
+    _deepLinkSubscription?.cancel();
     super.dispose();
   }
 
@@ -170,10 +180,76 @@ class _SouqaliAppState extends State<SouqaliApp> {
           if (updateDecision != null) {
             _handleUpdateDecision(updateDecision);
           }
+          _flushPendingDeepLink();
           return home;
         },
       ),
     );
+  }
+
+  Future<void> _initDeepLinks() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _deepLinkSubscription = _deepLinkEventChannel
+          .receiveBroadcastStream()
+          .listen((event) => _handleDeepLink(event?.toString()));
+      try {
+        final initialLink =
+            await _deepLinkMethodChannel.invokeMethod<String>('getInitialLink');
+        _handleDeepLink(initialLink);
+      } catch (_) {}
+    }
+  }
+
+  void _handleDeepLink(String? link) {
+    final itemId = _itemIdFromDeepLink(link);
+    if (itemId == null || itemId.isEmpty) return;
+    _pendingDeepLink = itemId;
+    _flushPendingDeepLink();
+  }
+
+  String? _itemIdFromDeepLink(String? link) {
+    if (link == null || link.trim().isEmpty) return null;
+    final uri = Uri.tryParse(link.trim());
+    if (uri == null) return null;
+    if (uri.scheme == 'bizsooq' && uri.host == 'listing') {
+      return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+    }
+    if ((uri.scheme == 'https' || uri.scheme == 'http') &&
+        uri.host == 'bizsooq.com' &&
+        uri.pathSegments.length >= 2 &&
+        uri.pathSegments.first == 'listing') {
+      return uri.pathSegments[1];
+    }
+    return null;
+  }
+
+  Future<void> _flushPendingDeepLink() async {
+    final itemId = _pendingDeepLink;
+    if (itemId == null || _isOpeningDeepLink) return;
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+
+    _pendingDeepLink = null;
+    _isOpeningDeepLink = true;
+    try {
+      await widget.firebaseFuture;
+      final doc =
+          await FirebaseFirestore.instance.collection('items').doc(itemId).get();
+      if (!doc.exists || doc.data() == null) {
+        return;
+      }
+      if (!mounted) return;
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => ItemDetailPage(
+            itemId: itemId,
+            itemData: doc.data()!,
+          ),
+        ),
+      );
+    } finally {
+      _isOpeningDeepLink = false;
+    }
   }
 
   void _removeNativeSplashOnce() {
