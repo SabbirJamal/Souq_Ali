@@ -481,11 +481,12 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       future: _sessionFuture,
       builder: (context, sessionSnapshot) {
         final activeCache = _activeCache;
-        if (sessionSnapshot.connectionState == ConnectionState.waiting && activeCache.docs.isEmpty) {
-          return const _ListingsSkeletonGrid();
-        }
+        final isSessionLoading =
+            sessionSnapshot.connectionState == ConnectionState.waiting;
         final session = sessionSnapshot.data;
-        if (session == null) return const Center(child: Text('Please login again'));
+        if (session == null && !isSessionLoading) {
+          return const Center(child: Text('Please login again'));
+        }
         final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 90;
 
         return Stack(
@@ -533,7 +534,12 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                             },
                           ),
                         ),
-                        if (docs.isEmpty && !activeCache.isLoading)
+                        if ((docs.isEmpty && activeCache.isLoading) ||
+                            (isSessionLoading && docs.isEmpty))
+                          const SliverToBoxAdapter(
+                            child: _ListingsSkeletonGrid(),
+                          )
+                        else if (docs.isEmpty && !activeCache.isLoading)
                           SliverFillRemaining(
                             hasScrollBody: false,
                             child: activeCache.error != null &&
