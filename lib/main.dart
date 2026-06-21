@@ -93,6 +93,8 @@ class SouqaliApp extends StatefulWidget {
 class _SouqaliAppState extends State<SouqaliApp> {
   static const _deepLinkMethodChannel = MethodChannel('com.bizsooq.app/deep_links');
   static const _deepLinkEventChannel = EventChannel('com.bizsooq.app/deep_link_events');
+  static const _resumeUpdateCheckCooldown = Duration(hours: 6);
+  static const _resumeUpdateCheckDelay = Duration(milliseconds: 700);
 
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   // Hoisted so a root rebuild can't recreate the future and re-show the splash.
@@ -105,6 +107,9 @@ class _SouqaliAppState extends State<SouqaliApp> {
     widget.cameraPrewarmFuture,
   ]);
   Timer? _androidUpdatePollTimer;
+  Timer? _resumeUpdateCheckTimer;
+  DateTime? _lastResumeUpdateCheckAt;
+  bool _isRefreshingAndroidUpdateState = false;
   bool _didShowUpdateDialog = false;
   bool _didRemoveNativeSplash = false;
   bool _didStartFlexibleUpdate = false;
@@ -125,6 +130,7 @@ class _SouqaliAppState extends State<SouqaliApp> {
   void dispose() {
     WidgetsBinding.instance.removeObserver(_appLifecycleObserver);
     _androidUpdatePollTimer?.cancel();
+    _resumeUpdateCheckTimer?.cancel();
     _deepLinkSubscription?.cancel();
     super.dispose();
   }
@@ -331,14 +337,35 @@ class _SouqaliAppState extends State<SouqaliApp> {
   Future<void> _handleAppResumed() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     _deferFlexibleInstallPromptUntilResume = false;
-    await _refreshAndroidUpdateState();
+    if (_androidUpdatePollTimer != null) return;
+
+    final lastCheck = _lastResumeUpdateCheckAt;
+    if (lastCheck != null &&
+        DateTime.now().difference(lastCheck) < _resumeUpdateCheckCooldown) {
+      return;
+    }
+
+    _resumeUpdateCheckTimer?.cancel();
+    _resumeUpdateCheckTimer = Timer(_resumeUpdateCheckDelay, () {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _lastResumeUpdateCheckAt = DateTime.now();
+        unawaited(_refreshAndroidUpdateState());
+      });
+    });
   }
 
   Future<void> _refreshAndroidUpdateState() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
-    final decision = await AppUpdateService.check();
-    if (!mounted) return;
-    _handleUpdateDecision(decision);
+    if (_isRefreshingAndroidUpdateState) return;
+    _isRefreshingAndroidUpdateState = true;
+    try {
+      final decision = await AppUpdateService.check();
+      if (!mounted) return;
+      _handleUpdateDecision(decision);
+    } finally {
+      _isRefreshingAndroidUpdateState = false;
+    }
   }
 
   Future<void> _showFlexibleInstallPrompt() async {

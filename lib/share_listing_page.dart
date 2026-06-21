@@ -239,9 +239,6 @@ class _ShareItemCardPreview extends StatelessWidget {
     const width = 260.0;
     const height = 390.0;
     final firstMedia = mediaItems.isEmpty ? null : mediaItems.first;
-    final imageCount = mediaItems.where((media) => !media.isVideo).length;
-    final videoCount = mediaItems.where((media) => media.isVideo).length;
-    final isLiveItem = item['status']?.toString() == 'live';
 
     return Material(
       color: Colors.transparent,
@@ -264,31 +261,6 @@ class _ShareItemCardPreview extends StatelessWidget {
             children: [
               Positioned.fill(child: _ShareMediaBackground(media: firstMedia)),
               Positioned(
-                top: 10,
-                left: 10,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _ShareMediaCountBadges(
-                      imageCount: imageCount,
-                      videoCount: videoCount,
-                    ),
-                    if (isLiveItem) ...[
-                      const SizedBox(height: 7),
-                      const _ShareLiveBadge(),
-                    ],
-                  ],
-                ),
-              ),
-              if (!isLiveItem)
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: _ShareUploadedAgoBadge(
-                    uploadedAgo: _uploadedAgo(item['created_at']),
-                  ),
-                ),
-              Positioned(
                 left: 12,
                 right: 12,
                 bottom: 14,
@@ -301,23 +273,6 @@ class _ShareItemCardPreview extends StatelessWidget {
     );
   }
 
-  String _uploadedAgo(Object? value) {
-    DateTime? uploadedAt;
-    if (value is Timestamp) {
-      uploadedAt = value.toDate();
-    } else if (value is DateTime) {
-      uploadedAt = value;
-    }
-
-    if (uploadedAt == null) return 'just now';
-    final difference = DateTime.now().difference(uploadedAt);
-    if (difference.inMinutes < 1) return 'just now';
-    if (difference.inMinutes < 60) return '${difference.inMinutes} min ago';
-    if (difference.inHours < 24) return '${difference.inHours} hrs ago';
-    if (difference.inDays < 7) return '${difference.inDays} days ago';
-    if (difference.inDays < 30) return '${difference.inDays ~/ 7} weeks ago';
-    return '${difference.inDays ~/ 30} months ago';
-  }
 }
 
 class _ShareMediaBackground extends StatelessWidget {
@@ -453,120 +408,6 @@ class _ShareTextChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: child,
-    );
-  }
-}
-
-class _ShareMediaCountBadges extends StatelessWidget {
-  const _ShareMediaCountBadges({
-    required this.imageCount,
-    required this.videoCount,
-  });
-
-  final int imageCount;
-  final int videoCount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (imageCount > 0)
-          _ShareTopBadge(icon: Icons.photo_camera, count: imageCount),
-        if (imageCount > 0 && videoCount > 0) const SizedBox(width: 5),
-        if (videoCount > 0)
-          _ShareTopBadge(icon: Icons.videocam, count: videoCount),
-      ],
-    );
-  }
-}
-
-class _ShareTopBadge extends StatelessWidget {
-  const _ShareTopBadge({required this.icon, required this.count});
-
-  final IconData icon;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 15),
-          const SizedBox(width: 4),
-          Text(
-            '$count',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShareLiveBadge extends StatelessWidget {
-  const _ShareLiveBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 27,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE92808),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.sensors, color: Colors.white, size: 16),
-          SizedBox(width: 5),
-          Text(
-            'LIVE',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShareUploadedAgoBadge extends StatelessWidget {
-  const _ShareUploadedAgoBadge({required this.uploadedAgo});
-
-  final String uploadedAgo;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        uploadedAgo,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
     );
   }
 }

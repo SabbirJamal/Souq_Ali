@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../media_carousel.dart';
 
@@ -107,42 +106,6 @@ class VideoPlaceholder extends StatelessWidget {
   }
 }
 
-class MediaSheetButton extends StatelessWidget {
-  const MediaSheetButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: const Color(0xFF202523),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: const Color(0xFF25D366), size: 28),
-            const SizedBox(height: 8),
-            Text(label, style: const TextStyle(color: Colors.white)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class EditableMedia {
   const EditableMedia.existing(this.existing) : selected = null;
 
@@ -159,27 +122,9 @@ class EditableMedia {
 class SelectedMedia {
   const SelectedMedia({required this.file, required this.type, this.assetId});
 
-  factory SelectedMedia.fromXFile(XFile file) {
-    final type =
-        _isVideoPath(file.path) || file.mimeType?.startsWith('video/') == true
-        ? 'video'
-        : 'image';
-    return SelectedMedia(file: File(file.path), type: type);
-  }
-
   final File file;
   final String type;
   final String? assetId;
 
   bool get isVideo => type == 'video';
-
-  static bool _isVideoPath(String path) {
-    final lower = path.toLowerCase();
-    return lower.endsWith('.mp4') ||
-        lower.endsWith('.mov') ||
-        lower.endsWith('.m4v') ||
-        lower.endsWith('.avi') ||
-        lower.endsWith('.webm') ||
-        lower.endsWith('.mkv');
-  }
 }
