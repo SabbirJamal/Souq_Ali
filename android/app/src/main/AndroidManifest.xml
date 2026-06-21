@@ -39,12 +39,19 @@
                 <data
                     android:scheme="https"
                     android:host="bizsooq.com"
+                    android:pathPrefix="/i" />
+                <data
+                    android:scheme="https"
+                    android:host="bizsooq.com"
                     android:pathPrefix="/listing" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="bizsooq"
+                    android:host="i" />
                 <data
                     android:scheme="bizsooq"
                     android:host="listing" />

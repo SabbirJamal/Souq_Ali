@@ -16,6 +16,7 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'services/app_update_service.dart';
 import 'services/feed_service.dart';
+import 'utils/share_links.dart';
 import 'utils/system_ui_styles.dart';
 
 Future<void> main() async {
@@ -201,31 +202,31 @@ class _SouqaliAppState extends State<SouqaliApp> {
   }
 
   void _handleDeepLink(String? link) {
-    final itemId = _itemIdFromDeepLink(link);
+    final itemId = _linkTokenFromDeepLink(link);
     if (itemId == null || itemId.isEmpty) return;
     _pendingDeepLink = itemId;
     _flushPendingDeepLink();
   }
 
-  String? _itemIdFromDeepLink(String? link) {
+  String? _linkTokenFromDeepLink(String? link) {
     if (link == null || link.trim().isEmpty) return null;
     final uri = Uri.tryParse(link.trim());
     if (uri == null) return null;
-    if (uri.scheme == 'bizsooq' && uri.host == 'listing') {
+    if (uri.scheme == 'bizsooq' && (uri.host == 'listing' || uri.host == 'i')) {
       return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
     }
     if ((uri.scheme == 'https' || uri.scheme == 'http') &&
         uri.host == 'bizsooq.com' &&
         uri.pathSegments.length >= 2 &&
-        uri.pathSegments.first == 'listing') {
+        (uri.pathSegments.first == 'listing' || uri.pathSegments.first == 'i')) {
       return uri.pathSegments[1];
     }
     return null;
   }
 
   Future<void> _flushPendingDeepLink() async {
-    final itemId = _pendingDeepLink;
-    if (itemId == null || _isOpeningDeepLink) return;
+    final linkToken = _pendingDeepLink;
+    if (linkToken == null || _isOpeningDeepLink) return;
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
 
@@ -233,8 +234,7 @@ class _SouqaliAppState extends State<SouqaliApp> {
     _isOpeningDeepLink = true;
     try {
       await widget.firebaseFuture;
-      final doc =
-          await FirebaseFirestore.instance.collection('items').doc(itemId).get();
+      final doc = await _itemDocFromLinkToken(linkToken);
       if (!doc.exists || doc.data() == null) {
         return;
       }
@@ -242,7 +242,7 @@ class _SouqaliAppState extends State<SouqaliApp> {
       navigator.push(
         MaterialPageRoute(
           builder: (_) => ItemDetailPage(
-            itemId: itemId,
+            itemId: doc.id,
             itemData: doc.data()!,
           ),
         ),
@@ -250,6 +250,21 @@ class _SouqaliAppState extends State<SouqaliApp> {
     } finally {
       _isOpeningDeepLink = false;
     }
+  }
+
+  Future<DocumentSnapshot<Map<String, dynamic>>> _itemDocFromLinkToken(
+    String token,
+  ) async {
+    final items = FirebaseFirestore.instance.collection('items');
+    final directDoc = await items.doc(token).get();
+    if (directDoc.exists) return directDoc;
+
+    final codeSnapshot = await items
+        .where(shareCodeField, isEqualTo: token.toUpperCase())
+        .limit(1)
+        .get();
+    if (codeSnapshot.docs.isNotEmpty) return codeSnapshot.docs.first;
+    return directDoc;
   }
 
   void _removeNativeSplashOnce() {

@@ -17,6 +17,7 @@ import '../services/media_compression_service.dart';
 import '../upload_status_manager.dart';
 import '../utils/network_status.dart';
 import '../utils/price_input.dart';
+import '../utils/share_links.dart';
 import '../utils/system_ui_styles.dart';
 import '../utils/upload_status_thumbnail.dart';
 import '../widgets/app_toast.dart';
@@ -248,9 +249,11 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       UploadStatusManager.progress(uploadId, 0.96);
       
       final itemRef = FirebaseFirestore.instance.collection('items').doc();
+      final shareCode = generateShareCode();
       final batch = FirebaseFirestore.instance.batch();
       batch.set(itemRef, {
         'seller_uid': s.sellerId, 'seller_name': s.name, 'seller_phone': s.phoneNumber,
+        shareCodeField: shareCode,
         'status': draft.isLive ? 'live' : 'post', 'is_transit': draft.isTransit, 'item_name': draft.name,
         'item_price': price, 'price_number': draft.normalizedPrice, 'price_unit': draft.isLive ? draft.priceUnit : '',
         'location': draft.location, 'image_urls': uploaded.where((m) => m.type == 'image').map((m) => m.url).toList(),

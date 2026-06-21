@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'utils/formatters.dart';
+import 'utils/share_links.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
@@ -38,12 +39,16 @@ class _ShareListingPageState extends State<ShareListingPage> {
 
   final GlobalKey _previewKey = GlobalKey();
   bool _isSharing = false;
+  String? _resolvedShareCode;
 
   String get _itemName => widget.itemData['item_name']?.toString() ?? 'Item';
 
   String get _itemPrice => widget.itemData['item_price']?.toString() ?? '';
 
-  String get _shareLink => 'https://bizsooq.com/listing/${widget.itemId}';
+  String get _shareToken =>
+      _resolvedShareCode ?? shareCodeFromItem(widget.itemData, widget.itemId);
+
+  String get _shareLink => 'https://bizsooq.com/i/$_shareToken';
 
   String get _shareText {
     final price = _itemPrice.trim();
@@ -62,12 +67,33 @@ class _ShareListingPageState extends State<ShareListingPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadShareCodeIfMissing();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final url = _previewImageUrl;
     if (url.isNotEmpty) {
       precacheImage(CachedNetworkImageProvider(url), context);
     }
+  }
+
+  Future<void> _loadShareCodeIfMissing() async {
+    if (shareCodeFromItem(widget.itemData, widget.itemId) != widget.itemId) {
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('items')
+          .doc(widget.itemId)
+          .get();
+      final code = doc.data()?[shareCodeField]?.toString().trim();
+      if (code == null || code.isEmpty || !mounted) return;
+      setState(() => _resolvedShareCode = code);
+    } catch (_) {}
   }
 
   Future<File?> _capturePreviewFile() async {

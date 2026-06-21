@@ -32,6 +32,7 @@ const FEED_ITEM_FIELDS = [
   "seller_name",
   "seller_phone",
   "seller_uid",
+  "share_code",
   "status",
   "time_period_hours",
 ];
