@@ -14,6 +14,7 @@ import 'widgets/app_toast.dart';
 import 'widgets/item_card.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/offline_state.dart';
+import 'widgets/responsive_text.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
 
 class SellerProfilePage extends StatelessWidget {
@@ -670,7 +671,7 @@ class _ProfileStatusTabButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: borderRadius,
         child: Center(
-          child: Text(
+          child: ResponsiveText(
             text,
             style: TextStyle(
               color: isSelected ? Colors.white : Colors.black,

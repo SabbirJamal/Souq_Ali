@@ -15,6 +15,7 @@ import 'utils/share_links.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
+import 'widgets/responsive_text.dart';
 
 class ShareListingPage extends StatefulWidget {
   const ShareListingPage({
@@ -523,12 +524,14 @@ class _ShareAction extends StatelessWidget {
             child: Center(child: action.icon),
           ),
           const SizedBox(height: 6),
-          Text(
-            action.label,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11, height: 1.1),
+          SizedBox(
+            height: 25,
+            child: ResponsiveText(
+              action.label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              style: const TextStyle(fontSize: 11, height: 1.1),
+            ),
           ),
         ],
       ),

@@ -16,6 +16,7 @@ import '../widgets/item_card.dart';
 import '../widgets/media_carousel.dart';
 import '../widgets/offline_state.dart';
 import '../widgets/price_with_currency.dart';
+import '../widgets/responsive_text.dart';
 
 class SellerListingsTab extends StatefulWidget {
   const SellerListingsTab({
@@ -659,7 +660,7 @@ class _ListingsStatusTabButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: borderRadius,
-        child: Center(child: Text(text, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0))),
+        child: Center(child: ResponsiveText(text, style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: 0))),
       ),
     );
   }
@@ -844,5 +845,5 @@ class _ActionPill extends StatelessWidget {
   const _ActionPill({required this.text, required this.color, required this.onTap});
   final String text; final Color color; final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Material(color: Colors.transparent, borderRadius: BorderRadius.circular(8), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: color, border: Border.all(color: Colors.black, width: 1.2), borderRadius: BorderRadius.circular(8)), child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))));
+  Widget build(BuildContext context) => Material(color: Colors.transparent, borderRadius: BorderRadius.circular(8), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: color, border: Border.all(color: Colors.black, width: 1.2), borderRadius: BorderRadius.circular(8)), child: ResponsiveText(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))));
 }

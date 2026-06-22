@@ -27,6 +27,7 @@ import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/price_with_currency.dart';
+import 'widgets/responsive_text.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
 
 Route<void> _instantSellerTabRoute(int index) {
@@ -665,6 +666,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
     }
 
     final pageColor = _isLiveItem ? const Color(0xFFFFE9EC) : const Color(0xFFF4FBF7);
+    final formBottomPadding = MediaQuery.viewPaddingOf(context).bottom + 120;
     final contentDecoration = BoxDecoration(
       color: _isLiveItem ? null : const Color(0xFFF4FBF7),
       gradient: _isLiveItem
@@ -708,7 +710,8 @@ class _ItemEditPageState extends State<ItemEditPage> {
               child: DecoratedBox(
                 decoration: contentDecoration,
                 child: ListView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(16, 0, 16, formBottomPadding),
                 children: [
                   _buildMediaEditor(),
                   const SizedBox(height: 15),
@@ -749,7 +752,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                       child: ElevatedButton(
                         onPressed: _isSaving ? null : _save,
                         style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                        child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : const Text('Update', style: TextStyle(fontSize: 20)),
+                        child: _isSaving ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : const ResponsiveText('Update', style: TextStyle(fontSize: 20)),
                       ),
                     ),
                   ),
@@ -1002,7 +1005,7 @@ class _EditSegmentButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: borderRadius,
         child: Center(
-          child: Text(
+          child: ResponsiveText(
             text,
             style: TextStyle(
               color: isSelected ? Colors.white : Colors.black,

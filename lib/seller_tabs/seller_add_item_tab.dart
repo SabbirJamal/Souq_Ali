@@ -25,6 +25,7 @@ import '../widgets/app_toast.dart';
 import '../widgets/item_add/selected_media_preview_dialog.dart';
 import '../widgets/item_edit/edit_widgets.dart';
 import '../widgets/price_with_currency.dart';
+import '../widgets/responsive_text.dart';
 
 class SellerAddItemTab extends StatefulWidget {
   const SellerAddItemTab({
@@ -444,8 +445,10 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       ),
       child: LayoutBuilder(builder: (context, constraints) {
         final minHeight = constraints.hasBoundedHeight && constraints.maxHeight > 20 ? constraints.maxHeight - 20 : 0.0;
+        final bottomPadding = MediaQuery.viewPaddingOf(context).bottom + 120;
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPadding),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -501,7 +504,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
               child: ElevatedButton(
                 onPressed: _isSubmitting ? null : _addItem,
                 style: ElevatedButton.styleFrom(backgroundColor: _isLiveItem ? const Color(0xFFE92808) : const Color(0xFF25D366), foregroundColor: Colors.white, padding: EdgeInsets.zero, minimumSize: const Size.fromHeight(40), tapTargetSize: MaterialTapTargetSize.shrinkWrap, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: _isSubmitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : Text(_isLiveItem ? 'Go Live - 3 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
+                child: _isSubmitting ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.4)) : ResponsiveText(_isLiveItem ? 'Go Live - 3 Hrs' : 'Post - 18 Hrs', style: const TextStyle(fontSize: 20)),
               ),
             ),
           ),
@@ -708,7 +711,7 @@ class _AddItemSegmentButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: borderRadius,
         child: Center(
-          child: Text(
+          child: ResponsiveText(
             text,
             style: TextStyle(
               color: isSelected ? Colors.white : Colors.black,

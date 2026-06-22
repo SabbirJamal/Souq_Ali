@@ -201,13 +201,88 @@ class _FixedActionBar extends StatelessWidget {
   const _FixedActionBar({required this.phone, required this.onShare});
   final String phone; final VoidCallback onShare;
   @override
-  Widget build(BuildContext context) => SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(8, 7, 8, 8), child: Row(children: [
-      Expanded(child: ElevatedButton(onPressed: phone.isEmpty ? null : () => launchUrl(Uri(scheme: 'tel', path: phone)), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0A84FF), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const Icon(Icons.phone, size: 27))),
-      const SizedBox(width: 6),
-      Expanded(child: ElevatedButton(onPressed: phone.isEmpty ? null : () => launchUrl(Uri.parse('https://wa.me/${phone.replaceAll(RegExp(r'[^0-9]'), '')}'), mode: LaunchMode.externalApplication), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const FaIcon(FontAwesomeIcons.whatsapp, size: 26))),
-      const SizedBox(width: 6),
-      Expanded(child: ElevatedButton(onPressed: onShare, style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF7801), foregroundColor: Colors.white, fixedSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), child: const Text('Share', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)))),
-    ])));
+  Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final buttonHeight = width < 370 ? 46.0 : 48.0;
+    final gap = width < 370 ? 5.0 : 6.0;
+    final radius = BorderRadius.circular(10);
+    final buttonStyle = ElevatedButton.styleFrom(
+      foregroundColor: Colors.white,
+      fixedSize: Size.fromHeight(buttonHeight),
+      minimumSize: Size(0, buttonHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: RoundedRectangleBorder(borderRadius: radius),
+    );
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(8, 7, 8, width < 370 ? 7 : 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: ElevatedButton(
+                onPressed: phone.isEmpty
+                    ? null
+                    : () => launchUrl(Uri(scheme: 'tel', path: phone)),
+                style: buttonStyle.copyWith(
+                  backgroundColor: const WidgetStatePropertyAll(
+                    Color(0xFF0A84FF),
+                  ),
+                ),
+                child: Icon(Icons.phone, size: width < 370 ? 25 : 27),
+              ),
+            ),
+            SizedBox(width: gap),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: phone.isEmpty
+                    ? null
+                    : () => launchUrl(
+                        Uri.parse(
+                          'https://wa.me/${phone.replaceAll(RegExp(r'[^0-9]'), '')}',
+                        ),
+                        mode: LaunchMode.externalApplication,
+                      ),
+                style: buttonStyle.copyWith(
+                  backgroundColor: const WidgetStatePropertyAll(
+                    Color(0xFF25D366),
+                  ),
+                ),
+                child: FaIcon(
+                  FontAwesomeIcons.whatsapp,
+                  size: width < 370 ? 24 : 26,
+                ),
+              ),
+            ),
+            SizedBox(width: gap),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: onShare,
+                style: buttonStyle.copyWith(
+                  backgroundColor: const WidgetStatePropertyAll(
+                    Color(0xFFFF7801),
+                  ),
+                ),
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    'Share',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _SellerAvatarIcon extends StatefulWidget {
