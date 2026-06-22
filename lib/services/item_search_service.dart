@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../utils/item_search.dart';
@@ -6,7 +9,12 @@ import 'feed_service.dart';
 class ItemSearchService {
   ItemSearchService._();
 
+  static const _algoliaApplicationId = 'ZI4NULCVNS';
+  static const _algoliaSearchApiKey = 'e7b13c4d229246c6c2aaac090014a3fe';
+  static const _algoliaIndexName = 'bizsooq';
   static final _items = FirebaseFirestore.instance.collection('items');
+  static final _httpClient = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 4);
 
   static Future<List<FeedItem>> search({
     required String status,
@@ -21,6 +29,15 @@ class ItemSearchService {
         .where((token) => token.isNotEmpty)
         .toList(growable: false);
     if (tokens.isEmpty) return const [];
+
+    final algoliaResults = await _searchAlgolia(
+      status: status,
+      query: normalized,
+      limit: limit,
+    );
+    if (algoliaResults.isNotEmpty) {
+      return algoliaResults;
+    }
 
     final byId = <String, FeedItem>{};
     await _loadKeywordMatches(
@@ -43,6 +60,59 @@ class ItemSearchService {
     final results = byId.values.toList(growable: false);
     results.sort((a, b) => _createdAtMs(b.data).compareTo(_createdAtMs(a.data)));
     return results.length > limit ? results.take(limit).toList() : results;
+  }
+
+  static Future<List<FeedItem>> _searchAlgolia({
+    required String status,
+    required String query,
+    required int limit,
+  }) async {
+    try {
+      final uri = Uri.https(
+        '$_algoliaApplicationId-dsn.algolia.net',
+        '/1/indexes/$_algoliaIndexName/query',
+      );
+      final request = await _httpClient.postUrl(uri);
+      request.headers
+        ..contentType = ContentType.json
+        ..set('X-Algolia-Application-Id', _algoliaApplicationId)
+        ..set('X-Algolia-API-Key', _algoliaSearchApiKey);
+      request.write(jsonEncode({
+        'query': query,
+        'hitsPerPage': limit,
+        'filters': 'status:$status',
+      }));
+
+      final response = await request.close().timeout(const Duration(seconds: 6));
+      final body = await response.transform(utf8.decoder).join();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugLogSearchFallback('Algolia search failed ${response.statusCode}: $body');
+        return const [];
+      }
+
+      final data = jsonDecode(body);
+      final hits = data is Map ? data['hits'] : null;
+      if (hits is! List) return const [];
+
+      final now = DateTime.now();
+      return hits
+          .whereType<Map>()
+          .map((hit) {
+            final id = hit['objectID']?.toString() ?? '';
+            final item = Map<String, dynamic>.from(hit);
+            item.remove('_highlightResult');
+            item.remove('_rankingInfo');
+            item.remove('_snippetResult');
+            item.remove('objectID');
+            return id.isEmpty ? null : FeedItem(id: id, data: _restoreAlgoliaItem(item));
+          })
+          .whereType<FeedItem>()
+          .where((item) => _isActive(item.data, now) && _hasUsableMedia(item.data))
+          .toList(growable: false);
+    } catch (error) {
+      debugLogSearchFallback('Algolia search fallback: $error');
+      return const [];
+    }
   }
 
   static Future<void> _loadKeywordMatches({
@@ -131,4 +201,31 @@ class ItemSearchService {
     if (createdAt is DateTime) return createdAt.millisecondsSinceEpoch;
     return 0;
   }
+}
+
+Map<String, dynamic> _restoreAlgoliaItem(Map<String, dynamic> data) {
+  return data.map((key, value) => MapEntry(key, _restoreAlgoliaValue(value)));
+}
+
+Object? _restoreAlgoliaValue(Object? value) {
+  if (value is Map) {
+    final map = Map<String, dynamic>.from(value);
+    final timestampMs = map['__timestampMs'];
+    if (timestampMs is num) {
+      return Timestamp.fromMillisecondsSinceEpoch(timestampMs.toInt());
+    }
+    return _restoreAlgoliaItem(map);
+  }
+  if (value is List) {
+    return value.map(_restoreAlgoliaValue).toList(growable: false);
+  }
+  return value;
+}
+
+void debugLogSearchFallback(String message) {
+  assert(() {
+    // ignore: avoid_print
+    print(message);
+    return true;
+  }());
 }

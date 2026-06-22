@@ -1,6 +1,11 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const {
+  onDocumentCreated,
+  onDocumentDeleted,
+  onDocumentUpdated,
+} = require("firebase-functions/v2/firestore");
+const { defineSecret } = require("firebase-functions/params");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
 const { FieldPath, getFirestore, Timestamp } = require("firebase-admin/firestore");
@@ -10,6 +15,10 @@ initializeApp();
 
 const db = getFirestore();
 const bucket = getStorage().bucket();
+const ALGOLIA_WRITE_API_KEY = defineSecret("ALGOLIA_WRITE_API_KEY");
+const ALGOLIA_BACKFILL_TOKEN = defineSecret("ALGOLIA_BACKFILL_TOKEN");
+const ALGOLIA_APPLICATION_ID = "ZI4NULCVNS";
+const ALGOLIA_INDEX_NAME = "bizsooq";
 const DEFAULT_FEED_LIMIT = 16;
 const MAX_FEED_LIMIT = 32;
 const FEED_FETCH_BATCH_SIZE = 100;
@@ -354,6 +363,100 @@ exports.processUpdatedItemMedia = onDocumentUpdated(
   },
 );
 
+exports.syncItemToAlgolia = onDocumentUpdated(
+  {
+    document: "items/{itemId}",
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [ALGOLIA_WRITE_API_KEY],
+  },
+  async (event) => {
+    const itemId = event.params.itemId;
+    const item = event.data && event.data.after ? event.data.after.data() : {};
+    await upsertAlgoliaItem(itemId, item);
+  },
+);
+
+exports.createItemInAlgolia = onDocumentCreated(
+  {
+    document: "items/{itemId}",
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [ALGOLIA_WRITE_API_KEY],
+  },
+  async (event) => {
+    const itemId = event.params.itemId;
+    const item = event.data && event.data.data ? event.data.data() : {};
+    await upsertAlgoliaItem(itemId, item);
+  },
+);
+
+exports.deleteItemFromAlgolia = onDocumentDeleted(
+  {
+    document: "items/{itemId}",
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+    secrets: [ALGOLIA_WRITE_API_KEY],
+  },
+  async (event) => {
+    await deleteAlgoliaItem(event.params.itemId);
+  },
+);
+
+exports.backfillAlgoliaItems = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    secrets: [ALGOLIA_WRITE_API_KEY, ALGOLIA_BACKFILL_TOKEN],
+  },
+  async (request, response) => {
+    const token = stringValue(request.body && request.body.token);
+    const cursor = stringValue(request.body && request.body.cursor);
+    const expectedToken = ALGOLIA_BACKFILL_TOKEN.value();
+
+    if (!expectedToken || token !== expectedToken) {
+      response.status(403).json({ ok: false, error: "forbidden" });
+      return;
+    }
+
+    let query = db
+      .collection("items")
+      .orderBy(FieldPath.documentId())
+      .limit(300);
+    if (cursor) {
+      query = query.startAfter(cursor);
+    }
+
+    const snapshot = await query.get();
+    let indexed = 0;
+    let skipped = 0;
+    let lastId = cursor || "";
+
+    for (const doc of snapshot.docs) {
+      lastId = doc.id;
+      const item = doc.data();
+      if (shouldIndexAlgoliaItem(item)) {
+        await upsertAlgoliaItem(doc.id, item);
+        indexed += 1;
+      } else {
+        await deleteAlgoliaItem(doc.id);
+        skipped += 1;
+      }
+    }
+
+    response.json({
+      ok: true,
+      indexed,
+      skipped,
+      nextCursor: snapshot.size === 300 ? lastId : null,
+    });
+  },
+);
+
 exports.cleanupExpiredItems = onSchedule(
   {
     schedule: "every 1 hours",
@@ -395,6 +498,110 @@ exports.cleanupExpiredItems = onSchedule(
     }
   },
 );
+
+async function upsertAlgoliaItem(itemId, item) {
+  if (!shouldIndexAlgoliaItem(item)) {
+    await deleteAlgoliaItem(itemId);
+    return;
+  }
+
+  const record = algoliaRecordFromItem(itemId, item);
+  const response = await fetch(algoliaObjectUrl(itemId), {
+    method: "PUT",
+    headers: algoliaHeaders(),
+    body: JSON.stringify(record),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    logger.error("Algolia item sync failed.", {
+      itemId,
+      status: response.status,
+      body,
+    });
+    throw new Error(`Algolia sync failed ${response.status}: ${body}`);
+  }
+
+  logger.info("Algolia item synced.", { itemId });
+}
+
+async function deleteAlgoliaItem(itemId) {
+  if (!itemId) return;
+  const response = await fetch(algoliaObjectUrl(itemId), {
+    method: "DELETE",
+    headers: algoliaHeaders(),
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const body = await response.text();
+    logger.error("Algolia item delete failed.", {
+      itemId,
+      status: response.status,
+      body,
+    });
+    throw new Error(`Algolia delete failed ${response.status}: ${body}`);
+  }
+
+  logger.info("Algolia item deleted.", { itemId });
+}
+
+function shouldIndexAlgoliaItem(item) {
+  const status = stringValue(item.status);
+  if (status !== "post" && status !== "live") return false;
+  if (!isItemVisible(item, Timestamp.now())) return false;
+  return hasUsableMedia(item);
+}
+
+function algoliaRecordFromItem(itemId, item) {
+  const createdAtMs = timestampMillis(item.created_at);
+  const expiresAtMs = timestampMillis(item.expires_at);
+  return {
+    objectID: itemId,
+    created_at_ms: createdAtMs,
+    expires_at_ms: expiresAtMs,
+    created_at: createdAtMs ? { __timestampMs: createdAtMs } : null,
+    expires_at: expiresAtMs ? { __timestampMs: expiresAtMs } : null,
+    image_urls: Array.isArray(item.image_urls) ? item.image_urls : [],
+    is_transit: item.is_transit === true,
+    item_name: stringValue(item.item_name),
+    item_price: stringValue(item.item_price),
+    location: stringValue(item.location),
+    media_files: Array.isArray(item.media_files) ? item.media_files : [],
+    media_processing_status: stringValue(item.media_processing_status),
+    price_number: Number(item.price_number) || 0,
+    price_unit: stringValue(item.price_unit),
+    seller_name: stringValue(item.seller_name),
+    seller_phone: stringValue(item.seller_phone),
+    seller_uid: stringValue(item.seller_uid),
+    share_code: stringValue(item.share_code),
+    status: stringValue(item.status),
+  };
+}
+
+function algoliaObjectUrl(itemId) {
+  return `https://${ALGOLIA_APPLICATION_ID}.algolia.net/1/indexes/${ALGOLIA_INDEX_NAME}/${encodeURIComponent(itemId)}`;
+}
+
+function algoliaHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "X-Algolia-Application-Id": ALGOLIA_APPLICATION_ID,
+    "X-Algolia-API-Key": ALGOLIA_WRITE_API_KEY.value(),
+  };
+}
+
+function timestampMillis(value) {
+  if (value && typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return 0;
+}
 
 function isItemExpired(item, now) {
   const effectiveExpiresAt = effectiveExpiryTimestamp(item);
