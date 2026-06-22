@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../media_carousel.dart';
 
-class DetailVideoPlayer extends StatelessWidget {
+class DetailVideoPlayer extends StatefulWidget {
   const DetailVideoPlayer({
     super.key,
     required this.url,
@@ -24,22 +25,96 @@ class DetailVideoPlayer extends StatelessWidget {
   final Future<void>? initializeFuture;
 
   @override
+  State<DetailVideoPlayer> createState() => _DetailVideoPlayerState();
+}
+
+class _DetailVideoPlayerState extends State<DetailVideoPlayer>
+    with WidgetsBindingObserver {
+  VideoPlayerController? _observedController;
+  bool _wakeLockEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _attachController(widget.controller);
+  }
+
+  @override
+  void didUpdateWidget(covariant DetailVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      _detachController(oldWidget.controller);
+      _attachController(widget.controller);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _setWakeLock(false);
+    } else if (state == AppLifecycleState.resumed) {
+      _syncWakeLock();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _detachController(_observedController);
+    _setWakeLock(false);
+    super.dispose();
+  }
+
+  void _attachController(VideoPlayerController? controller) {
+    _observedController = controller;
+    controller?.addListener(_syncWakeLock);
+    _syncWakeLock();
+  }
+
+  void _detachController(VideoPlayerController? controller) {
+    controller?.removeListener(_syncWakeLock);
+    if (identical(_observedController, controller)) {
+      _observedController = null;
+    }
+    _setWakeLock(false);
+  }
+
+  void _syncWakeLock() {
+    final value = _observedController?.value;
+    _setWakeLock(value != null && value.isInitialized && value.isPlaying);
+  }
+
+  void _setWakeLock(bool enabled) {
+    if (_wakeLockEnabled == enabled) return;
+    _wakeLockEnabled = enabled;
+    if (enabled) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final videoController = controller;
+    final videoController = widget.controller;
     return Stack(
       fit: StackFit.expand,
       alignment: Alignment.center,
       children: [
         Transform.scale(
-          scale: videoScale,
+          scale: widget.videoScale,
           child: VideoPreview(
-            url: url,
+            url: widget.url,
             thumbnailUrl: null,
             fit: BoxFit.contain,
             controller: videoController,
-            initializeFuture: initializeFuture,
-            autoPlay: autoPlay,
-            pauseSignal: pauseSignal,
+            initializeFuture: widget.initializeFuture,
+            autoPlay: widget.autoPlay,
+            pauseSignal: widget.pauseSignal,
             showPlayButton: false,
             playIconSize: 72,
           ),
@@ -51,7 +126,7 @@ class DetailVideoPlayer extends StatelessWidget {
             bottom: 0,
             child: _DetailVideoProgressStrip(controller: videoController),
           ),
-        if (showPauseIcon)
+        if (widget.showPauseIcon)
           Center(
             child: IgnorePointer(
               child: SizedBox.square(

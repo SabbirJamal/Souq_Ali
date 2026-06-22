@@ -53,6 +53,7 @@ dependencies:
   visibility_detector: ^0.4.0+2
   in_app_update: ^4.2.5
   share_plus: ^13.1.0
+  wakelock_plus: ^1.6.1
 
 flutter_native_splash:
   color: "#F4FBF7"
