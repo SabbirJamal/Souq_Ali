@@ -8,15 +8,13 @@ class AppUpdateDecision {
     required this.isRequired,
     required this.storeUrl,
     required this.message,
-    this.shouldStartFlexibleUpdate = false,
-    this.shouldPromptFlexibleInstall = false,
+    this.shouldStartImmediateUpdate = false,
   });
 
   final bool isRequired;
   final String storeUrl;
   final String message;
-  final bool shouldStartFlexibleUpdate;
-  final bool shouldPromptFlexibleInstall;
+  final bool shouldStartImmediateUpdate;
 }
 
 class AppUpdateService {
@@ -51,22 +49,12 @@ class AppUpdateService {
     }
   }
 
-  static Future<bool> startFlexibleUpdate() async {
+  static Future<bool> startImmediateUpdate() async {
     try {
-      await InAppUpdate.startFlexibleUpdate();
-      return true;
+      final result = await InAppUpdate.performImmediateUpdate();
+      return result == AppUpdateResult.success;
     } catch (error) {
-      debugPrint('Flexible update start skipped: $error');
-      return false;
-    }
-  }
-
-  static Future<bool> completeFlexibleUpdate() async {
-    try {
-      await InAppUpdate.completeFlexibleUpdate();
-      return true;
-    } catch (error) {
-      debugPrint('Flexible update completion skipped: $error');
+      debugPrint('Immediate update skipped: $error');
       return false;
     }
   }
@@ -74,19 +62,15 @@ class AppUpdateService {
   static Future<AppUpdateDecision> _checkAndroidPlayUpdate() async {
     try {
       final info = await InAppUpdate.checkForUpdate();
-      final shouldPromptFlexibleInstall =
-          info.installStatus == InstallStatus.downloaded;
-      final shouldStartFlexibleUpdate =
+      final shouldStartImmediateUpdate =
           info.updateAvailability == UpdateAvailability.updateAvailable &&
-          info.flexibleUpdateAllowed &&
-          !shouldPromptFlexibleInstall;
+          info.immediateUpdateAllowed;
 
       return AppUpdateDecision(
         isRequired: false,
         storeUrl: _defaultAndroidStoreUrl,
         message: _defaultMessage,
-        shouldStartFlexibleUpdate: shouldStartFlexibleUpdate,
-        shouldPromptFlexibleInstall: shouldPromptFlexibleInstall,
+        shouldStartImmediateUpdate: shouldStartImmediateUpdate,
       );
     } catch (error) {
       debugPrint('Play in-app update check skipped: $error');

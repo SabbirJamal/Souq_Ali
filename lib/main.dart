@@ -93,8 +93,6 @@ class SouqaliApp extends StatefulWidget {
 class _SouqaliAppState extends State<SouqaliApp> {
   static const _deepLinkMethodChannel = MethodChannel('com.bizsooq.app/deep_links');
   static const _deepLinkEventChannel = EventChannel('com.bizsooq.app/deep_link_events');
-  static const _resumeUpdateCheckCooldown = Duration(hours: 6);
-  static const _resumeUpdateCheckDelay = Duration(milliseconds: 700);
 
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   // Hoisted so a root rebuild can't recreate the future and re-show the splash.
@@ -106,15 +104,9 @@ class _SouqaliAppState extends State<SouqaliApp> {
     _updateFuture,
     widget.cameraPrewarmFuture,
   ]);
-  Timer? _androidUpdatePollTimer;
-  Timer? _resumeUpdateCheckTimer;
-  DateTime? _lastResumeUpdateCheckAt;
-  bool _isRefreshingAndroidUpdateState = false;
   bool _didShowUpdateDialog = false;
   bool _didRemoveNativeSplash = false;
-  bool _didStartFlexibleUpdate = false;
-  bool _isShowingFlexibleInstallPrompt = false;
-  bool _deferFlexibleInstallPromptUntilResume = false;
+  bool _didStartImmediateUpdate = false;
   StreamSubscription<dynamic>? _deepLinkSubscription;
   String? _pendingDeepLink;
   bool _isOpeningDeepLink = false;
@@ -122,23 +114,14 @@ class _SouqaliAppState extends State<SouqaliApp> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(_appLifecycleObserver);
     _initDeepLinks();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(_appLifecycleObserver);
-    _androidUpdatePollTimer?.cancel();
-    _resumeUpdateCheckTimer?.cancel();
     _deepLinkSubscription?.cancel();
     super.dispose();
   }
-
-  late final WidgetsBindingObserver _appLifecycleObserver =
-      _SouqaliAppLifecycleObserver(
-        onResumed: _handleAppResumed,
-      );
 
   @override
   Widget build(BuildContext context) {
@@ -308,96 +291,17 @@ class _SouqaliAppState extends State<SouqaliApp> {
       return;
     }
 
-    if (decision.shouldStartFlexibleUpdate) {
-      _startFlexibleUpdateOnce();
-    }
-    if (decision.shouldPromptFlexibleInstall &&
-        !_deferFlexibleInstallPromptUntilResume) {
-      _androidUpdatePollTimer?.cancel();
-      _showFlexibleInstallPrompt();
+    if (decision.shouldStartImmediateUpdate) {
+      _startImmediateUpdateOnce(decision);
     }
   }
 
-  Future<void> _startFlexibleUpdateOnce() async {
-    if (_didStartFlexibleUpdate) return;
-    _didStartFlexibleUpdate = true;
-    final started = await AppUpdateService.startFlexibleUpdate();
-    if (!started) return;
-    _startAndroidUpdatePolling();
-  }
-
-  void _startAndroidUpdatePolling() {
-    _androidUpdatePollTimer?.cancel();
-    _androidUpdatePollTimer = Timer.periodic(
-      const Duration(seconds: 4),
-      (_) => _refreshAndroidUpdateState(),
-    );
-  }
-
-  Future<void> _handleAppResumed() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return;
-    _deferFlexibleInstallPromptUntilResume = false;
-    if (_androidUpdatePollTimer != null) return;
-
-    final lastCheck = _lastResumeUpdateCheckAt;
-    if (lastCheck != null &&
-        DateTime.now().difference(lastCheck) < _resumeUpdateCheckCooldown) {
-      return;
-    }
-
-    _resumeUpdateCheckTimer?.cancel();
-    _resumeUpdateCheckTimer = Timer(_resumeUpdateCheckDelay, () {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _lastResumeUpdateCheckAt = DateTime.now();
-        unawaited(_refreshAndroidUpdateState());
-      });
-    });
-  }
-
-  Future<void> _refreshAndroidUpdateState() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return;
-    if (_isRefreshingAndroidUpdateState) return;
-    _isRefreshingAndroidUpdateState = true;
-    try {
-      final decision = await AppUpdateService.check();
-      if (!mounted) return;
-      _handleUpdateDecision(decision);
-    } finally {
-      _isRefreshingAndroidUpdateState = false;
-    }
-  }
-
-  Future<void> _showFlexibleInstallPrompt() async {
-    if (_isShowingFlexibleInstallPrompt) return;
-    final context = _navigatorKey.currentContext;
-    if (context == null || !context.mounted) return;
-    _isShowingFlexibleInstallPrompt = true;
-    final installNow = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      builder: (_) => const _FlexibleUpdateReadyDialog(),
-    );
-    _isShowingFlexibleInstallPrompt = false;
-
-    if (installNow == true) {
-      await AppUpdateService.completeFlexibleUpdate();
-      return;
-    }
-
-    _deferFlexibleInstallPromptUntilResume = true;
-  }
-}
-
-class _SouqaliAppLifecycleObserver with WidgetsBindingObserver {
-  _SouqaliAppLifecycleObserver({required this.onResumed});
-
-  final Future<void> Function() onResumed;
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      unawaited(onResumed());
+  Future<void> _startImmediateUpdateOnce(AppUpdateDecision decision) async {
+    if (_didStartImmediateUpdate) return;
+    _didStartImmediateUpdate = true;
+    final updated = await AppUpdateService.startImmediateUpdate();
+    if (!updated && mounted) {
+      _showUpdateDialogOnce(decision);
     }
   }
 }
@@ -450,64 +354,5 @@ class _ForcedUpdateDialog extends StatelessWidget {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
-}
-
-class _FlexibleUpdateReadyDialog extends StatelessWidget {
-  const _FlexibleUpdateReadyDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      title: const Text(
-        'Update Ready',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      content: const Text(
-        'A new update has been downloaded. Restart now to install it.',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 16, height: 1.35),
-      ),
-      actionsPadding: EdgeInsets.zero,
-      actions: [
-        SizedBox(
-          height: 54,
-          child: Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text(
-                    'Later',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text(
-                    'Install',
-                    style: TextStyle(
-                      color: Color(0xFFFF7801),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }
