@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../services/feed_service.dart';
+import '../services/item_search_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../utils/network_status.dart';
@@ -52,15 +53,18 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   final Set<String> _prefetchedImageUrls = {};
 
   final List<FeedItem> _allDocs = [];
+  final List<FeedItem> _searchDocs = [];
   List<FeedItem>? _cachedFilteredDocs;
   String? _cachedQueryForFilter;
   bool _isSearchOpen = false;
   bool _isLoading = false;
   bool _isMergingLatest = false;
+  bool _isSearching = false;
   bool _isOfflinePaginationBlocked = false;
   bool _didShowOfflinePaginationToast = false;
   bool _hasMore = true;
   String _query = '';
+  int _searchRequestId = 0;
   Timer? _searchDebounce;
   Timer? _searchFocusTimer;
   Timer? _seenFlushTimer;
@@ -285,9 +289,45 @@ class SellerFeedTabState extends State<SellerFeedTab> {
         setState(() {
           _query = value;
           _cachedFilteredDocs = null;
+          _isSearching = value.trim().isNotEmpty;
         });
+        _runSearch(value);
       }
     });
+  }
+
+  Future<void> _runSearch(String value) async {
+    final query = value.trim();
+    final requestId = ++_searchRequestId;
+    if (query.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _searchDocs.clear();
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() => _isSearching = true);
+    try {
+      final results = await ItemSearchService.search(
+        status: widget.itemStatus,
+        query: query,
+      );
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() {
+        _searchDocs
+          ..clear()
+          ..addAll(results);
+        _cachedFilteredDocs = null;
+        _isSearching = false;
+      });
+    } catch (error, stackTrace) {
+      debugPrint('Search failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (!mounted || requestId != _searchRequestId) return;
+      setState(() => _isSearching = false);
+    }
   }
 
   void scrollToTop() {
@@ -413,6 +453,9 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     setState(() {
       _isSearchOpen = false;
       _query = '';
+      _searchDocs.clear();
+      _isSearching = false;
+      _searchRequestId++;
     });
   }
 
@@ -422,7 +465,8 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       return _cachedFilteredDocs!;
     }
 
-    final activeDocs = _allDocs
+    final sourceDocs = query.isEmpty ? _allDocs : _searchDocs;
+    final activeDocs = sourceDocs
         .where((doc) => _isItemActive(doc.data, _openedAt))
         .toList();
     var filtered = activeDocs.where((doc) {
@@ -430,7 +474,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
       return status == widget.itemStatus;
     }).toList();
 
-    if (query.isNotEmpty) {
+    if (query.isNotEmpty && _searchDocs.isEmpty) {
       filtered = filtered.where((doc) {
         final item = doc.data;
         final searchableText =
@@ -499,7 +543,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     final docs = _getFilteredAndRankedDocs();
     final isLivePage = widget.itemStatus == 'live';
     final showInlineLoading =
-        _isLoading && UploadStatusManager.current.value == null;
+        (_isLoading || _isSearching) && UploadStatusManager.current.value == null;
     final bottomSpacerHeight = MediaQuery.viewPaddingOf(context).bottom + 90;
 
     final content = Stack(
@@ -521,7 +565,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
                     isLivePage: isLivePage,
                   ),
                 ),
-                if (_allDocs.isEmpty && showInlineLoading)
+                if (docs.isEmpty && showInlineLoading)
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 2,

@@ -16,6 +16,7 @@ import 'seller_session_guard.dart';
 import 'services/media_compression_service.dart';
 import 'upload_status_manager.dart';
 import 'utils/formatters.dart';
+import 'utils/item_search.dart';
 import 'utils/network_status.dart';
 import 'utils/price_input.dart';
 import 'utils/system_ui_styles.dart';
@@ -387,6 +388,14 @@ class _ItemEditPageState extends State<ItemEditPage> {
         'media_processing_status': needsMediaProcessing ? 'pending' : 'done',
         'image_urls': imageUrls,
         'updated_at': FieldValue.serverTimestamp(),
+        ...buildItemSearchData(
+          itemName: name,
+          location: location,
+          price: itemPrice,
+          sellerName: widget.itemData['seller_name'],
+          status: isLiveItem ? 'live' : 'post',
+          priceUnit: priceUnit,
+        ),
       };
 
       UploadStatusManager.progress(uploadId, 0.96);
