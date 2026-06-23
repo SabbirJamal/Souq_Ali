@@ -472,6 +472,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
           'uid': phoneNumber,
           'name': '',
           'phoneNumber': phoneNumber,
+          'status': 'active',
           'createdAt': FieldValue.serverTimestamp(),
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));

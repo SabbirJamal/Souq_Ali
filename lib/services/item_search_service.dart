@@ -80,7 +80,7 @@ class ItemSearchService {
       request.write(jsonEncode({
         'query': query,
         'hitsPerPage': limit,
-        'filters': 'status:$status',
+        'filters': 'status:$status AND seller_status:active',
       }));
 
       final response = await request.close().timeout(const Duration(seconds: 6));
@@ -158,7 +158,7 @@ class ItemSearchService {
     for (final doc in docs) {
       if (byId.containsKey(doc.id)) continue;
       final data = doc.data();
-      if (!_isActive(data, now) || !_hasUsableMedia(data)) continue;
+      if (!_isSellerActive(data) || !_isActive(data, now) || !_hasUsableMedia(data)) continue;
       final searchText = _searchText(data);
       if (tokens.every(searchText.contains)) {
         byId[doc.id] = FeedItem(id: doc.id, data: data);
@@ -186,6 +186,11 @@ class ItemSearchService {
     }
     final imageUrls = data['image_urls'];
     return imageUrls is List && imageUrls.isNotEmpty;
+  }
+
+  static bool _isSellerActive(Map<String, dynamic> data) {
+    final status = data['seller_status']?.toString().trim();
+    return status == null || status.isEmpty || status == 'active';
   }
 
   static bool _isActive(Map<String, dynamic> data, DateTime now) {

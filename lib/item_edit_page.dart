@@ -379,6 +379,9 @@ class _ItemEditPageState extends State<ItemEditPage> {
 
       final updateData = <String, dynamic>{
         'status': isLiveItem ? 'live' : 'post',
+        'seller_status': widget.itemData['seller_status']?.toString().trim().isNotEmpty == true
+            ? widget.itemData['seller_status']
+            : 'active',
         'is_transit': isTransitPost,
         'item_name': name,
         'price_number': normalizedPrice,

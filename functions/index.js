@@ -8,7 +8,7 @@ const {
 const { defineSecret } = require("firebase-functions/params");
 const { logger } = require("firebase-functions");
 const { initializeApp } = require("firebase-admin/app");
-const { FieldPath, getFirestore, Timestamp } = require("firebase-admin/firestore");
+const { FieldPath, FieldValue, getFirestore, Timestamp } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 
 initializeApp();
@@ -24,6 +24,8 @@ const MAX_FEED_LIMIT = 32;
 const FEED_FETCH_BATCH_SIZE = 100;
 const FEED_MAX_SCANNED_DOCS = 400;
 const FEED_SEEN_LOOKBACK_LIMIT = 1500;
+const SELLER_STATUS_ACTIVE = "active";
+const SELLER_STATUS_SUSPENDED = "suspended";
 const MEDIA_PROCESSOR_URL =
   "https://bizsooq-media-processor-r7y3ppqj6q-uc.a.run.app";
 const FEED_ITEM_FIELDS = [
@@ -40,6 +42,7 @@ const FEED_ITEM_FIELDS = [
   "price_unit",
   "seller_name",
   "seller_phone",
+  "seller_status",
   "seller_uid",
   "share_code",
   "status",
@@ -88,6 +91,7 @@ exports.getFeedItems = onCall(
         let query = db
           .collection("items")
           .where("status", "==", status)
+          .where("seller_status", "==", SELLER_STATUS_ACTIVE)
           .orderBy("created_at", "desc")
           .orderBy(FieldPath.documentId(), "desc")
           .select(...FEED_ITEM_FIELDS)
@@ -406,6 +410,70 @@ exports.deleteItemFromAlgolia = onDocumentDeleted(
   },
 );
 
+exports.syncSellerStatusToItems = onDocumentUpdated(
+  {
+    document: "sellers/{sellerId}",
+    region: "us-central1",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+  },
+  async (event) => {
+    const sellerId = event.params.sellerId;
+    const before = event.data && event.data.before ? event.data.before.data() : {};
+    const after = event.data && event.data.after ? event.data.after.data() : {};
+    const beforeStatus = normalizeSellerStatus(before.status);
+    const afterStatus = normalizeSellerStatus(after.status);
+
+    if (beforeStatus === afterStatus) {
+      return;
+    }
+
+    let updated = 0;
+    let lastDoc = null;
+    while (true) {
+      let query = db
+        .collection("items")
+        .where("seller_uid", "==", sellerId)
+        .orderBy(FieldPath.documentId())
+        .limit(400);
+      if (lastDoc) {
+        query = query.startAfter(lastDoc);
+      }
+
+      const snapshot = await query.get();
+
+      if (snapshot.empty) {
+        break;
+      }
+      lastDoc = snapshot.docs[snapshot.docs.length - 1];
+
+      const batch = db.batch();
+      let batchUpdates = 0;
+      for (const doc of snapshot.docs) {
+        if (stringValue(doc.get("seller_status")) === afterStatus) {
+          continue;
+        }
+        batch.update(doc.ref, {
+          seller_status: afterStatus,
+          updated_at: FieldValue.serverTimestamp(),
+        });
+        batchUpdates += 1;
+      }
+      if (batchUpdates > 0) {
+        await batch.commit();
+        updated += batchUpdates;
+      }
+    }
+
+    logger.info("Seller status synced to items.", {
+      sellerId,
+      beforeStatus,
+      afterStatus,
+      updated,
+    });
+  },
+);
+
 exports.backfillAlgoliaItems = onRequest(
   {
     region: "us-central1",
@@ -451,6 +519,78 @@ exports.backfillAlgoliaItems = onRequest(
     response.json({
       ok: true,
       indexed,
+      skipped,
+      nextCursor: snapshot.size === 300 ? lastId : null,
+    });
+  },
+);
+
+exports.backfillSellerStatuses = onRequest(
+  {
+    region: "us-central1",
+    timeoutSeconds: 300,
+    memory: "512MiB",
+    secrets: [ALGOLIA_BACKFILL_TOKEN],
+  },
+  async (request, response) => {
+    const token = stringValue(request.body && request.body.token);
+    const cursor = stringValue(request.body && request.body.cursor);
+    const mode = stringValue(request.body && request.body.mode) || "sellers";
+    const expectedToken = ALGOLIA_BACKFILL_TOKEN.value();
+
+    if (!expectedToken || token !== expectedToken) {
+      response.status(403).json({ ok: false, error: "forbidden" });
+      return;
+    }
+    if (mode !== "sellers" && mode !== "items") {
+      response.status(400).json({ ok: false, error: "mode must be sellers or items" });
+      return;
+    }
+
+    const collection = mode === "sellers" ? "sellers" : "items";
+    let query = db.collection(collection).orderBy(FieldPath.documentId()).limit(300);
+    if (cursor) {
+      query = query.startAfter(cursor);
+    }
+
+    const snapshot = await query.get();
+    const batch = db.batch();
+    let updated = 0;
+    let skipped = 0;
+    let lastId = cursor || "";
+
+    for (const doc of snapshot.docs) {
+      lastId = doc.id;
+      const data = doc.data() || {};
+      if (mode === "sellers") {
+        if (!stringValue(data.status)) {
+          batch.set(doc.ref, {
+            status: SELLER_STATUS_ACTIVE,
+            updatedAt: Timestamp.now(),
+          }, { merge: true });
+          updated += 1;
+        } else {
+          skipped += 1;
+        }
+      } else if (!stringValue(data.seller_status)) {
+        batch.set(doc.ref, {
+          seller_status: SELLER_STATUS_ACTIVE,
+          updated_at: Timestamp.now(),
+        }, { merge: true });
+        updated += 1;
+      } else {
+        skipped += 1;
+      }
+    }
+
+    if (updated > 0) {
+      await batch.commit();
+    }
+
+    response.json({
+      ok: true,
+      mode,
+      updated,
       skipped,
       nextCursor: snapshot.size === 300 ? lastId : null,
     });
@@ -548,8 +688,15 @@ async function deleteAlgoliaItem(itemId) {
 function shouldIndexAlgoliaItem(item) {
   const status = stringValue(item.status);
   if (status !== "post" && status !== "live") return false;
+  const sellerStatus = stringValue(item.seller_status);
+  if (sellerStatus && sellerStatus !== SELLER_STATUS_ACTIVE) return false;
   if (!isItemVisible(item, Timestamp.now())) return false;
   return hasUsableMedia(item);
+}
+
+function normalizeSellerStatus(value) {
+  const status = stringValue(value);
+  return status === SELLER_STATUS_SUSPENDED ? SELLER_STATUS_SUSPENDED : SELLER_STATUS_ACTIVE;
 }
 
 function algoliaRecordFromItem(itemId, item) {
@@ -572,6 +719,7 @@ function algoliaRecordFromItem(itemId, item) {
     price_unit: stringValue(item.price_unit),
     seller_name: stringValue(item.seller_name),
     seller_phone: stringValue(item.seller_phone),
+    seller_status: stringValue(item.seller_status) || SELLER_STATUS_ACTIVE,
     seller_uid: stringValue(item.seller_uid),
     share_code: stringValue(item.share_code),
     status: stringValue(item.status),
@@ -916,6 +1064,10 @@ function cursorFromDoc(doc) {
 function isItemVisible(item, now) {
   const status = stringValue(item.status);
   if (status !== "post" && status !== "live") {
+    return false;
+  }
+  const sellerStatus = stringValue(item.seller_status);
+  if (sellerStatus && sellerStatus !== SELLER_STATUS_ACTIVE) {
     return false;
   }
   if (isItemExpired(item, now)) {
