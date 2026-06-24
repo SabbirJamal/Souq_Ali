@@ -323,6 +323,46 @@ exports.processNewItemMedia = onDocumentCreated(
   },
 );
 
+exports.ensureNewItemSellerStatus = onDocumentCreated(
+  {
+    document: "items/{itemId}",
+    region: "us-central1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (event) => {
+    const itemId = event.params.itemId;
+    const snapshot = event.data;
+    if (!snapshot) {
+      return;
+    }
+    const item = snapshot && snapshot.data ? snapshot.data() : {};
+    const currentStatus = stringValue(item.seller_status);
+
+    if (currentStatus === SELLER_STATUS_ACTIVE || currentStatus === SELLER_STATUS_SUSPENDED) {
+      return;
+    }
+
+    const sellerId = stringValue(item.seller_uid);
+    let sellerStatus = SELLER_STATUS_ACTIVE;
+    if (sellerId) {
+      const sellerDoc = await db.collection("sellers").doc(sellerId).get();
+      sellerStatus = normalizeSellerStatus(sellerDoc.get("status"));
+    }
+
+    await snapshot.ref.update({
+      seller_status: sellerStatus,
+      updated_at: FieldValue.serverTimestamp(),
+    });
+
+    logger.info("Missing item seller_status normalized.", {
+      itemId,
+      sellerId,
+      sellerStatus,
+    });
+  },
+);
+
 exports.processUpdatedItemMedia = onDocumentUpdated(
   {
     document: "items/{itemId}",

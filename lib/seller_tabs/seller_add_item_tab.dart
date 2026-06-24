@@ -238,11 +238,12 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       if (!mounted) return;
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
       final sellerDoc = await FirebaseFirestore.instance.collection('sellers').doc(s.sellerId).get();
-      final sellerStatus = sellerDoc.data()?['status']?.toString().trim();
+      final sellerStatus = sellerDoc.data()?['status']?.toString().trim().toLowerCase();
       if (sellerStatus == 'suspended') {
         _showMessage('Account suspended. Please contact support.');
         return;
       }
+      const itemSellerStatus = 'active';
       final statusThumbnail = await localUploadStatusThumbnail(draft.media.first);
       uploadId = UploadStatusManager.uploading(
         target: draft.isLive ? UploadStatusTarget.live : UploadStatusTarget.feed,
@@ -270,7 +271,7 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       final batch = FirebaseFirestore.instance.batch();
       batch.set(itemRef, {
         'seller_uid': s.sellerId, 'seller_name': s.name, 'seller_phone': s.phoneNumber,
-        'seller_status': sellerStatus?.isNotEmpty == true ? sellerStatus : 'active',
+        'seller_status': itemSellerStatus,
         shareCodeField: shareCode,
         ...searchData,
         'status': itemStatus, 'is_transit': draft.isTransit, 'item_name': draft.name,
