@@ -204,7 +204,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     List<FeedItem> items, {
     required bool isInitial,
   }) {
-    final limit = isInitial ? 6 : 4;
+    final limit = isInitial ? 8 : 6;
     var queued = 0;
 
     for (var index = 0; index < items.length && queued < limit; index++) {
