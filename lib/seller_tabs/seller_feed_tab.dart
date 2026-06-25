@@ -41,8 +41,8 @@ class SellerFeedTab extends StatefulWidget {
 }
 
 class SellerFeedTabState extends State<SellerFeedTab> {
-  static const _initialFetchLimit = 16;
-  static const _nextFetchLimit = 32;
+  static const _initialFetchLimit = 12;
+  static const _nextFetchLimit = 24;
   static const _mergeLatestLimit = 20;
 
   final _searchController = TextEditingController();
@@ -101,7 +101,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
     }
     final pos = _scrollController.position.pixels;
     final max = _scrollController.position.maxScrollExtent;
-    if (pos > max - 800) {
+    if (pos > max - 700) {
       _loadMore();
     }
   }
@@ -119,7 +119,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
   void _maybeLoadMoreFromBuilder(int index, int total) {
     if (!_scrollController.hasClients ||
         _scrollController.position.pixels <= 80 ||
-        total - index > 12 ||
+        total - index > 8 ||
         _isLoading ||
         !_hasMore ||
         _isOfflinePaginationBlocked ||

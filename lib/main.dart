@@ -67,7 +67,7 @@ Future<void> _warmInitialFeed(
     FeedService.warmUpItems(
       viewerId: viewerId,
       status: 'post',
-      limit: 16,
+      limit: 12,
     );
   } catch (_) {
     // Feed warm-up is opportunistic; the feed screen still loads normally.
