@@ -15,6 +15,7 @@ class FeedService {
     required String viewerId,
     required String status,
     int limit = 60,
+    void Function(FeedPageResult result)? onResult,
   }) {
     final key = _warmupKey(
       viewerId: viewerId,
@@ -32,6 +33,7 @@ class FeedService {
     );
     _warmupRequests[key] = request;
     request.then((result) {
+      onResult?.call(result);
       if (!_consumedWarmups.remove(key)) {
         _warmupResults[key] = result;
       }

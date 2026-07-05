@@ -17,6 +17,9 @@ const db = getFirestore();
 const bucket = getStorage().bucket();
 const ALGOLIA_WRITE_API_KEY = defineSecret("ALGOLIA_WRITE_API_KEY");
 const ALGOLIA_BACKFILL_TOKEN = defineSecret("ALGOLIA_BACKFILL_TOKEN");
+const TWILIO_ACCOUNT_SID = defineSecret("TWILIO_ACCOUNT_SID");
+const TWILIO_AUTH_TOKEN = defineSecret("TWILIO_AUTH_TOKEN");
+const TWILIO_VERIFY_SERVICE_SID = defineSecret("TWILIO_VERIFY_SERVICE_SID");
 const ALGOLIA_APPLICATION_ID = "ZI4NULCVNS";
 const ALGOLIA_INDEX_NAME = "bizsooq";
 const DEFAULT_FEED_LIMIT = 16;
@@ -48,6 +51,78 @@ const FEED_ITEM_FIELDS = [
   "status",
   "time_period_hours",
 ];
+
+exports.sendOtp = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID],
+  },
+  async (request) => {
+    const phoneNumber = normalizeOmanPhone(request.data && request.data.phoneNumber);
+    if (!phoneNumber) {
+      throw new HttpsError("invalid-argument", "Enter a valid Oman phone number.");
+    }
+
+    try {
+      const result = await twilioVerifyRequest("Verifications", {
+        To: phoneNumber,
+        Channel: "sms",
+      });
+      logger.info("OTP sent.", {
+        phoneSuffix: phoneNumber.slice(-4),
+        status: result.status,
+      });
+      return { success: true, status: result.status || "pending" };
+    } catch (error) {
+      logger.error("OTP send failed.", {
+        phoneSuffix: phoneNumber.slice(-4),
+        message: error && error.message ? error.message : String(error),
+      });
+      throw new HttpsError("internal", "Could not send OTP. Please try again.");
+    }
+  },
+);
+
+exports.verifyOtp = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    secrets: [TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID],
+  },
+  async (request) => {
+    const phoneNumber = normalizeOmanPhone(request.data && request.data.phoneNumber);
+    const code = stringValue(request.data && request.data.code).replace(/\s/g, "");
+    if (!phoneNumber) {
+      throw new HttpsError("invalid-argument", "Enter a valid Oman phone number.");
+    }
+    if (!/^\d{4,10}$/.test(code)) {
+      throw new HttpsError("invalid-argument", "Enter a valid OTP.");
+    }
+
+    try {
+      const result = await twilioVerifyRequest("VerificationCheck", {
+        To: phoneNumber,
+        Code: code,
+      });
+      const approved = result.status === "approved";
+      logger.info("OTP checked.", {
+        phoneSuffix: phoneNumber.slice(-4),
+        approved,
+        status: result.status,
+      });
+      return { success: approved, status: result.status || "pending" };
+    } catch (error) {
+      logger.error("OTP verify failed.", {
+        phoneSuffix: phoneNumber.slice(-4),
+        message: error && error.message ? error.message : String(error),
+      });
+      throw new HttpsError("internal", "Could not verify OTP. Please try again.");
+    }
+  },
+);
 
 exports.getFeedItems = onCall(
   {
@@ -274,6 +349,64 @@ exports.deleteItemCompletely = onCall(
       throw new HttpsError(
         "internal",
         error && error.message ? error.message : "Item delete failed.",
+      );
+    }
+  },
+);
+
+exports.deleteSellerAccount = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "512MiB",
+  },
+  async (request) => {
+    const sellerUid = stringValue(request.data && request.data.sellerUid);
+    const sessionId = stringValue(request.data && request.data.sessionId);
+    const deviceId = stringValue(request.data && request.data.deviceId);
+
+    try {
+      if (!sellerUid) {
+        throw new HttpsError("invalid-argument", "sellerUid is required.");
+      }
+
+      const sellerRef = db.collection("sellers").doc(sellerUid);
+      const sellerDoc = await sellerRef.get();
+      if (!sellerDoc.exists) {
+        return { deleted: false, reason: "seller_not_found" };
+      }
+
+      const seller = sellerDoc.data() || {};
+      const activeSessionId = stringValue(seller.active_session_id);
+      const activeDeviceId = stringValue(seller.active_device_id);
+      if (activeSessionId && activeSessionId !== sessionId) {
+        throw new HttpsError("permission-denied", "Seller session does not match.");
+      }
+      if (activeDeviceId && activeDeviceId !== deviceId) {
+        throw new HttpsError("permission-denied", "Seller device does not match.");
+      }
+
+      const deletedItems = await cleanupSellerItems(sellerUid);
+      await removeViewerSeenRecords(sellerUid);
+      await deleteStoragePrefix(`items/${sellerUid}/`);
+      await sellerRef.delete();
+
+      logger.info("Seller account deleted.", {
+        sellerUid,
+        deletedItems,
+      });
+      return { deleted: true, deletedItems };
+    } catch (error) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      logger.error("deleteSellerAccount failed", {
+        sellerUid,
+        error,
+      });
+      throw new HttpsError(
+        "internal",
+        error && error.message ? error.message : "Account delete failed.",
       );
     }
   },
@@ -826,14 +959,41 @@ async function cleanupItem(itemDoc) {
   const itemId = itemDoc.id;
   const item = itemDoc.data();
 
-  logger.info(`Cleaning expired item ${itemId}.`);
+  logger.info(`Cleaning item ${itemId}.`);
 
   const mediaRefs = collectMediaStorageRefs(itemId, item);
   await deleteStorageFiles(mediaRefs);
   await removeItemSeenRecords(itemId);
 
   await itemDoc.ref.delete();
-  logger.info(`Deleted expired item ${itemId}.`);
+  logger.info(`Deleted item ${itemId}.`);
+}
+
+async function cleanupSellerItems(sellerUid) {
+  const deleted = new Set();
+  await cleanupSellerItemsByField("seller_uid", sellerUid, deleted);
+  await cleanupSellerItemsByField("seller_phone", sellerUid, deleted);
+  return deleted.size;
+}
+
+async function cleanupSellerItemsByField(fieldName, sellerUid, deleted) {
+  while (true) {
+    const snapshot = await db
+      .collection("items")
+      .where(fieldName, "==", sellerUid)
+      .limit(100)
+      .get();
+
+    const docs = snapshot.docs.filter((doc) => !deleted.has(doc.id));
+    if (!docs.length) {
+      break;
+    }
+
+    for (const doc of docs) {
+      await cleanupItem(doc);
+      deleted.add(doc.id);
+    }
+  }
 }
 
 function collectMediaStorageRefs(itemId, item) {
@@ -1052,6 +1212,35 @@ async function removeItemSeenRecords(itemId) {
   }
 }
 
+async function removeViewerSeenRecords(viewerId) {
+  if (!viewerId) return;
+
+  const viewerDocRef = db.collection("viewer_seen").doc(viewerId);
+  let deletedItems = 0;
+
+  while (true) {
+    const items = await viewerDocRef.collection("items").limit(400).get();
+    if (items.empty) {
+      break;
+    }
+
+    const batch = db.batch();
+    for (const item of items.docs) {
+      batch.delete(item.ref);
+      batch.delete(
+        db.collection("item_seen").doc(item.id).collection("viewers").doc(viewerId),
+      );
+    }
+    await batch.commit();
+    deletedItems += items.size;
+  }
+
+  await viewerDocRef.delete();
+  if (deletedItems > 0) {
+    logger.info(`Deleted ${deletedItems} seen item document(s) for viewer ${viewerId}.`);
+  }
+}
+
 async function loadViewerSeenIds(viewerId) {
   const seenIds = new Set();
   const seen = await db
@@ -1071,6 +1260,46 @@ async function loadViewerSeenIds(viewerId) {
 
 function stringValue(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeOmanPhone(value) {
+  const digits = stringValue(value).replace(/\D/g, "");
+  if (digits.length === 8) return `+968${digits}`;
+  if (digits.length === 11 && digits.startsWith("968")) return `+${digits}`;
+  return "";
+}
+
+async function twilioVerifyRequest(action, params) {
+  const accountSid = TWILIO_ACCOUNT_SID.value();
+  const authToken = TWILIO_AUTH_TOKEN.value();
+  const serviceSid = TWILIO_VERIFY_SERVICE_SID.value();
+  if (!accountSid || !authToken || !serviceSid) {
+    throw new Error("Twilio secrets are not configured.");
+  }
+
+  const body = new URLSearchParams(params);
+  const response = await fetch(
+    `https://verify.twilio.com/v2/Services/${serviceSid}/${action}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    },
+  );
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (_) {
+    data = { message: text };
+  }
+  if (!response.ok) {
+    throw new Error(data.message || `Twilio request failed with ${response.status}`);
+  }
+  return data;
 }
 
 function normalizedLimit(value) {

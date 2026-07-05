@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'seller_tabs/seller_add_item_tab.dart';
@@ -108,7 +109,9 @@ class _SellerHomePageState extends State<SellerHomePage> {
   void _handleInvalidSellerSession() {
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
+      MaterialPageRoute(
+        builder: (_) => const SellerHomePage(isSellerMode: false),
+      ),
       (route) => false,
     );
   }
@@ -146,7 +149,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
 
     if (index == 4) {
       if (widget.isSellerMode) {
-        if (!await SellerSessionGuard.ensureActive(context, onInvalid: _handleInvalidSellerSession)) return;
+        if (!await SellerSessionGuard.ensureActive(
+          context,
+          onInvalid: _handleInvalidSellerSession,
+        )) {
+          return;
+        }
         _showSettingsTab();
         _setChromeVisible(true);
       } else {
@@ -156,7 +164,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
     }
 
     if (widget.isSellerMode && (index == 2 || index == 3)) {
-      if (!await SellerSessionGuard.ensureActive(context, onInvalid: _handleInvalidSellerSession)) return;
+      if (!await SellerSessionGuard.ensureActive(
+        context,
+        onInvalid: _handleInvalidSellerSession,
+      )) {
+        return;
+      }
     }
 
     if (index == 2 && widget.isSellerMode) {
@@ -185,9 +198,62 @@ class _SellerHomePageState extends State<SellerHomePage> {
       return;
     }
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SellerHomePage(isSellerMode: false)),
+      MaterialPageRoute(
+        builder: (_) => const SellerHomePage(isSellerMode: false),
+      ),
       (route) => false,
     );
+  }
+
+  Future<bool> _deleteAccount() async {
+    final session = await SellerSession.current();
+    if (session == null) {
+      if (!mounted) return false;
+      AppToast.show(context, 'Please login again');
+      return false;
+    }
+
+    if (!await NetworkStatus.hasConnection()) {
+      if (!mounted) return false;
+      AppToast.show(context, NetworkStatus.noInternetMessage);
+      return false;
+    }
+
+    try {
+      await FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('deleteSellerAccount').call({
+        'sellerUid': session.sellerId,
+        'sessionId': session.sessionId,
+        'deviceId': session.deviceId,
+      });
+      await SellerSession.clear();
+      if (!mounted) return true;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const SellerHomePage(isSellerMode: false),
+        ),
+        (route) => false,
+      );
+      AppToast.show(context, 'Account deleted');
+      return true;
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return false;
+      AppToast.show(
+        context,
+        error.message ?? 'Could not delete account. Please try again.',
+      );
+      return false;
+    } catch (error) {
+      if (!mounted) return false;
+      AppToast.show(
+        context,
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Could not delete account. Please try again.',
+      );
+      return false;
+    }
   }
 
   Future<void> _confirmLogout() async {
@@ -208,7 +274,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
             ),
             const Divider(height: 1),
             SizedBox(
-            height: 64,
+              height: 64,
               child: Row(
                 children: [
                   Expanded(
@@ -302,30 +368,33 @@ class _SellerHomePageState extends State<SellerHomePage> {
           }
         },
       ),
-      2 => widget.isSellerMode
-          ? SellerAddItemTab(
-              key: _addItemKey,
-              onItemAddedDone: _showItemAddedTab,
-              onItemUploadSuccess: _handleItemUploadSuccess,
-              onLiveModeChanged: _handleAddLiveModeChanged,
-              onSessionInvalid: _handleInvalidSellerSession,
-            )
-          : const _SellerAccessPrompt(),
-      3 => widget.isSellerMode
-          ? SellerListingsTab(
-              key: _listingsKey,
-              refreshTick: _listingsRefreshTick,
-              initialStatus: widget.initialListingsStatus,
-              onReady: (state) => latestListingsState = state,
-              onSessionInvalid: _handleInvalidSellerSession,
-            )
-          : const _SellerAccessPrompt(),
-      4 => widget.isSellerMode
-          ? SellerSettingsTab(
-              onLogout: _confirmLogout,
-              activeTabListenable: _activeTabIndex,
-            )
-          : const _SellerAccessPrompt(),
+      2 =>
+        widget.isSellerMode
+            ? SellerAddItemTab(
+                key: _addItemKey,
+                onItemAddedDone: _showItemAddedTab,
+                onItemUploadSuccess: _handleItemUploadSuccess,
+                onLiveModeChanged: _handleAddLiveModeChanged,
+                onSessionInvalid: _handleInvalidSellerSession,
+              )
+            : const _SellerAccessPrompt(),
+      3 =>
+        widget.isSellerMode
+            ? SellerListingsTab(
+                key: _listingsKey,
+                refreshTick: _listingsRefreshTick,
+                initialStatus: widget.initialListingsStatus,
+                onReady: (state) => latestListingsState = state,
+                onSessionInvalid: _handleInvalidSellerSession,
+              )
+            : const _SellerAccessPrompt(),
+      4 =>
+        widget.isSellerMode
+            ? SellerSettingsTab(
+                onLogout: _confirmLogout,
+                activeTabListenable: _activeTabIndex,
+              )
+            : const _SellerAccessPrompt(),
       _ => const SizedBox.shrink(),
     };
   }
@@ -379,45 +448,48 @@ class _SellerHomePageState extends State<SellerHomePage> {
                   SizedBox(height: statusBarHeight),
                   if (showTabHeader)
                     _SellerTabHeader(
-                      rightAction: _HeaderLogoutButton(onLogout: _confirmLogout),
+                      rightAction: _HeaderLogoutButton(
+                        onLogout: _confirmLogout,
+                        onDeleteAccount: _deleteAccount,
+                      ),
                     ),
                   Expanded(
                     child: NotificationListener<ScrollNotification>(
                       onNotification: _onScrollNotification,
                       child: IndexedStack(
                         index: _currentIndex,
-                        children: List.generate(
-                          5,
-                          (index) {
-                            // Only build the page if it's currently selected or was previously cached
-                            final isPageInitialized = _pageCache[index] != null;
-                            final isCurrentPage = index == _currentIndex;
+                        children: List.generate(5, (index) {
+                          // Only build the page if it's currently selected or was previously cached
+                          final isPageInitialized = _pageCache[index] != null;
+                          final isCurrentPage = index == _currentIndex;
 
-                            if (isCurrentPage || isPageInitialized) {
-                              return TickerMode(
-                                enabled: isCurrentPage,
-                                child: _pageAt(index),
-                              );
-                            }
+                          if (isCurrentPage || isPageInitialized) {
+                            return TickerMode(
+                              enabled: isCurrentPage,
+                              child: _pageAt(index),
+                            );
+                          }
 
-                            return const SizedBox.shrink();
-                          },
-                        ),
+                          return const SizedBox.shrink();
+                        }),
                       ),
                     ),
                   ),
                 ],
               ),
-              const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: AppStatusBar(),
+              ),
               if (uploadStatusTarget != null)
                 Positioned(
                   top: 62,
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: UploadStatusBanner(
-                      target: uploadStatusTarget,
-                    ),
+                    child: UploadStatusBanner(target: uploadStatusTarget),
                   ),
                 ),
             ],
@@ -461,6 +533,22 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     setState(() => _isLoggingIn = true);
 
     try {
+      await _completeLogin(phoneNumber);
+    } catch (error) {
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Error: $error',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoggingIn = false);
+      }
+    }
+  }
+
+  Future<void> _completeLogin(String phoneNumber) async {
+    try {
       final sellersRef = FirebaseFirestore.instance.collection('sellers');
       final sellerDoc = await sellersRef.doc(phoneNumber).get();
 
@@ -477,6 +565,14 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
         seller = {'name': ''};
+      }
+
+      final sellerStatus = seller['status']?.toString().trim().toLowerCase();
+      if (sellerStatus == 'suspended' || sellerStatus == 'blocked') {
+        if (mounted) {
+          await SellerSessionGuard.showBlockedAccountDialog(context);
+        }
+        return;
       }
 
       final session = await SellerSession.save(
@@ -507,10 +603,6 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
             ? NetworkStatus.noInternetMessage
             : 'Error: $error',
       );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoggingIn = false);
-      }
     }
   }
 
@@ -523,7 +615,8 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
 
   @override
   Widget build(BuildContext context) {
-    final canContinue = _acceptedTerms && !_isLoggingIn;
+    final isBusy = _isLoggingIn;
+    final canContinue = _acceptedTerms && !isBusy;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -635,14 +728,14 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed: canContinue ? _login : null,
-                icon: _isLoggingIn
+                icon: isBusy
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.login),
-                label: Text(_isLoggingIn ? 'Please wait...' : 'Continue'),
+                label: Text(isBusy ? 'Please wait...' : 'Continue'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF7801),
                   foregroundColor: Colors.white,
@@ -699,10 +792,7 @@ class _SellerTabHeader extends StatelessWidget {
               fit: BoxFit.contain,
             ),
           ),
-          Positioned(
-            right: 0,
-            child: rightAction,
-          ),
+          Positioned(right: 0, child: rightAction),
         ],
       ),
     );
@@ -716,9 +806,120 @@ void refreshLatestListingsPage() {
 }
 
 class _HeaderLogoutButton extends StatelessWidget {
-  const _HeaderLogoutButton({required this.onLogout});
+  const _HeaderLogoutButton({
+    required this.onLogout,
+    required this.onDeleteAccount,
+  });
 
   final VoidCallback onLogout;
+  final Future<bool> Function() onDeleteAccount;
+
+  Future<void> _showDeleteAccountDialog(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        var isDeleting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> confirmDelete() async {
+              setDialogState(() => isDeleting = true);
+              final deleted = await onDeleteAccount();
+              if (!deleted && dialogContext.mounted) {
+                setDialogState(() => isDeleting = false);
+              }
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 36),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(20, 22, 20, 10),
+                    child: Text(
+                      'DELETE ACCOUNT',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 0, 24, 22),
+                    child: Text(
+                      'Are you sure you want to delete this account ?',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  SizedBox(
+                    height: 58,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isDeleting
+                                ? null
+                                : () => Navigator.pop(dialogContext),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.black,
+                              shape: const RoundedRectangleBorder(),
+                            ),
+                            child: const Text(
+                              'No',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const VerticalDivider(width: 1),
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isDeleting ? null : confirmDelete,
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              shape: const RoundedRectangleBorder(),
+                            ),
+                            child: isDeleting
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Yes',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -727,6 +928,8 @@ class _HeaderLogoutButton extends StatelessWidget {
       onSelected: (value) {
         if (value == 'logout') {
           onLogout();
+        } else if (value == 'delete_account') {
+          _showDeleteAccountDialog(context);
         }
       },
       color: Colors.white,
@@ -736,20 +939,14 @@ class _HeaderLogoutButton extends StatelessWidget {
           value: 'logout',
           child: Text(
             'LOG OUT',
-            style: TextStyle(
-              color: Colors.red,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
           ),
         ),
         PopupMenuItem<String>(
           value: 'delete_account',
           child: Text(
             'DELETE ACCOUNT',
-            style: TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w700,
-            ),
+            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700),
           ),
         ),
       ],
@@ -761,13 +958,8 @@ class _HeaderLogoutButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         alignment: Alignment.center,
-        child: const Icon(
-          Icons.settings,
-          color: Colors.white,
-          size: 22,
-        ),
+        child: const Icon(Icons.settings, color: Colors.white, size: 22),
       ),
     );
   }
 }
-

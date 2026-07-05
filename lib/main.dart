@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -18,6 +19,9 @@ import 'services/app_update_service.dart';
 import 'services/feed_service.dart';
 import 'utils/share_links.dart';
 import 'utils/system_ui_styles.dart';
+import 'widgets/media_carousel.dart';
+
+final Set<String> _startupPrefetchedThumbnailUrls = {};
 
 Future<void> main() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +32,7 @@ Future<void> main() async {
   final firebaseFuture = Firebase.initializeApp();
   final sessionFuture = SellerSession.current();
   final cameraPrewarmFuture = _prewarmCameraIfPermitted();
-  unawaited(_warmInitialFeed(firebaseFuture, sessionFuture));
+  unawaited(_warmInitialFeeds(firebaseFuture, sessionFuture));
 
   runApp(SouqaliApp(
     firebaseFuture: firebaseFuture,
@@ -49,7 +53,7 @@ Future<void> _prewarmCameraIfPermitted() async {
   }
 }
 
-Future<void> _warmInitialFeed(
+Future<void> _warmInitialFeeds(
   Future<void> firebaseFuture,
   Future<SellerSession?> sessionFuture,
 ) async {
@@ -64,13 +68,41 @@ Future<void> _warmInitialFeed(
     }
     if (viewerId == null || viewerId.isEmpty) return;
 
+    FeedService.warmUpItems(viewerId: viewerId, status: 'post', limit: 12);
     FeedService.warmUpItems(
       viewerId: viewerId,
-      status: 'post',
+      status: 'live',
       limit: 12,
+      onResult: (result) => _prefetchStartupThumbnails(result.items),
     );
   } catch (_) {
-    // Feed warm-up is opportunistic; the feed screen still loads normally.
+    // Feed warm-up is opportunistic; feed/live screens still load normally.
+  }
+}
+
+void _prefetchStartupThumbnails(List<FeedItem> items) {
+  const limit = 4;
+  var queued = 0;
+
+  for (final item in items) {
+    if (queued >= limit) break;
+    final media = mediaItemsFromMap(item.data);
+    if (media.isEmpty) continue;
+
+    final url = media.first.thumbnailUrl?.trim() ?? '';
+    if (url.isEmpty || !_startupPrefetchedThumbnailUrls.add(url)) continue;
+
+    queued += 1;
+    final stream = CachedNetworkImageProvider(
+      url,
+      maxWidth: 500,
+    ).resolve(ImageConfiguration.empty);
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (_, _) => stream.removeListener(listener),
+      onError: (_, _) => stream.removeListener(listener),
+    );
+    stream.addListener(listener);
   }
 }
 

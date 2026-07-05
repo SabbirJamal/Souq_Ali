@@ -6,10 +6,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../camera_capture_page.dart';
@@ -50,7 +48,6 @@ class SellerAddItemTab extends StatefulWidget {
 class SellerAddItemTabState extends State<SellerAddItemTab> {
   static const _maxMediaCount = 8;
   static const _fieldHeight = 56.0;
-  static const _supportPhone = '+968 77283599';
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
@@ -96,92 +93,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
     _selectedMediaNotifier.dispose();
     _nameController.dispose(); _priceController.dispose(); _priceFocusNode.dispose(); _locationController.dispose();
     VideoCompress.cancelCompression(); super.dispose();
-  }
-
-  Future<void> _showBlockedAccountDialog() async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 36),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: IconButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                icon: const Icon(Icons.close),
-                splashRadius: 22,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(22, 0, 22, 22),
-              child: Text(
-                'Account Blocked, Contact\n$_supportPhone',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-              ),
-            ),
-            const Divider(height: 1),
-            SizedBox(
-              height: 64,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: () => _callSupport(dialogContext),
-                      icon: const Icon(Icons.phone, color: Color(0xFF0A84FF)),
-                      label: const Text(
-                        'Call',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                      ),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.black,
-                        shape: const RoundedRectangleBorder(),
-                      ),
-                    ),
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(
-                    child: TextButton.icon(
-                      onPressed: () => _whatsappSupport(dialogContext),
-                      icon: const FaIcon(
-                        FontAwesomeIcons.whatsapp,
-                        color: Color(0xFF25D366),
-                      ),
-                      label: const Text(
-                        'Whatsapp',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                      ),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.black,
-                        shape: const RoundedRectangleBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _callSupport(BuildContext dialogContext) async {
-    Navigator.pop(dialogContext);
-    await launchUrl(Uri(scheme: 'tel', path: _supportPhone));
-  }
-
-  Future<void> _whatsappSupport(BuildContext dialogContext) async {
-    Navigator.pop(dialogContext);
-    final digits = _supportPhone.replaceAll(RegExp(r'[^0-9]'), '');
-    await launchUrl(
-      Uri.parse('https://wa.me/$digits'),
-      mode: LaunchMode.externalApplication,
-    );
   }
 
   Future<void> _openCamera() async {
@@ -326,12 +237,6 @@ class SellerAddItemTabState extends State<SellerAddItemTab> {
       if (s == null) return;
       if (!mounted) return;
       if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
-      final sellerDoc = await FirebaseFirestore.instance.collection('sellers').doc(s.sellerId).get();
-      final sellerStatus = sellerDoc.data()?['status']?.toString().trim().toLowerCase();
-      if (sellerStatus == 'suspended') {
-        await _showBlockedAccountDialog();
-        return;
-      }
       const itemSellerStatus = 'active';
       final statusThumbnail = await localUploadStatusThumbnail(draft.media.first);
       uploadId = UploadStatusManager.uploading(
