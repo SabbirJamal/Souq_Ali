@@ -515,16 +515,19 @@ class _SellerAccessPrompt extends StatefulWidget {
 class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
+  final _otpController = TextEditingController();
   bool _acceptedTerms = true;
   bool _isLoggingIn = false;
+  bool _otpSent = false;
 
   @override
   void dispose() {
     _phoneController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  Future<void> _sendOtp() async {
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -533,12 +536,60 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     setState(() => _isLoggingIn = true);
 
     try {
+      await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('sendOtp')
+          .call({'phoneNumber': phoneNumber});
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _otpSent = true;
+        _otpController.clear();
+      });
+      _showMessage('OTP sent');
+    } catch (error) {
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Could not send OTP. Please try again.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoggingIn = false);
+      }
+    }
+  }
+
+  Future<void> _verifyOtpAndLogin() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    final code = _localDigits(_otpController.text);
+    if (code.isEmpty) {
+      _showMessage('Enter OTP');
+      return;
+    }
+
+    final phoneNumber = _omanPhoneNumber(_phoneController.text);
+    setState(() => _isLoggingIn = true);
+
+    try {
+      final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('verifyOtp')
+          .call({'phoneNumber': phoneNumber, 'code': code});
+      final data = result.data;
+      final success = data is Map && data['success'] == true;
+      if (!success) {
+        _showMessage('Invalid OTP');
+        return;
+      }
       await _completeLogin(phoneNumber);
     } catch (error) {
       _showMessage(
         NetworkStatus.isOfflineError(error)
             ? NetworkStatus.noInternetMessage
-            : 'Error: $error',
+            : 'Could not verify OTP. Please try again.',
       );
     } finally {
       if (mounted) {
@@ -617,6 +668,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   Widget build(BuildContext context) {
     final isBusy = _isLoggingIn;
     final canContinue = _acceptedTerms && !isBusy;
+    final buttonText = _otpSent ? 'Login' : 'Get OTP';
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -668,6 +720,21 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   validator: _validatePhoneNumber,
                 ),
               ),
+              if (_otpSent) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _otpController,
+                  enabled: !isBusy,
+                  style: const TextStyle(fontSize: 16),
+                  keyboardType: TextInputType.number,
+                  maxLength: 10,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    hintText: 'Enter OTP',
+                    counterText: '',
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               InkWell(
                 onTap: () => setState(() => _acceptedTerms = !_acceptedTerms),
@@ -727,7 +794,9 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
               ),
               const SizedBox(height: 12),
               FilledButton.icon(
-                onPressed: canContinue ? _login : null,
+                onPressed: canContinue
+                    ? (_otpSent ? _verifyOtpAndLogin : _sendOtp)
+                    : null,
                 icon: isBusy
                     ? const SizedBox(
                         width: 18,
@@ -735,7 +804,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.login),
-                label: Text(isBusy ? 'Please wait...' : 'Continue'),
+                label: Text(isBusy ? 'Please wait...' : buttonText),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF7801),
                   foregroundColor: Colors.white,
