@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -515,15 +517,12 @@ class _SellerAccessPrompt extends StatefulWidget {
 class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
   bool _acceptedTerms = true;
   bool _isLoggingIn = false;
-  bool _otpSent = false;
 
   @override
   void dispose() {
     _phoneController.dispose();
-    _otpController.dispose();
     super.dispose();
   }
 
@@ -535,70 +534,79 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     final phoneNumber = _omanPhoneNumber(_phoneController.text);
     setState(() => _isLoggingIn = true);
 
+    final sent = await _requestOtp(phoneNumber);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isLoggingIn = false);
+
+    if (sent && mounted) {
+      await _showOtpDialog(phoneNumber);
+    }
+  }
+
+  Future<bool> _requestOtp(String phoneNumber) async {
     try {
-      await FirebaseFunctions.instanceFor(region: 'us-central1')
-          .httpsCallable('sendOtp')
-          .call({'phoneNumber': phoneNumber});
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _otpSent = true;
-        _otpController.clear();
-      });
+      await FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('sendOtp').call({'phoneNumber': phoneNumber});
       _showMessage('OTP sent');
+      return true;
     } catch (error) {
       _showMessage(
         NetworkStatus.isOfflineError(error)
             ? NetworkStatus.noInternetMessage
             : 'Could not send OTP. Please try again.',
       );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoggingIn = false);
-      }
+      return false;
     }
   }
 
-  Future<void> _verifyOtpAndLogin() async {
+  Future<void> _showOtpDialog(String phoneNumber) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _OtpLoginDialog(
+        phoneNumber: phoneNumber,
+        onResend: () => _requestOtp(phoneNumber),
+        onLogin: (code) => _verifyOtpAndLogin(phoneNumber, code),
+      ),
+    );
+  }
+
+  Future<bool> _verifyOtpAndLogin(String phoneNumber, String code) async {
     if (!_formKey.currentState!.validate()) {
-      return;
+      return false;
     }
 
-    final code = _localDigits(_otpController.text);
-    if (code.isEmpty) {
+    final otpCode = _localDigits(code);
+    if (otpCode.length != 5) {
       _showMessage('Enter OTP');
-      return;
+      return false;
     }
-
-    final phoneNumber = _omanPhoneNumber(_phoneController.text);
-    setState(() => _isLoggingIn = true);
 
     try {
       final result = await FirebaseFunctions.instanceFor(region: 'us-central1')
           .httpsCallable('verifyOtp')
-          .call({'phoneNumber': phoneNumber, 'code': code});
+          .call({'phoneNumber': phoneNumber, 'code': otpCode});
       final data = result.data;
       final success = data is Map && data['success'] == true;
       if (!success) {
         _showMessage('Invalid OTP');
-        return;
+        return false;
       }
-      await _completeLogin(phoneNumber);
+      return _completeLogin(phoneNumber);
     } catch (error) {
       _showMessage(
         NetworkStatus.isOfflineError(error)
             ? NetworkStatus.noInternetMessage
             : 'Could not verify OTP. Please try again.',
       );
-    } finally {
-      if (mounted) {
-        setState(() => _isLoggingIn = false);
-      }
+      return false;
     }
   }
 
-  Future<void> _completeLogin(String phoneNumber) async {
+  Future<bool> _completeLogin(String phoneNumber) async {
     try {
       final sellersRef = FirebaseFirestore.instance.collection('sellers');
       final sellerDoc = await sellersRef.doc(phoneNumber).get();
@@ -623,7 +631,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
         if (mounted) {
           await SellerSessionGuard.showBlockedAccountDialog(context);
         }
-        return;
+        return false;
       }
 
       final session = await SellerSession.save(
@@ -634,7 +642,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
       await SellerSessionGuard.writeActiveSession(session);
 
       if (!mounted) {
-        return;
+        return false;
       }
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
@@ -642,6 +650,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
         ),
         (route) => false,
       );
+      return true;
     } on FirebaseException catch (error) {
       _showMessage(
         NetworkStatus.isOfflineError(error)
@@ -655,6 +664,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
             : 'Error: $error',
       );
     }
+    return false;
   }
 
   void _showMessage(String message) {
@@ -668,7 +678,6 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   Widget build(BuildContext context) {
     final isBusy = _isLoggingIn;
     final canContinue = _acceptedTerms && !isBusy;
-    final buttonText = _otpSent ? 'Login' : 'Get OTP';
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -720,21 +729,6 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                   validator: _validatePhoneNumber,
                 ),
               ),
-              if (_otpSent) ...[
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _otpController,
-                  enabled: !isBusy,
-                  style: const TextStyle(fontSize: 16),
-                  keyboardType: TextInputType.number,
-                  maxLength: 10,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    hintText: 'Enter OTP',
-                    counterText: '',
-                  ),
-                ),
-              ],
               const SizedBox(height: 12),
               InkWell(
                 onTap: () => setState(() => _acceptedTerms = !_acceptedTerms),
@@ -794,9 +788,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
               ),
               const SizedBox(height: 12),
               FilledButton.icon(
-                onPressed: canContinue
-                    ? (_otpSent ? _verifyOtpAndLogin : _sendOtp)
-                    : null,
+                onPressed: canContinue ? _sendOtp : null,
                 icon: isBusy
                     ? const SizedBox(
                         width: 18,
@@ -804,11 +796,293 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.login),
-                label: Text(isBusy ? 'Please wait...' : buttonText),
+                label: Text(isBusy ? 'Please wait...' : 'Get OTP'),
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFFF7801),
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OtpLoginDialog extends StatefulWidget {
+  const _OtpLoginDialog({
+    required this.phoneNumber,
+    required this.onResend,
+    required this.onLogin,
+  });
+
+  final String phoneNumber;
+  final Future<bool> Function() onResend;
+  final Future<bool> Function(String code) onLogin;
+
+  @override
+  State<_OtpLoginDialog> createState() => _OtpLoginDialogState();
+}
+
+class _OtpLoginDialogState extends State<_OtpLoginDialog> {
+  static const _resendSeconds = 30;
+
+  final _controllers = List.generate(
+    5,
+    (_) => TextEditingController(),
+    growable: false,
+  );
+  final _focusNodes = List.generate(5, (_) => FocusNode(), growable: false);
+
+  Timer? _timer;
+  int _remainingSeconds = _resendSeconds;
+  bool _isResending = false;
+  bool _isVerifying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+    for (final node in _focusNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    setState(() => _remainingSeconds = _resendSeconds);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        setState(() => _remainingSeconds = 0);
+        return;
+      }
+      setState(() => _remainingSeconds--);
+    });
+  }
+
+  String get _code => _controllers.map((c) => c.text).join();
+
+  Future<void> _resendOtp() async {
+    if (_remainingSeconds > 0 || _isResending || _isVerifying) {
+      return;
+    }
+    setState(() => _isResending = true);
+    final sent = await widget.onResend();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isResending = false);
+    if (sent) {
+      for (final controller in _controllers) {
+        controller.clear();
+      }
+      _focusNodes.first.requestFocus();
+      _startTimer();
+    }
+  }
+
+  Future<void> _login() async {
+    if (_code.length != 5 || _isVerifying || _isResending) {
+      return;
+    }
+    setState(() => _isVerifying = true);
+    final success = await widget.onLogin(_code);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _isVerifying = false);
+    if (!success) {
+      return;
+    }
+  }
+
+  void _applyOtpInput(int index, String value) {
+    final digits = _localDigits(value);
+    if (digits.isEmpty) {
+      if (_controllers[index].text.isNotEmpty) {
+        _controllers[index].clear();
+      }
+      setState(() {});
+      return;
+    }
+
+    var nextIndex = index;
+    for (var i = 0; i < digits.length && index + i < _controllers.length; i++) {
+      final targetIndex = index + i;
+      final digit = digits[i];
+      final controller = _controllers[targetIndex];
+      if (controller.text != digit) {
+        controller.text = digit;
+      }
+      controller.selection = const TextSelection.collapsed(offset: 1);
+      nextIndex = targetIndex;
+    }
+
+    if (nextIndex < _focusNodes.length - 1) {
+      _focusNodes[nextIndex + 1].requestFocus();
+    } else {
+      _focusNodes[nextIndex].unfocus();
+    }
+    setState(() {});
+  }
+
+  void _onDigitChanged(int index, String value) {
+    _applyOtpInput(index, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canLogin = _code.length == 5 && !_isVerifying && !_isResending;
+    final canResend = _remainingSeconds == 0 && !_isResending && !_isVerifying;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 14, 22, 22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _isVerifying ? null : () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              const Text(
+                'Enter OTP',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Code sent to ${widget.phoneNumber}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+              const SizedBox(height: 16),
+              AutofillGroup(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(_controllers.length, (index) {
+                    return Padding(
+                      padding: EdgeInsets.only(
+                        left: index == 0 ? 0 : 6,
+                        right: index == _controllers.length - 1 ? 0 : 6,
+                      ),
+                      child: SizedBox(
+                        width: 44,
+                        height: 48,
+                        child: TextField(
+                          controller: _controllers[index],
+                          focusNode: _focusNodes[index],
+                          enabled: !_isVerifying && !_isResending,
+                          autofocus: index == 0,
+                          autofillHints: index == 0
+                              ? const [AutofillHints.oneTimeCode]
+                              : null,
+                          textAlign: TextAlign.center,
+                          keyboardType: TextInputType.number,
+                          textInputAction: index == _controllers.length - 1
+                              ? TextInputAction.done
+                              : TextInputAction.next,
+                          maxLength: 5,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: InputDecoration(
+                            counterText: '',
+                            filled: true,
+                            fillColor: const Color(0xFFF3F3F3),
+                            contentPadding: EdgeInsets.zero,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                          onChanged: (value) => _onDigitChanged(index, value),
+                          onSubmitted: (_) {
+                            if (_code.length == 5) {
+                              _login();
+                            }
+                          },
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                "Didn't receive code?",
+                style: TextStyle(fontSize: 13, color: Colors.black54),
+              ),
+              TextButton(
+                onPressed: canResend ? _resendOtp : null,
+                child: Text(
+                  _isResending
+                      ? 'Requesting...'
+                      : _remainingSeconds > 0
+                      ? 'Request Again (00:${_remainingSeconds.toString().padLeft(2, '0')})'
+                      : 'Request Again',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: canResend ? const Color(0xFFFF7801) : Colors.grey,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: canLogin ? _login : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF7801),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(22),
+                    ),
+                  ),
+                  child: _isVerifying
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          'LOGIN',
+                          style: TextStyle(fontWeight: FontWeight.w800),
+                        ),
                 ),
               ),
             ],

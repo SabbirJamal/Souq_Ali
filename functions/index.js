@@ -69,6 +69,7 @@ exports.sendOtp = onCall(
       const result = await twilioVerifyRequest("Verifications", {
         To: phoneNumber,
         Channel: "sms",
+        Locale: "en",
       });
       logger.info("OTP sent.", {
         phoneSuffix: phoneNumber.slice(-4),
