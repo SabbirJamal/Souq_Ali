@@ -803,20 +803,22 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
                 ),
               ),
               const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: canContinue ? _sendOtp : null,
-                icon: isBusy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.login),
-                label: Text(isBusy ? 'Please wait...' : 'Get OTP'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFFF7801),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+              Tooltip(
+                message: isBusy ? 'Please wait' : 'Get OTP',
+                child: FilledButton(
+                  onPressed: canContinue ? _sendOtp : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF7801),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  child: isBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.login),
                 ),
               ),
             ],
@@ -861,6 +863,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   int _remainingSeconds = _resendSeconds;
   bool _isResending = false;
   bool _isVerifying = false;
+  String? _lastAutoSubmittedCode;
 
   @override
   void initState() {
@@ -921,6 +924,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
     }
     setState(() => _isResending = false);
     if (sent) {
+      _lastAutoSubmittedCode = null;
       for (final controller in _controllers) {
         controller.clear();
       }
@@ -940,13 +944,27 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
     }
     setState(() => _isVerifying = false);
     if (!success) {
+      _lastAutoSubmittedCode = null;
       return;
     }
+  }
+
+  void _loginWhenCodeComplete() {
+    final currentCode = _code;
+    if (currentCode.length != _otpLength ||
+        _isVerifying ||
+        _isResending ||
+        _lastAutoSubmittedCode == currentCode) {
+      return;
+    }
+    _lastAutoSubmittedCode = currentCode;
+    _login();
   }
 
   void _applyOtpInput(int index, String value) {
     final digits = _localDigits(value);
     if (digits.isEmpty) {
+      _lastAutoSubmittedCode = null;
       if (_controllers[index].text.isNotEmpty) {
         _controllers[index].clear();
       }
@@ -972,6 +990,11 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
       _focusNodes[nextIndex].unfocus();
     }
     setState(() {});
+    if (_code.length == _otpLength) {
+      _loginWhenCodeComplete();
+    } else {
+      _lastAutoSubmittedCode = null;
+    }
   }
 
   void _onDigitChanged(int index, String value) {
