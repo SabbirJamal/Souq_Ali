@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:sms_autofill/sms_autofill.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'seller_tabs/seller_add_item_tab.dart';
@@ -515,6 +516,8 @@ class _SellerAccessPrompt extends StatefulWidget {
 }
 
 class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
+  static const _otpLength = 4;
+
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   bool _acceptedTerms = true;
@@ -547,9 +550,14 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
 
   Future<bool> _requestOtp(String phoneNumber) async {
     try {
+      final appHash = await _androidSmsAppHash();
+      final payload = <String, dynamic>{'phoneNumber': phoneNumber};
+      if (appHash.isNotEmpty) {
+        payload['appHash'] = appHash;
+      }
       await FirebaseFunctions.instanceFor(
         region: 'us-central1',
-      ).httpsCallable('sendOtp').call({'phoneNumber': phoneNumber});
+      ).httpsCallable('sendOtp').call(payload);
       _showMessage('OTP sent');
       return true;
     } catch (error) {
@@ -559,6 +567,14 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
             : 'Could not send OTP. Please try again.',
       );
       return false;
+    }
+  }
+
+  Future<String> _androidSmsAppHash() async {
+    try {
+      return (await SmsAutoFill().getAppSignature).trim();
+    } catch (_) {
+      return '';
     }
   }
 
@@ -580,7 +596,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     }
 
     final otpCode = _localDigits(code);
-    if (otpCode.length != 5) {
+    if (otpCode.length != _otpLength) {
       _showMessage('Enter OTP');
       return false;
     }
@@ -826,15 +842,20 @@ class _OtpLoginDialog extends StatefulWidget {
   State<_OtpLoginDialog> createState() => _OtpLoginDialogState();
 }
 
-class _OtpLoginDialogState extends State<_OtpLoginDialog> {
+class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   static const _resendSeconds = 30;
+  static const _otpLength = _SellerAccessPromptState._otpLength;
 
   final _controllers = List.generate(
-    5,
+    _otpLength,
     (_) => TextEditingController(),
     growable: false,
   );
-  final _focusNodes = List.generate(5, (_) => FocusNode(), growable: false);
+  final _focusNodes = List.generate(
+    _otpLength,
+    (_) => FocusNode(),
+    growable: false,
+  );
 
   Timer? _timer;
   int _remainingSeconds = _resendSeconds;
@@ -845,10 +866,12 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> {
   void initState() {
     super.initState();
     _startTimer();
+    listenForCode();
   }
 
   @override
   void dispose() {
+    cancel();
     _timer?.cancel();
     for (final controller in _controllers) {
       controller.dispose();
@@ -878,6 +901,15 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> {
 
   String get _code => _controllers.map((c) => c.text).join();
 
+  @override
+  void codeUpdated() {
+    final otp = _localDigits(code);
+    if (otp.length < _controllers.length) {
+      return;
+    }
+    _applyOtpInput(0, otp.substring(0, _controllers.length));
+  }
+
   Future<void> _resendOtp() async {
     if (_remainingSeconds > 0 || _isResending || _isVerifying) {
       return;
@@ -898,7 +930,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> {
   }
 
   Future<void> _login() async {
-    if (_code.length != 5 || _isVerifying || _isResending) {
+    if (_code.length != _otpLength || _isVerifying || _isResending) {
       return;
     }
     setState(() => _isVerifying = true);
@@ -948,7 +980,8 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final canLogin = _code.length == 5 && !_isVerifying && !_isResending;
+    final canLogin =
+        _code.length == _otpLength && !_isVerifying && !_isResending;
     final canResend = _remainingSeconds == 0 && !_isResending && !_isVerifying;
 
     return Dialog(
@@ -1007,7 +1040,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> {
                           textInputAction: index == _controllers.length - 1
                               ? TextInputAction.done
                               : TextInputAction.next,
-                          maxLength: 5,
+                          maxLength: _otpLength,
                           inputFormatters: [
                             FilteringTextInputFormatter.digitsOnly,
                           ],
@@ -1027,7 +1060,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> {
                           ),
                           onChanged: (value) => _onDigitChanged(index, value),
                           onSubmitted: (_) {
-                            if (_code.length == 5) {
+                            if (_code.length == _otpLength) {
                               _login();
                             }
                           },

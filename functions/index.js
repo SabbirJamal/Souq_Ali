@@ -61,18 +61,25 @@ exports.sendOtp = onCall(
   },
   async (request) => {
     const phoneNumber = normalizeOmanPhone(request.data && request.data.phoneNumber);
+    const appHash = stringValue(request.data && request.data.appHash);
     if (!phoneNumber) {
       throw new HttpsError("invalid-argument", "Enter a valid Oman phone number.");
     }
 
     try {
-      const result = await twilioVerifyRequest("Verifications", {
+      const verificationParams = {
         To: phoneNumber,
         Channel: "sms",
         Locale: "en",
-      });
+      };
+      if (appHash) {
+        verificationParams.AppHash = appHash;
+      }
+
+      const result = await twilioVerifyRequest("Verifications", verificationParams);
       logger.info("OTP sent.", {
         phoneSuffix: phoneNumber.slice(-4),
+        appHashPresent: Boolean(appHash),
         status: result.status,
       });
       return { success: true, status: result.status || "pending" };
