@@ -17,6 +17,7 @@ class ItemCard extends StatefulWidget {
     this.isLivePage = false,
     this.liveMarkerTop = -36,
     this.uploadedAgoOverride,
+    this.infoBadgeText,
     this.replaceOnOpen = false,
   });
 
@@ -26,6 +27,7 @@ class ItemCard extends StatefulWidget {
   final bool isLivePage;
   final double liveMarkerTop;
   final String? uploadedAgoOverride;
+  final String? infoBadgeText;
   final bool replaceOnOpen;
 
   @override
@@ -135,6 +137,7 @@ class _ItemCardState extends State<ItemCard> {
                         child: _ImageFilledDetails(
                           item: widget.item,
                           isCompact: widget.isCompact,
+                          infoBadgeText: widget.infoBadgeText,
                         ),
                       ),
                     ],
@@ -254,10 +257,12 @@ class _ImageFilledDetails extends StatelessWidget {
   const _ImageFilledDetails({
     required this.item,
     required this.isCompact,
+    this.infoBadgeText,
   });
 
   final Map<String, dynamic> item;
   final bool isCompact;
+  final String? infoBadgeText;
 
   @override
   Widget build(BuildContext context) {
@@ -266,6 +271,8 @@ class _ImageFilledDetails extends StatelessWidget {
     final rawLocation = item['location']?.toString().trim() ?? '';
     final location = _displayLocation(rawLocation, isTransit);
     final price = isTransit ? '' : formatPrice(item['item_price']);
+    final badgeText = infoBadgeText?.trim() ?? '';
+    final hasInfo = location.isNotEmpty || price.isNotEmpty || itemName.isNotEmpty;
 
     return SizedBox(
       width: double.infinity,
@@ -273,6 +280,10 @@ class _ImageFilledDetails extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (badgeText.isNotEmpty) ...[
+            _InfoMetricBadge(text: badgeText),
+            if (hasInfo) SizedBox(height: isCompact ? 5 : 8),
+          ],
           if (location.isNotEmpty) ...[
             _TextChip(
               isCompact: isCompact,
@@ -325,6 +336,31 @@ class _ImageFilledDetails extends StatelessWidget {
         .trim();
     return text.isEmpty ? 'Transit' : text;
   }
+}
+
+class _InfoMetricBadge extends StatelessWidget {
+  const _InfoMetricBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+    decoration: BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.72),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
 }
 
 class _TextChip extends StatelessWidget {

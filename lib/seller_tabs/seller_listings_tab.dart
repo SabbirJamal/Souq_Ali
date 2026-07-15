@@ -40,11 +40,14 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   static const _pageSize = 15;
   static const _priceUnits = ['/ kg', '/ ton', '/ box', '/ bag'];
 
+  final _viewCountsCallable = FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('getItemViewCounts');
   late final Future<SellerSession?> _sessionFuture;
   final ValueNotifier<DateTime> _nowNotifier = ValueNotifier(DateTime.now());
   final _scrollController = ScrollController();
   final ItemStatusCaches _itemCaches = ItemStatusCaches();
   final Set<String> _prefetchedImageUrls = {};
+  final Map<String, int> _viewCounts = {};
+  final Set<String> _loadingViewCountIds = {};
   late String _selectedStatus = widget.initialStatus == 'live' ? 'live' : 'post';
   ItemStatusCache get _activeCache => _itemCaches.forStatus(_selectedStatus);
 
@@ -78,6 +81,8 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     if (mounted) {
       setState(() {
         _itemCaches.resetStatus(_selectedStatus);
+        _viewCounts.clear();
+        _loadingViewCountIds.clear();
       });
     }
     await _loadInitial();
@@ -155,6 +160,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
           _prefetchListingThumbnails(matchingDocs, isInitial: false);
         });
       }
+      _loadViewCountsForDocs(matchingDocs);
     } catch (e) {
       try {
         var fallbackQuery = FirebaseFirestore.instance
@@ -200,6 +206,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
             _prefetchListingThumbnails(matchingDocs, isInitial: false);
           });
         }
+        _loadViewCountsForDocs(matchingDocs);
       } catch (_) {
         if (!mounted) return;
         if (cache.docs.isNotEmpty && NetworkStatus.isOfflineError(e)) {
@@ -249,6 +256,29 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     }
   }
 
+  Future<void> _loadViewCountsForDocs(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) async {
+    final ids = docs
+        .map((doc) => doc.id)
+        .where((id) => !_viewCounts.containsKey(id) && _loadingViewCountIds.add(id))
+        .toList(growable: false);
+    if (ids.isEmpty) return;
+
+    try {
+      final result = await _viewCountsCallable.call<Map<String, dynamic>>({'itemIds': ids});
+      final rawCounts = result.data['counts'];
+      if (!mounted || rawCounts is! Map) return;
+      setState(() {
+        rawCounts.forEach((key, value) {
+          _viewCounts[key.toString()] = value is num ? value.toInt() : 0;
+        });
+      });
+    } catch (_) {
+      if (!mounted) return;
+    } finally {
+      _loadingViewCountIds.removeAll(ids);
+    }
+  }
+
   // Precompute sort keys once instead of converting Timestamps per comparison.
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _sortedByCreatedAtDesc(
       List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
@@ -273,6 +303,8 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       _nowNotifier.value = DateTime.now();
       if (_scrollController.hasClients) _scrollController.jumpTo(0);
       _itemCaches.resetStatus(_selectedStatus);
+      _viewCounts.clear();
+      _loadingViewCountIds.clear();
       _loadInitial();
     }
   }
@@ -361,18 +393,6 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     return normalizePriceInput(value);
   }
 
-  String _formatRenewPrice(String value) {
-    final parts = value.split('.');
-    final whole = parts.first;
-    final buffer = StringBuffer();
-    for (var i = 0; i < whole.length; i++) {
-      final remaining = whole.length - i;
-      buffer.write(whole[i]);
-      if (remaining > 1 && remaining % 3 == 1) buffer.write(',');
-    }
-    return '${buffer.toString()}.${parts.length > 1 ? parts.last : '000'}';
-  }
-
   Future<void> _deleteItem(BuildContext context, String docId) async {
     if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
     if (!await NetworkStatus.hasConnection()) {
@@ -434,17 +454,25 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       return;
     }
 
-    final formattedPrice = _formatRenewPrice(result.priceNumber);
-    await FirebaseFirestore.instance.collection('items').doc(docId).update({
-      'item_price': 'OMR $formattedPrice ${result.priceUnit}',
-      'price_number': result.priceNumber,
-      'price_unit': result.priceUnit,
-      'time_period_days': FieldValue.delete(),
-      'time_period_extra_hours': FieldValue.delete(),
-      'time_period_hours': FieldValue.delete(),
-      'expires_at': Timestamp.fromDate(DateTime.now().add(const Duration(hours: 3))),
-      'updated_at': FieldValue.serverTimestamp(),
-    });
+    final session = await _sessionFuture;
+    if (session == null) return;
+
+    try {
+      await FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('renewLiveItem').call({
+        'itemId': docId,
+        'sellerUid': session.sellerId,
+        'priceNumber': result.priceNumber,
+        'priceUnit': result.priceUnit,
+      });
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      AppToast.show(context, error.message ?? 'Could not renew item. Please try again.');
+      return;
+    } catch (_) {
+      if (!context.mounted) return;
+      AppToast.show(context, 'Could not renew item. Please try again.');
+      return;
+    }
 
     if (!mounted) return;
     await reloadItems();
@@ -586,6 +614,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                                     now,
                                   ),
                                   expiryText: _expiryText(data, now),
+                                  viewCount: _viewCounts[doc.id] ?? 0,
                                   formatPrice: formatPrice,
                                   onEdit: _openEdit,
                                   onRenew: _confirmRenew,
@@ -790,19 +819,26 @@ class _RenewDialogState extends State<_RenewDialog> {
 }
 
 class _ListingManageCard extends StatelessWidget {
-  const _ListingManageCard({super.key, required this.docId, required this.item, required this.uploadedAgo, required this.expiryText, required this.formatPrice, required this.onEdit, required this.onRenew, required this.onDelete});
-  final String docId; final Map<String, dynamic> item; final String uploadedAgo; final String expiryText; final String Function(Object? value) formatPrice; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onEdit; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onRenew; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onDelete;
+  const _ListingManageCard({super.key, required this.docId, required this.item, required this.uploadedAgo, required this.expiryText, required this.viewCount, required this.formatPrice, required this.onEdit, required this.onRenew, required this.onDelete});
+  final String docId; final Map<String, dynamic> item; final String uploadedAgo; final String expiryText; final int viewCount; final String Function(Object? value) formatPrice; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onEdit; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onRenew; final void Function(BuildContext context, String docId, Map<String, dynamic> item) onDelete;
 
   @override
   Widget build(BuildContext context) {
     final isLiveItem = item['status']?.toString() == 'live';
+    final remainingRenews = _remainingRenews(item);
     return Stack(
       children: [
-        ItemCard(docId: docId, item: item, isCompact: true, isLivePage: isLiveItem, liveMarkerTop: isLiveItem ? -37 : -29, uploadedAgoOverride: uploadedAgo),
+        ItemCard(docId: docId, item: item, isCompact: true, isLivePage: isLiveItem, liveMarkerTop: isLiveItem ? -37 : -29, uploadedAgoOverride: uploadedAgo, infoBadgeText: '$viewCount Views'),
         Positioned(top: isLiveItem ? 36 : 30, right: 7, child: _LiveExpiryBadge(text: expiryText)),
-        Positioned(top: isLiveItem ? 70 : 58, right: 7, child: _ListingQuickActions(isLiveItem: isLiveItem, onEdit: () => onEdit(context, docId, item), onRenew: () => onRenew(context, docId, item), onDelete: () => onDelete(context, docId, item))),
+        Positioned(top: isLiveItem ? 70 : 58, right: 7, child: _ListingQuickActions(isLiveItem: isLiveItem, remainingRenews: remainingRenews, onEdit: () => onEdit(context, docId, item), onRenew: remainingRenews > 0 ? () => onRenew(context, docId, item) : null, onDelete: () => onDelete(context, docId, item))),
       ],
     );
+  }
+
+  int _remainingRenews(Map<String, dynamic> item) {
+    final renewCount = item['renew_count'];
+    final used = renewCount is num ? renewCount.toInt() : 0;
+    return (4 - used).clamp(0, 4);
   }
 }
 
@@ -828,10 +864,10 @@ class _ListingsSkeletonGrid extends StatelessWidget {
 }
 
 class _ListingQuickActions extends StatelessWidget {
-  const _ListingQuickActions({required this.isLiveItem, required this.onEdit, required this.onRenew, required this.onDelete});
-  final bool isLiveItem; final VoidCallback onEdit; final VoidCallback onRenew; final VoidCallback onDelete;
+  const _ListingQuickActions({required this.isLiveItem, required this.remainingRenews, required this.onEdit, required this.onRenew, required this.onDelete});
+  final bool isLiveItem; final int remainingRenews; final VoidCallback onEdit; final VoidCallback? onRenew; final VoidCallback onDelete;
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.end, children: [_ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit), if (isLiveItem) ...[const SizedBox(height: 12), _ActionPill(text: 'Renew', color: const Color(0xFF25D366), onTap: onRenew)], const SizedBox(height: 12), _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete)]);
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.end, children: [_ActionPill(text: 'Edit', color: const Color(0xFF128CFF), onTap: onEdit), if (isLiveItem) ...[const SizedBox(height: 12), _ActionPill(text: 'Renew ($remainingRenews)', color: remainingRenews > 0 ? const Color(0xFF25D366) : Colors.grey, onTap: onRenew)], const SizedBox(height: 12), _ActionPill(text: 'Delete', color: Colors.red, onTap: onDelete)]);
 }
 
 class _LiveExpiryBadge extends StatelessWidget {
@@ -843,7 +879,7 @@ class _LiveExpiryBadge extends StatelessWidget {
 
 class _ActionPill extends StatelessWidget {
   const _ActionPill({required this.text, required this.color, required this.onTap});
-  final String text; final Color color; final VoidCallback onTap;
+  final String text; final Color color; final VoidCallback? onTap;
   @override
-  Widget build(BuildContext context) => Material(color: Colors.transparent, borderRadius: BorderRadius.circular(8), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: color, border: Border.all(color: Colors.black, width: 1.2), borderRadius: BorderRadius.circular(8)), child: ResponsiveText(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))));
+  Widget build(BuildContext context) => Material(color: Colors.transparent, borderRadius: BorderRadius.circular(8), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), decoration: BoxDecoration(color: color, border: Border.all(color: Colors.black, width: 1.2), borderRadius: BorderRadius.circular(8)), child: ResponsiveText(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))));
 }

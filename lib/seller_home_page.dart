@@ -537,6 +537,15 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     final phoneNumber = _omanPhoneNumber(_phoneController.text);
     setState(() => _isLoggingIn = true);
 
+    final canRequestOtp = await _ensureSellerCanRequestOtp(phoneNumber);
+    if (!mounted) {
+      return;
+    }
+    if (!canRequestOtp) {
+      setState(() => _isLoggingIn = false);
+      return;
+    }
+
     final sent = await _requestOtp(phoneNumber);
     if (!mounted) {
       return;
@@ -545,6 +554,30 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
 
     if (sent && mounted) {
       await _showOtpDialog(phoneNumber);
+    }
+  }
+
+  Future<bool> _ensureSellerCanRequestOtp(String phoneNumber) async {
+    try {
+      final sellerDoc = await FirebaseFirestore.instance
+          .collection('sellers')
+          .doc(phoneNumber)
+          .get();
+      final status = sellerDoc.data()?['status']?.toString().trim().toLowerCase();
+      if (status == 'suspended' || status == 'blocked') {
+        if (mounted) {
+          await SellerSessionGuard.showBlockedAccountDialog(context);
+        }
+        return false;
+      }
+      return true;
+    } catch (error) {
+      _showMessage(
+        NetworkStatus.isOfflineError(error)
+            ? NetworkStatus.noInternetMessage
+            : 'Could not check account status. Please try again.',
+      );
+      return false;
     }
   }
 
@@ -584,7 +617,12 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
       barrierDismissible: false,
       builder: (dialogContext) => _OtpLoginDialog(
         phoneNumber: phoneNumber,
-        onResend: () => _requestOtp(phoneNumber),
+        onResend: () async {
+          if (!await _ensureSellerCanRequestOtp(phoneNumber)) {
+            return false;
+          }
+          return _requestOtp(phoneNumber);
+        },
         onLogin: (code) => _verifyOtpAndLogin(phoneNumber, code),
       ),
     );

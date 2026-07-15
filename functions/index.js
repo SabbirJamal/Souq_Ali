@@ -29,6 +29,8 @@ const FEED_MAX_SCANNED_DOCS = 400;
 const FEED_SEEN_LOOKBACK_LIMIT = 1500;
 const SELLER_STATUS_ACTIVE = "active";
 const SELLER_STATUS_SUSPENDED = "suspended";
+const MAX_LIVE_RENEWS = 4;
+const RENEW_PRICE_UNITS = new Set(["/ kg", "/ ton", "/ box", "/ bag"]);
 const MEDIA_PROCESSOR_URL =
   "https://bizsooq-media-processor-r7y3ppqj6q-uc.a.run.app";
 const FEED_ITEM_FIELDS = [
@@ -314,6 +316,127 @@ exports.markFeedItemsSeen = onCall(
 
     await batch.commit();
     return { written: itemIds.length };
+  },
+);
+
+exports.getItemViewCounts = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  async (request) => {
+    const rawItemIds = Array.isArray(request.data && request.data.itemIds)
+      ? request.data.itemIds
+      : [];
+    const itemIds = [...new Set(rawItemIds.map(stringValue).filter(Boolean))].slice(0, 120);
+
+    if (itemIds.length === 0) {
+      return { counts: {} };
+    }
+
+    try {
+      const entries = await Promise.all(
+        itemIds.map(async (itemId) => {
+          const snapshot = await db
+            .collection("item_seen")
+            .doc(itemId)
+            .collection("viewers")
+            .count()
+            .get();
+          return [itemId, snapshot.data().count || 0];
+        }),
+      );
+      return { counts: Object.fromEntries(entries) };
+    } catch (error) {
+      logger.error("getItemViewCounts failed", { itemCount: itemIds.length, error });
+      throw new HttpsError("internal", "View counts loading failed.");
+    }
+  },
+);
+
+exports.renewLiveItem = onCall(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+  },
+  async (request) => {
+    const itemId = stringValue(request.data && request.data.itemId);
+    const sellerUid = stringValue(request.data && request.data.sellerUid);
+    const priceNumber = normalizeRenewPrice(request.data && request.data.priceNumber);
+    const priceUnit = stringValue(request.data && request.data.priceUnit);
+
+    if (!itemId || !sellerUid) {
+      throw new HttpsError("invalid-argument", "Item and seller are required.");
+    }
+    if (!priceNumber) {
+      throw new HttpsError("invalid-argument", "Price is required.");
+    }
+    if (!RENEW_PRICE_UNITS.has(priceUnit)) {
+      throw new HttpsError("invalid-argument", "Invalid price unit.");
+    }
+
+    const itemRef = db.collection("items").doc(itemId);
+    const sellerRef = db.collection("sellers").doc(sellerUid);
+
+    try {
+      const result = await db.runTransaction(async (transaction) => {
+        const [itemDoc, sellerDoc] = await Promise.all([
+          transaction.get(itemRef),
+          transaction.get(sellerRef),
+        ]);
+
+        if (!itemDoc.exists) {
+          throw new HttpsError("not-found", "Item not found.");
+        }
+
+        const item = itemDoc.data() || {};
+        if (stringValue(item.seller_uid) !== sellerUid) {
+          throw new HttpsError("permission-denied", "You cannot renew this item.");
+        }
+        if (stringValue(item.status) !== "live") {
+          throw new HttpsError("failed-precondition", "Only live items can be renewed.");
+        }
+
+        const sellerStatus = sellerDoc.exists
+          ? stringValue(sellerDoc.get("status")).toLowerCase()
+          : "";
+        if (sellerStatus === SELLER_STATUS_SUSPENDED || sellerStatus === "blocked") {
+          throw new HttpsError("permission-denied", "Account blocked.");
+        }
+
+        const renewCount = Number(item.renew_count) || 0;
+        if (renewCount >= MAX_LIVE_RENEWS) {
+          throw new HttpsError("failed-precondition", "Maximum renew limit reached.");
+        }
+
+        const now = Timestamp.now();
+        const nextRenewCount = renewCount + 1;
+        transaction.update(itemRef, {
+          item_price: `OMR ${formatRenewPrice(priceNumber)} ${priceUnit}`,
+          price_number: priceNumber,
+          price_unit: priceUnit,
+          time_period_days: FieldValue.delete(),
+          time_period_extra_hours: FieldValue.delete(),
+          time_period_hours: FieldValue.delete(),
+          expires_at: Timestamp.fromMillis(now.toMillis() + (3 * 60 * 60 * 1000)),
+          renew_count: nextRenewCount,
+          last_renewed_at: now,
+          updated_at: FieldValue.serverTimestamp(),
+        });
+
+        return { renewCount: nextRenewCount, remainingRenews: MAX_LIVE_RENEWS - nextRenewCount };
+      });
+
+      return { success: true, ...result };
+    } catch (error) {
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      logger.error("renewLiveItem failed", { itemId, sellerUid, error });
+      throw new HttpsError("internal", "Could not renew item. Please try again.");
+    }
   },
 );
 
@@ -1275,6 +1398,20 @@ function normalizeOmanPhone(value) {
   if (digits.length === 8) return `+968${digits}`;
   if (digits.length === 11 && digits.startsWith("968")) return `+${digits}`;
   return "";
+}
+
+function normalizeRenewPrice(value) {
+  const raw = stringValue(value).replace(/,/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return "";
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 999999999) return "";
+  return raw;
+}
+
+function formatRenewPrice(value) {
+  const [whole, decimal = "000"] = value.split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${grouped}.${decimal}`;
 }
 
 async function twilioVerifyRequest(action, params) {
