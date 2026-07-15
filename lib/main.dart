@@ -174,12 +174,8 @@ class _SouqaliAppState extends State<SouqaliApp> {
         scaffoldBackgroundColor: const Color(0xFFF4FBF7),
         canvasColor: const Color(0xFFF4FBF7),
         useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          systemOverlayStyle: SystemUiOverlayStyle(
-            statusBarColor: Colors.black,
-            statusBarIconBrightness: Brightness.light,
-            statusBarBrightness: Brightness.dark,
-          ),
+        appBarTheme: AppBarTheme(
+          systemOverlayStyle: AppSystemUi.normalStyle,
         ),
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),

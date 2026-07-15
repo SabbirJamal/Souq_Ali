@@ -7,11 +7,13 @@ import 'seller_home_page.dart';
 import 'seller_session.dart';
 import 'utils/item_status_cache.dart';
 import 'utils/network_status.dart';
+import 'utils/refresh_scroll_physics.dart';
 import 'utils/system_ui_styles.dart';
 import 'widgets/app_pull_refresh.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
 import 'widgets/item_card.dart';
+import 'widgets/live_page_background.dart';
 import 'widgets/media_carousel.dart';
 import 'widgets/offline_state.dart';
 import 'widgets/responsive_text.dart';
@@ -38,11 +40,10 @@ class SellerProfilePage extends StatelessWidget {
     }
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder<void>(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            SellerHomePage(
-              isSellerMode: session != null,
-              initialTabIndex: index,
-            ),
+        pageBuilder: (context, animation, secondaryAnimation) => SellerHomePage(
+          isSellerMode: session != null,
+          initialTabIndex: index,
+        ),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
@@ -138,10 +139,7 @@ class SellerProfilePage extends StatelessWidget {
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder<void>(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const SellerHomePage(
-          isSellerMode: true,
-          initialTabIndex: 4,
-        ),
+            const SellerHomePage(isSellerMode: true, initialTabIndex: 4),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),
@@ -151,24 +149,20 @@ class SellerProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusBarHeight = AppStatusBar.heightOf(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: AppSystemUi.normalStyle,
       child: Scaffold(
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFFF4FBF7),
         body: Stack(
           children: [
-            Padding(
-              padding: EdgeInsets.only(top: statusBarHeight),
-              child: _SellerProfileBody(
-                sellerId: sellerId,
-                sellerPhone: sellerPhone,
-                fallbackName: fallbackName,
-                isOwnProfile: isOwnProfile,
-                onSettings: () => _openSettings(context),
-                onLogout: () => _confirmLogout(context),
-                onBack: () => Navigator.pop(context),
-              ),
+            _SellerProfileBody(
+              sellerId: sellerId,
+              sellerPhone: sellerPhone,
+              fallbackName: fallbackName,
+              isOwnProfile: isOwnProfile,
+              onSettings: () => _openSettings(context),
+              onLogout: () => _confirmLogout(context),
+              onBack: () => Navigator.pop(context),
             ),
             const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
           ],
@@ -217,15 +211,16 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
   VoidCallback? get onBack => widget.onBack;
   String _selectedStatus = 'post';
 
-  late final String _sellerDocId =
-      widget.sellerId.isNotEmpty ? widget.sellerId : widget.sellerPhone;
+  late final String _sellerDocId = widget.sellerId.isNotEmpty
+      ? widget.sellerId
+      : widget.sellerPhone;
   late final Stream<DocumentSnapshot<Map<String, dynamic>>>? _sellerStream =
       _sellerDocId.isEmpty
-          ? null
-          : FirebaseFirestore.instance
-              .collection('sellers')
-              .doc(_sellerDocId)
-              .snapshots();
+      ? null
+      : FirebaseFirestore.instance
+            .collection('sellers')
+            .doc(_sellerDocId)
+            .snapshots();
 
   @override
   void initState() {
@@ -258,71 +253,78 @@ class _SellerProfileBodyState extends State<_SellerProfileBody> {
   Widget build(BuildContext context) {
     final sellerDocId = _sellerDocId;
     const headerButtonTop = 7.0;
+    final statusBarHeight = AppStatusBar.heightOf(context);
 
-    return _SellerProfileContentBackground(
+    return LivePageBackground(
       isLive: _selectedStatus == 'live',
-      child: Stack(
-        children: [
-          ColoredBox(
-            color: Colors.transparent,
-            child: AppPullRefresh(
-              onRefresh: _refreshPosts,
-              indicatorTop: 132,
-              child: CustomScrollView(
-                controller: _scrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  if (!isOwnProfile)
-                    SliverToBoxAdapter(
-                      child: _ProfileScrollableHeader(
-                        onBack: onBack,
-                        isLive: _selectedStatus == 'live',
+      child: _SellerProfileContentBackground(
+        isLive: _selectedStatus == 'live',
+        child: Padding(
+          padding: EdgeInsets.only(top: statusBarHeight),
+          child: Stack(
+            children: [
+              ColoredBox(
+                color: Colors.transparent,
+                child: AppPullRefresh(
+                  onRefresh: _refreshPosts,
+                  indicatorTop: 132,
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: AppRefreshScrollPhysics.platform,
+                    slivers: [
+                      if (!isOwnProfile)
+                        SliverToBoxAdapter(
+                          child: _ProfileScrollableHeader(
+                            onBack: onBack,
+                            isLive: _selectedStatus == 'live',
+                          ),
+                        ),
+                      SliverToBoxAdapter(
+                        child: _SellerProfileTopStream(
+                          sellerStream: _sellerStream,
+                          fallbackName: fallbackName,
+                          sellerPhone: sellerPhone,
+                          topPadding: isOwnProfile
+                              ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
+                              : 16,
+                        ),
                       ),
-                    ),
-                  SliverToBoxAdapter(
-                    child: _SellerProfileTopStream(
-                      sellerStream: _sellerStream,
-                      fallbackName: fallbackName,
-                      sellerPhone: sellerPhone,
-                      topPadding: isOwnProfile
-                          ? 56 + (MediaQuery.sizeOf(context).height * 0.05)
-                          : 16,
-                    ),
+                      SliverToBoxAdapter(
+                        child: _ProfileStatusTabs(
+                          selectedStatus: _selectedStatus,
+                          onChanged: (status) {
+                            if (status == _selectedStatus) return;
+                            setState(() => _selectedStatus = status);
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (_scrollController.hasClients) {
+                                _scrollController.jumpTo(0);
+                              }
+                            });
+                          },
+                        ),
+                      ),
+                      _SellerActivePosts(
+                        key: _activePostsKey,
+                        sellerId: sellerDocId,
+                        selectedStatus: _selectedStatus,
+                      ),
+                    ],
                   ),
-                  SliverToBoxAdapter(
-                    child: _ProfileStatusTabs(
-                      selectedStatus: _selectedStatus,
-                      onChanged: (status) {
-                        if (status == _selectedStatus) return;
-                        setState(() => _selectedStatus = status);
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (_scrollController.hasClients) {
-                            _scrollController.jumpTo(0);
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  _SellerActivePosts(
-                    key: _activePostsKey,
-                    sellerId: sellerDocId,
-                    selectedStatus: _selectedStatus,
-                  ),
-                ],
+                ),
               ),
-            ),
+              if (isOwnProfile)
+                _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
+              else ...[
+                if (onBack != null)
+                  Positioned(
+                    top: headerButtonTop,
+                    left: 14,
+                    child: _ProfileFloatingBackButton(onBack: onBack!),
+                  ),
+              ],
+            ],
           ),
-          if (isOwnProfile)
-            _ProfileSettingsMenu(onSettings: onSettings, onLogout: onLogout)
-          else ...[
-            if (onBack != null)
-              Positioned(
-                top: headerButtonTop,
-                left: 14,
-                child: _ProfileFloatingBackButton(onBack: onBack!),
-              ),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -356,8 +358,7 @@ class _SellerProfileTopStream extends StatelessWidget {
       stream: sellerStream,
       builder: (context, sellerSnapshot) {
         final seller = sellerSnapshot.data?.data() ?? {};
-        final sellerName =
-            seller['name']?.toString().trim().isNotEmpty == true
+        final sellerName = seller['name']?.toString().trim().isNotEmpty == true
             ? seller['name'].toString().trim()
             : fallbackName;
         final crNumber =
@@ -425,10 +426,7 @@ class _ProfileSettingsMenu extends StatelessWidget {
 }
 
 class _ProfileScrollableHeader extends StatelessWidget {
-  const _ProfileScrollableHeader({
-    required this.onBack,
-    required this.isLive,
-  });
+  const _ProfileScrollableHeader({required this.onBack, required this.isLive});
 
   final VoidCallback? onBack;
   final bool isLive;
@@ -707,8 +705,10 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
   final Set<String> _prefetchedImageUrls = {};
   bool _isOfflinePaginationBlocked = false;
   bool _didShowOfflinePaginationToast = false;
-  ItemStatusCache get _activeCache => _itemCaches.forStatus(widget.selectedStatus);
-  String get _inactiveStatus => widget.selectedStatus == 'live' ? 'post' : 'live';
+  ItemStatusCache get _activeCache =>
+      _itemCaches.forStatus(widget.selectedStatus);
+  String get _inactiveStatus =>
+      widget.selectedStatus == 'live' ? 'post' : 'live';
 
   @override
   void initState() {
@@ -737,9 +737,11 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
     await _loadInitial();
   }
 
-  Future<void> _loadInitial() => _fetchPageForStatus(widget.selectedStatus, isInitial: true);
+  Future<void> _loadInitial() =>
+      _fetchPageForStatus(widget.selectedStatus, isInitial: true);
 
-  Future<void> loadMore() => _fetchPageForStatus(widget.selectedStatus, isInitial: false);
+  Future<void> loadMore() =>
+      _fetchPageForStatus(widget.selectedStatus, isInitial: false);
 
   Future<void> refreshAllStatuses() async {
     setState(() {
@@ -759,7 +761,10 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
     await loadMore();
   }
 
-  Future<void> _fetchPageForStatus(String requestedStatus, {required bool isInitial}) async {
+  Future<void> _fetchPageForStatus(
+    String requestedStatus, {
+    required bool isInitial,
+  }) async {
     final cache = _itemCaches.forStatus(requestedStatus);
     if (cache.isLoading ||
         (!isInitial && !cache.hasMore) ||
@@ -786,9 +791,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
       }
 
       var snapshot = await query.get();
-      if (isInitial &&
-          snapshot.docs.isEmpty &&
-          requestedStatus == 'post') {
+      if (isInitial && snapshot.docs.isEmpty && requestedStatus == 'post') {
         snapshot = await FirebaseFirestore.instance
             .collection('items')
             .where('seller_uid', isEqualTo: widget.sellerId)
@@ -800,15 +803,19 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
 
       final now = DateTime.now();
       final activeDocs = snapshot.docs
-          .where((doc) =>
-              _isItemActive(doc.data(), now) &&
-              _matchesQueriedStatus(doc.data(), requestedStatus))
+          .where(
+            (doc) =>
+                _isItemActive(doc.data(), now) &&
+                _matchesQueriedStatus(doc.data(), requestedStatus),
+          )
           .toList(growable: false);
 
       setState(() {
         if (isInitial) cache.reset();
         cache.addUnique(activeDocs);
-        cache.lastDoc = snapshot.docs.isEmpty ? cache.lastDoc : snapshot.docs.last;
+        cache.lastDoc = snapshot.docs.isEmpty
+            ? cache.lastDoc
+            : snapshot.docs.last;
         cache.hasMore = snapshot.docs.length == _pageSize;
         if (isInitial) cache.hasLoadedInitial = true;
         cache.isLoading = false;
@@ -824,9 +831,7 @@ class _SellerActivePostsState extends State<_SellerActivePosts> {
             _prefetchProfileThumbnails(cache.docs, isInitial: true);
           }
           if (mounted) {
-            _preloadStatusIfNeeded(
-              requestedStatus == 'live' ? 'post' : 'live',
-            );
+            _preloadStatusIfNeeded(requestedStatus == 'live' ? 'post' : 'live');
           }
         });
       } else {

@@ -655,7 +655,7 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 top: 0,
                 left: 0,
                 right: 0,
-                child: AppStatusBar(),
+                child: AppStatusBar(color: Colors.black),
               ),
             ],
           ),

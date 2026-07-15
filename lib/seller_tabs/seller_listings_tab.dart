@@ -23,12 +23,14 @@ class SellerListingsTab extends StatefulWidget {
     super.key,
     this.refreshTick = 0,
     this.initialStatus = 'post',
+    this.onStatusChanged,
     this.onReady,
     this.onSessionInvalid,
   });
 
   final int refreshTick;
   final String initialStatus;
+  final ValueChanged<String>? onStatusChanged;
   final ValueChanged<SellerListingsTabState>? onReady;
   final VoidCallback? onSessionInvalid;
 
@@ -58,6 +60,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     _sessionFuture = SellerSession.current();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onReady?.call(this);
+      if (mounted) widget.onStatusChanged?.call(_selectedStatus);
     });
     _loadInitial();
   }
@@ -556,6 +559,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                                   _selectedStatus = status;
                                   _nowNotifier.value = DateTime.now();
                                 });
+                                widget.onStatusChanged?.call(status);
                                 if (_activeCache.docs.isEmpty && !_activeCache.isLoading) {
                                   _loadInitial();
                                 }

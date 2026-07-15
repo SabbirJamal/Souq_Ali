@@ -336,6 +336,10 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     }
   }
 
+  Future<void> _openPermissionSettings() async {
+    await permissions.openAppSettings();
+  }
+
   bool _hasReachedMediaLimit() {
     if (widget.selectedCount < widget.maxCount) return false;
     final message = widget.maxSelectionMessage;
@@ -656,7 +660,14 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
   @override
   Widget build(BuildContext context) {
     if (_isCheckingPermission) return _wrapCameraPage(_buildCameraShell(const SizedBox.shrink()));
-    if (!_hasPermission) return _buildPermissionPrompt();
+    if (!_hasPermission) {
+      return _wrapCameraPage(
+        _buildCameraShell(
+          _buildPermissionBlockedPreview(),
+          showControls: false,
+        ),
+      );
+    }
     return _wrapCameraPage(
       FutureBuilder(
         future: _initFuture,
@@ -711,7 +722,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
     return Scaffold(backgroundColor: Colors.black, body: child);
   }
 
-  Widget _buildCameraShell(Widget preview) {
+  Widget _buildCameraShell(Widget preview, {bool showControls = true}) {
     final statusBarHeight = widget.embedded ? 0.0 : AppStatusBar.heightOf(context);
     return ColoredBox(
       color: Colors.black,
@@ -724,7 +735,7 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
                 child: Stack(
                   children: [
                     Positioned.fill(child: preview),
-                    if (_previewFile == null) ...[
+                    if (showControls && _previewFile == null) ...[
                       _FocusRingOverlay(focusPoint: _focusPointNotifier),
                       _buildTopBar(),
                       _buildBottomControls(),
@@ -734,26 +745,62 @@ class _CameraCapturePageState extends State<CameraCapturePage> with WidgetsBindi
               ),
             ],
           ),
-          if (!widget.embedded) const Positioned(top: 0, left: 0, right: 0, child: AppStatusBar()),
+          if (!widget.embedded)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: AppStatusBar(color: Colors.black),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildPermissionPrompt() => _wrapCameraPage(Center(child: Padding(
-    padding: const EdgeInsets.all(32),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.camera_alt, color: Colors.white, size: 64),
-      const SizedBox(height: 24),
-      const Text('Camera and Microphone access needed.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 16)),
-      const SizedBox(height: 32),
-      ElevatedButton(
-        onPressed: _requestPermission,
-        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF25D366), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
-        child: const Text('Grant Permission', style: TextStyle(fontWeight: FontWeight.bold)),
+  Widget _buildPermissionBlockedPreview() => Stack(
+    children: [
+      const Positioned.fill(child: ColoredBox(color: Colors.black)),
+      Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.no_photography_outlined, color: Colors.white70, size: 58),
+            const SizedBox(height: 20),
+            const Text(
+              'Camera and microphone access is required',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Enable access in Settings to add item photos and videos.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.35),
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton(
+              onPressed: _openPermissionSettings,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              ),
+              child: const Text('Open Settings', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ]),
+        ),
       ),
-    ]),
-  )));
+      Positioned(
+        right: 16,
+        bottom: 60,
+        child: SafeArea(
+          top: false,
+          child: _CircleBtn(icon: Icons.close, onTap: _closeCamera),
+        ),
+      ),
+    ],
+  );
 
   Widget _buildTopBar() => ValueListenableBuilder<bool>(
     valueListenable: _recordingListenable,

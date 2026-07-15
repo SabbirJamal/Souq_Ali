@@ -19,6 +19,7 @@ import 'utils/network_status.dart';
 import 'utils/system_ui_styles.dart';
 import 'widgets/app_status_bar.dart';
 import 'widgets/app_toast.dart';
+import 'widgets/live_page_background.dart';
 import 'widgets/seller_bottom_nav_bar.dart';
 import 'widgets/upload_status_banner.dart';
 
@@ -52,6 +53,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
   static SellerListingsTabState? latestListingsState;
   DateTime? _lastFeedBackPress;
   bool _isAddLiveMode = false;
+  late bool _isListingsLiveMode = widget.initialListingsStatus == 'live';
   late final List<Widget?> _pageCache = List<Widget?>.filled(5, null);
 
   @override
@@ -102,6 +104,12 @@ class _SellerHomePageState extends State<SellerHomePage> {
       return;
     }
     setState(() => _isAddLiveMode = isLive);
+  }
+
+  void _handleListingsStatusChanged(String status) {
+    final isLive = status == 'live';
+    if (_isListingsLiveMode == isLive) return;
+    setState(() => _isListingsLiveMode = isLive);
   }
 
   void _showSettingsTab() {
@@ -387,6 +395,7 @@ class _SellerHomePageState extends State<SellerHomePage> {
                 key: _listingsKey,
                 refreshTick: _listingsRefreshTick,
                 initialStatus: widget.initialListingsStatus,
+                onStatusChanged: _handleListingsStatusChanged,
                 onReady: (state) => latestListingsState = state,
                 onSessionInvalid: _handleInvalidSellerSession,
               )
@@ -430,6 +439,8 @@ class _SellerHomePageState extends State<SellerHomePage> {
     final showTabHeader = widget.isSellerMode && _currentIndex == 4;
     const bottomBarColor = Color(0xFFF4FBF7);
     final statusBarHeight = AppStatusBar.heightOf(context);
+    final useLiveTopBackground =
+        _currentIndex == 1 || (_currentIndex == 3 && _isListingsLiveMode);
 
     final uploadStatusTarget = _currentUploadStatusTarget();
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -444,58 +455,61 @@ class _SellerHomePageState extends State<SellerHomePage> {
         child: Scaffold(
           backgroundColor: const Color(0xFFF4FBF7),
           extendBody: true, // Background flows behind navigation bar
-          body: Stack(
-            children: [
-              Column(
-                children: [
-                  SizedBox(height: statusBarHeight),
-                  if (showTabHeader)
-                    _SellerTabHeader(
-                      rightAction: _HeaderLogoutButton(
-                        onLogout: _confirmLogout,
-                        onDeleteAccount: _deleteAccount,
+          body: LivePageBackground(
+            isLive: useLiveTopBackground,
+            child: Stack(
+              children: [
+                Column(
+                  children: [
+                    SizedBox(height: statusBarHeight),
+                    if (showTabHeader)
+                      _SellerTabHeader(
+                        rightAction: _HeaderLogoutButton(
+                          onLogout: _confirmLogout,
+                          onDeleteAccount: _deleteAccount,
+                        ),
+                      ),
+                    Expanded(
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: _onScrollNotification,
+                        child: IndexedStack(
+                          index: _currentIndex,
+                          children: List.generate(5, (index) {
+                            // Only build the page if it's currently selected or was previously cached
+                            final isPageInitialized = _pageCache[index] != null;
+                            final isCurrentPage = index == _currentIndex;
+
+                            if (isCurrentPage || isPageInitialized) {
+                              return TickerMode(
+                                enabled: isCurrentPage,
+                                child: _pageAt(index),
+                              );
+                            }
+
+                            return const SizedBox.shrink();
+                          }),
+                        ),
                       ),
                     ),
-                  Expanded(
-                    child: NotificationListener<ScrollNotification>(
-                      onNotification: _onScrollNotification,
-                      child: IndexedStack(
-                        index: _currentIndex,
-                        children: List.generate(5, (index) {
-                          // Only build the page if it's currently selected or was previously cached
-                          final isPageInitialized = _pageCache[index] != null;
-                          final isCurrentPage = index == _currentIndex;
-
-                          if (isCurrentPage || isPageInitialized) {
-                            return TickerMode(
-                              enabled: isCurrentPage,
-                              child: _pageAt(index),
-                            );
-                          }
-
-                          return const SizedBox.shrink();
-                        }),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: AppStatusBar(),
-              ),
-              if (uploadStatusTarget != null)
-                Positioned(
-                  top: 62,
+                  ],
+                ),
+                const Positioned(
+                  top: 0,
                   left: 0,
                   right: 0,
-                  child: Center(
-                    child: UploadStatusBanner(target: uploadStatusTarget),
-                  ),
+                  child: AppStatusBar(),
                 ),
-            ],
+                if (uploadStatusTarget != null)
+                  Positioned(
+                    top: 62,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: UploadStatusBanner(target: uploadStatusTarget),
+                    ),
+                  ),
+              ],
+            ),
           ),
           bottomNavigationBar: SellerBottomNavBar(
             currentIndex: _currentIndex,

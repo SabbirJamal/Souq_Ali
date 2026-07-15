@@ -12,6 +12,7 @@ import '../services/item_search_service.dart';
 import '../seller_session.dart';
 import '../upload_status_manager.dart';
 import '../utils/network_status.dart';
+import '../utils/refresh_scroll_physics.dart';
 import '../widgets/app_pull_refresh.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/item_card.dart';
@@ -557,7 +558,7 @@ class SellerFeedTabState extends State<SellerFeedTab> {
               key: PageStorageKey('seller-feed-scroll-${widget.itemStatus}'),
               controller: _scrollController,
               cacheExtent: 900,
-              physics: const AlwaysScrollableScrollPhysics(),
+              physics: AppRefreshScrollPhysics.platform,
               slivers: [
                 SliverToBoxAdapter(
                   child: _FeedHeader(
