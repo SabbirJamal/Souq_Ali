@@ -49,6 +49,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
   final ItemStatusCaches _itemCaches = ItemStatusCaches();
   final Set<String> _prefetchedImageUrls = {};
   final Map<String, int> _viewCounts = {};
+  final Map<String, Map<String, dynamic>> _itemOverrides = {};
   final Set<String> _loadingViewCountIds = {};
   late String _selectedStatus = widget.initialStatus == 'live' ? 'live' : 'post';
   ItemStatusCache get _activeCache => _itemCaches.forStatus(_selectedStatus);
@@ -85,6 +86,7 @@ class SellerListingsTabState extends State<SellerListingsTab> {
       setState(() {
         _itemCaches.resetStatus(_selectedStatus);
         _viewCounts.clear();
+        _itemOverrides.clear();
         _loadingViewCountIds.clear();
       });
     }
@@ -396,6 +398,68 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     return normalizePriceInput(value);
   }
 
+  int _nextRenewCount(
+    Map<String, dynamic> item,
+    Object? responseData,
+  ) {
+    if (responseData is Map) {
+      final value = responseData['renewCount'];
+      if (value is num) return value.toInt();
+      final parsed = int.tryParse(value?.toString() ?? '');
+      if (parsed != null) return parsed;
+    }
+    final current = item['renew_count'];
+    if (current is num) return current.toInt() + 1;
+    return (int.tryParse(current?.toString() ?? '') ?? 0) + 1;
+  }
+
+  String _formatRenewedPrice(String value) {
+    final parts = value.split('.');
+    final whole = parts.first.replaceAllMapped(
+      RegExp(r'\B(?=(\d{3})+(?!\d))'),
+      (_) => ',',
+    );
+    final decimal = parts.length > 1 ? parts[1] : '000';
+    return '$whole.$decimal';
+  }
+
+  void _applyRenewedItem(
+    String docId,
+    Map<String, dynamic> item,
+    _RenewDialogResult result,
+    Object? responseData,
+  ) {
+    final now = DateTime.now();
+    final nextRenewCount = _nextRenewCount(item, responseData);
+    setState(() {
+      _itemOverrides[docId] = {
+        ...?_itemOverrides[docId],
+        'item_price':
+            'OMR ${_formatRenewedPrice(result.priceNumber)} ${result.priceUnit}',
+        'price_number': result.priceNumber,
+        'price_unit': result.priceUnit,
+        'expires_at': Timestamp.fromDate(now.add(const Duration(hours: 3))),
+        'renew_count': nextRenewCount,
+        'last_renewed_at': Timestamp.fromDate(now),
+        'updated_at': Timestamp.fromDate(now),
+      };
+    });
+  }
+
+  void _restoreItemOverride(
+    String docId,
+    Map<String, dynamic>? previousOverride,
+  ) {
+    if (!mounted) return;
+    setState(() {
+      if (previousOverride == null) {
+        _itemOverrides.remove(docId);
+      } else {
+        _itemOverrides[docId] = previousOverride;
+      }
+    });
+  }
+
   Future<void> _deleteItem(BuildContext context, String docId) async {
     if (!await SellerSessionGuard.ensureActive(context, onInvalid: widget.onSessionInvalid ?? () {})) return;
     if (!await NetworkStatus.hasConnection()) {
@@ -460,25 +524,32 @@ class SellerListingsTabState extends State<SellerListingsTab> {
     final session = await _sessionFuture;
     if (session == null) return;
 
+    final previousOverride = _itemOverrides[docId] == null
+        ? null
+        : Map<String, dynamic>.from(_itemOverrides[docId]!);
+    _applyRenewedItem(docId, item, result, null);
+
     try {
-      await FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('renewLiveItem').call({
+      final response = await FirebaseFunctions.instanceFor(region: 'us-central1').httpsCallable('renewLiveItem').call({
         'itemId': docId,
         'sellerUid': session.sellerId,
         'priceNumber': result.priceNumber,
         'priceUnit': result.priceUnit,
       });
+      if (!mounted) return;
+      _applyRenewedItem(docId, item, result, response.data);
     } on FirebaseFunctionsException catch (error) {
+      _restoreItemOverride(docId, previousOverride);
       if (!context.mounted) return;
       AppToast.show(context, error.message ?? 'Could not renew item. Please try again.');
       return;
     } catch (_) {
+      _restoreItemOverride(docId, previousOverride);
       if (!context.mounted) return;
       AppToast.show(context, 'Could not renew item. Please try again.');
       return;
     }
 
-    if (!mounted) return;
-    await reloadItems();
     if (!mounted) return;
     AppToast.show(this.context, 'Live item renewed');
   }
@@ -608,7 +679,11 @@ class SellerListingsTabState extends State<SellerListingsTab> {
                               ),
                               itemBuilder: (context, index) {
                                 final doc = docs[index];
-                                final data = doc.data();
+                                final data = <String, dynamic>{
+                                  ...doc.data(),
+                                  if (_itemOverrides[doc.id] != null)
+                                    ..._itemOverrides[doc.id]!,
+                                };
                                 return _ListingManageCard(
                                   key: ValueKey(doc.id),
                                   docId: doc.id,
