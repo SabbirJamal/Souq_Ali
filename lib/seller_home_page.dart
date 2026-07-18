@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sms_autofill/sms_autofill.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -531,16 +533,176 @@ class _SellerAccessPrompt extends StatefulWidget {
 
 class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   static const _otpLength = 4;
+  static const _otpRequestCooldownDuration = Duration(minutes: 1);
+  static const _otpCooldownDuration = Duration(minutes: 15);
+  static const _otpFraudCooldownDuration = Duration(hours: 12);
+  static const _otpRequestCooldownMessage = 'Try after 1min';
+  static const _otpCooldownMessage = 'Try after 15mins';
+  static const _otpFraudCooldownMessage =
+      'Please contact +968 7728 3599';
 
   final _formKey = GlobalKey<FormState>();
   final _phoneController = TextEditingController();
   bool _acceptedTerms = true;
   bool _isLoggingIn = false;
+  Timer? _otpCooldownTimer;
+  int _otpCooldownRemainingSeconds = 0;
+  String? _loadedCooldownPhone;
+  String _activeOtpCooldownMessage = _otpRequestCooldownMessage;
+  late final Future<String> _appVersionFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _appVersionFuture = PackageInfo.fromPlatform().then(
+      (info) => info.version,
+    );
+    _phoneController.addListener(_handlePhoneChanged);
+  }
 
   @override
   void dispose() {
+    _phoneController.removeListener(_handlePhoneChanged);
+    _otpCooldownTimer?.cancel();
     _phoneController.dispose();
     super.dispose();
+  }
+
+  void _handlePhoneChanged() {
+    final digits = _localDigits(_phoneController.text);
+    if (digits.length != 8) {
+      _loadedCooldownPhone = null;
+      _otpCooldownTimer?.cancel();
+      if (_otpCooldownRemainingSeconds != 0) {
+        setState(() {
+          _otpCooldownRemainingSeconds = 0;
+          _activeOtpCooldownMessage = _otpRequestCooldownMessage;
+        });
+      }
+      return;
+    }
+    final phoneNumber = _omanPhoneNumber(digits);
+    if (_loadedCooldownPhone == phoneNumber) {
+      return;
+    }
+    _loadedCooldownPhone = phoneNumber;
+    _loadOtpCooldown(phoneNumber);
+  }
+
+  String _otpCooldownKey(String phoneNumber) {
+    return 'otp_cooldown_until_${_localDigits(phoneNumber)}';
+  }
+
+  String _otpCooldownMessageKey(String phoneNumber) {
+    return 'otp_cooldown_message_${_localDigits(phoneNumber)}';
+  }
+
+  Future<void> _loadOtpCooldown(String phoneNumber) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cooldownUntilMs = prefs.getInt(_otpCooldownKey(phoneNumber)) ?? 0;
+    final cooldownMessage =
+        prefs.getString(_otpCooldownMessageKey(phoneNumber)) ??
+        _otpRequestCooldownMessage;
+    if (!mounted || _loadedCooldownPhone != phoneNumber) {
+      return;
+    }
+    _activeOtpCooldownMessage = cooldownMessage;
+    _setOtpCooldownRemaining(
+      Duration(
+        milliseconds: cooldownUntilMs - DateTime.now().millisecondsSinceEpoch,
+      ).inSeconds,
+    );
+    if (_otpCooldownRemainingSeconds <= 0 && cooldownUntilMs > 0) {
+      await prefs.remove(_otpCooldownKey(phoneNumber));
+      await prefs.remove(_otpCooldownMessageKey(phoneNumber));
+    }
+  }
+
+  Future<void> _startOtpCooldown(
+    String phoneNumber, {
+    required Duration duration,
+    required String message,
+    bool showMessage = true,
+  }) async {
+    final cooldownUntil = DateTime.now().add(duration);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+      _otpCooldownKey(phoneNumber),
+      cooldownUntil.millisecondsSinceEpoch,
+    );
+    await prefs.setString(_otpCooldownMessageKey(phoneNumber), message);
+    if (!mounted) {
+      return;
+    }
+    _loadedCooldownPhone = phoneNumber;
+    _activeOtpCooldownMessage = message;
+    _setOtpCooldownRemaining(duration.inSeconds);
+    if (showMessage) {
+      _showMessage(message);
+    }
+  }
+
+  Future<void> _clearOtpCooldown(String phoneNumber) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_otpCooldownKey(phoneNumber));
+    await prefs.remove(_otpCooldownMessageKey(phoneNumber));
+    if (!mounted || _loadedCooldownPhone != phoneNumber) {
+      return;
+    }
+    _otpCooldownTimer?.cancel();
+    setState(() {
+      _otpCooldownRemainingSeconds = 0;
+      _activeOtpCooldownMessage = _otpRequestCooldownMessage;
+    });
+  }
+
+  void _setOtpCooldownRemaining(int seconds) {
+    final remainingSeconds = seconds > 0 ? seconds : 0;
+    _otpCooldownTimer?.cancel();
+    if (mounted) {
+      setState(() => _otpCooldownRemainingSeconds = remainingSeconds);
+    }
+    if (remainingSeconds <= 0) {
+      return;
+    }
+    _otpCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_otpCooldownRemainingSeconds <= 1) {
+        timer.cancel();
+        setState(() => _otpCooldownRemainingSeconds = 0);
+        final phoneNumber = _loadedCooldownPhone;
+        if (phoneNumber != null) {
+          SharedPreferences.getInstance().then((prefs) {
+            prefs.remove(_otpCooldownKey(phoneNumber));
+            prefs.remove(_otpCooldownMessageKey(phoneNumber));
+          });
+        }
+        return;
+      }
+      setState(() => _otpCooldownRemainingSeconds--);
+    });
+  }
+
+  String _otpCooldownLabel() {
+    if (_activeOtpCooldownMessage == _otpFraudCooldownMessage) {
+      return _activeOtpCooldownMessage;
+    }
+    if (_activeOtpCooldownMessage == _otpCooldownMessage) {
+      final minutes = (_otpCooldownRemainingSeconds / 60).ceil();
+      return minutes > 1 ? 'Try after ${minutes}mins' : _otpCooldownMessage;
+    }
+    final minutes = (_otpCooldownRemainingSeconds / 60).ceil();
+    return minutes > 1 ? 'Try after ${minutes}mins' : _otpRequestCooldownMessage;
+  }
+
+  String _otpCooldownCountdown() {
+    final hours = _otpCooldownRemainingSeconds ~/ 3600;
+    final minutes = (_otpCooldownRemainingSeconds % 3600) ~/ 60;
+    final seconds = _otpCooldownRemainingSeconds % 60;
+    return '${hours.toString().padLeft(2, '0')}.${minutes.toString().padLeft(2, '0')}.${seconds.toString().padLeft(2, '0')}';
   }
 
   Future<void> _sendOtp() async {
@@ -549,6 +711,16 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
     }
 
     final phoneNumber = _omanPhoneNumber(_phoneController.text);
+    _loadedCooldownPhone = phoneNumber;
+    await _loadOtpCooldown(phoneNumber);
+    if (!mounted) {
+      return;
+    }
+    if (_otpCooldownRemainingSeconds > 0) {
+      _showMessage(_activeOtpCooldownMessage);
+      return;
+    }
+
     setState(() => _isLoggingIn = true);
 
     final canRequestOtp = await _ensureSellerCanRequestOtp(phoneNumber);
@@ -605,8 +777,31 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
       await FirebaseFunctions.instanceFor(
         region: 'us-central1',
       ).httpsCallable('sendOtp').call(payload);
+      await _startOtpCooldown(
+        phoneNumber,
+        duration: _otpRequestCooldownDuration,
+        message: _otpRequestCooldownMessage,
+        showMessage: false,
+      );
       _showMessage('OTP sent');
       return true;
+    } on FirebaseFunctionsException catch (error) {
+      if (error.code == 'resource-exhausted') {
+        await _startOtpCooldown(
+          phoneNumber,
+          duration: _otpCooldownDuration,
+          message: _otpCooldownMessage,
+        );
+      } else if (error.code == 'permission-denied') {
+        await _startOtpCooldown(
+          phoneNumber,
+          duration: _otpFraudCooldownDuration,
+          message: error.message ?? _otpFraudCooldownMessage,
+        );
+      } else {
+        _showMessage(error.message ?? 'Could not send OTP. Please try again.');
+      }
+      return false;
     } catch (error) {
       _showMessage(
         NetworkStatus.isOfflineError(error)
@@ -631,6 +826,12 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
       barrierDismissible: false,
       builder: (dialogContext) => _OtpLoginDialog(
         phoneNumber: phoneNumber,
+        cooldownRemainingSeconds: () async {
+          _loadedCooldownPhone = phoneNumber;
+          await _loadOtpCooldown(phoneNumber);
+          return _otpCooldownRemainingSeconds;
+        },
+        cooldownLabel: () => _otpCooldownLabel(),
         onResend: () async {
           if (!await _ensureSellerCanRequestOtp(phoneNumber)) {
             return false;
@@ -708,6 +909,7 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
         phoneNumber: phoneNumber,
       );
       await SellerSessionGuard.writeActiveSession(session);
+      await _clearOtpCooldown(phoneNumber);
 
       if (!mounted) {
         return false;
@@ -745,12 +947,43 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
   @override
   Widget build(BuildContext context) {
     final isBusy = _isLoggingIn;
-    final canContinue = _acceptedTerms && !isBusy;
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
+    final isCoolingDown = _otpCooldownRemainingSeconds > 0;
+    final canContinue = _acceptedTerms && !isBusy && !isCoolingDown;
+    final otpButton = FilledButton(
+      onPressed: canContinue ? _sendOtp : null,
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFFFF7801),
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: isCoolingDown
+            ? const Color(0xFFFF7801).withValues(alpha: 0.58)
+            : null,
+        disabledForegroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+      child: isBusy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : isCoolingDown
+          ? Text(
+              _otpCooldownCountdown(),
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            )
+          : const Icon(Icons.login),
+    );
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 24, 24, 92),
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -856,25 +1089,41 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
               ),
               const SizedBox(height: 12),
               Tooltip(
-                message: isBusy ? 'Please wait' : 'Get OTP',
-                child: FilledButton(
-                  onPressed: canContinue ? _sendOtp : null,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF7801),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: isBusy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.login),
+                message: isBusy
+                    ? 'Please wait'
+                    : isCoolingDown
+                    ? _otpCooldownLabel()
+                    : 'Get OTP',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: isCoolingDown
+                      ? () => _showMessage(_activeOtpCooldownMessage)
+                      : null,
+                  child: otpButton,
                 ),
               ),
             ],
           ),
+                  ),
+                ),
+              ),
+            ),
+            FutureBuilder<String>(
+              future: _appVersionFuture,
+              builder: (context, snapshot) {
+                final version = snapshot.data ?? '';
+                  return Text(
+                  version.isEmpty ? 'version:' : 'version: v $version',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black45,
+                    fontWeight: FontWeight.w500,
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ),
     );
@@ -884,11 +1133,15 @@ class _SellerAccessPromptState extends State<_SellerAccessPrompt> {
 class _OtpLoginDialog extends StatefulWidget {
   const _OtpLoginDialog({
     required this.phoneNumber,
+    required this.cooldownRemainingSeconds,
+    required this.cooldownLabel,
     required this.onResend,
     required this.onLogin,
   });
 
   final String phoneNumber;
+  final Future<int> Function() cooldownRemainingSeconds;
+  final String Function() cooldownLabel;
   final Future<bool> Function() onResend;
   final Future<bool> Function(String code) onLogin;
 
@@ -897,7 +1150,7 @@ class _OtpLoginDialog extends StatefulWidget {
 }
 
 class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
-  static const _resendSeconds = 30;
+  static const _resendSeconds = 60;
   static const _otpLength = _SellerAccessPromptState._otpLength;
 
   final _controllers = List.generate(
@@ -912,7 +1165,10 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   );
 
   Timer? _timer;
+  Timer? _cooldownTimer;
   int _remainingSeconds = _resendSeconds;
+  int _cooldownRemainingSeconds = 0;
+  String _cooldownMessage = _SellerAccessPromptState._otpRequestCooldownMessage;
   bool _isResending = false;
   bool _isVerifying = false;
   String? _lastAutoSubmittedCode;
@@ -921,6 +1177,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   void initState() {
     super.initState();
     _startTimer();
+    _loadCooldown();
     listenForCode();
   }
 
@@ -928,6 +1185,7 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   void dispose() {
     cancel();
     _timer?.cancel();
+    _cooldownTimer?.cancel();
     for (final controller in _controllers) {
       controller.dispose();
     }
@@ -954,6 +1212,57 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
     });
   }
 
+  Future<void> _loadCooldown() async {
+    final remainingSeconds = await widget.cooldownRemainingSeconds();
+    if (!mounted || remainingSeconds <= 0) {
+      return;
+    }
+    _startCooldownTimer(remainingSeconds);
+  }
+
+  void _startCooldownTimer(int seconds) {
+    _cooldownTimer?.cancel();
+    setState(() {
+      _cooldownRemainingSeconds = seconds;
+      _cooldownMessage = widget.cooldownLabel();
+    });
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_cooldownRemainingSeconds <= 1) {
+        timer.cancel();
+        setState(() => _cooldownRemainingSeconds = 0);
+        return;
+      }
+      setState(() => _cooldownRemainingSeconds--);
+    });
+  }
+
+  String _cooldownLabel() {
+    if (_cooldownMessage == _SellerAccessPromptState._otpFraudCooldownMessage) {
+      return _cooldownMessage;
+    }
+    if (_cooldownMessage == _SellerAccessPromptState._otpCooldownMessage) {
+      final minutes = (_cooldownRemainingSeconds / 60).ceil();
+      return minutes > 1
+          ? 'Try after ${minutes}mins'
+          : _SellerAccessPromptState._otpCooldownMessage;
+    }
+    return 'Try after ${_formatSecondsCountdown(_cooldownRemainingSeconds)}';
+  }
+
+  String _formatTimer(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainingSeconds = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
+  }
+
+  String _formatSecondsCountdown(int seconds) {
+    return '00.${seconds.toString().padLeft(2, '0')}';
+  }
+
   String get _code => _controllers.map((c) => c.text).join();
 
   @override
@@ -966,7 +1275,10 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   }
 
   Future<void> _resendOtp() async {
-    if (_remainingSeconds > 0 || _isResending || _isVerifying) {
+    if (_cooldownRemainingSeconds > 0 ||
+        _remainingSeconds > 0 ||
+        _isResending ||
+        _isVerifying) {
       return;
     }
     setState(() => _isResending = true);
@@ -982,6 +1294,11 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
       }
       _focusNodes.first.requestFocus();
       _startTimer();
+    } else {
+      final cooldownSeconds = await widget.cooldownRemainingSeconds();
+      if (mounted && cooldownSeconds > 0) {
+        _startCooldownTimer(cooldownSeconds);
+      }
     }
   }
 
@@ -1057,7 +1374,11 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
   Widget build(BuildContext context) {
     final canLogin =
         _code.length == _otpLength && !_isVerifying && !_isResending;
-    final canResend = _remainingSeconds == 0 && !_isResending && !_isVerifying;
+    final canResend =
+        _cooldownRemainingSeconds == 0 &&
+        _remainingSeconds == 0 &&
+        !_isResending &&
+        !_isVerifying;
 
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 28),
@@ -1155,8 +1476,10 @@ class _OtpLoginDialogState extends State<_OtpLoginDialog> with CodeAutoFill {
                 child: Text(
                   _isResending
                       ? 'Requesting...'
+                      : _cooldownRemainingSeconds > 0
+                      ? _cooldownLabel()
                       : _remainingSeconds > 0
-                      ? 'Request Again (00:${_remainingSeconds.toString().padLeft(2, '0')})'
+                      ? 'Request Again (${_formatTimer(_remainingSeconds)})'
                       : 'Request Again',
                   style: TextStyle(
                     fontSize: 13,
@@ -1290,24 +1613,13 @@ class _HeaderLogoutButton extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Padding(
-                    padding: EdgeInsets.fromLTRB(20, 22, 20, 10),
+                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 22),
                     child: Text(
                       'DELETE ACCOUNT',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(24, 0, 24, 22),
-                    child: Text(
-                      'Are you sure you want to delete this account ?',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),

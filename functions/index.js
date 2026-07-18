@@ -89,7 +89,18 @@ exports.sendOtp = onCall(
       logger.error("OTP send failed.", {
         phoneSuffix: phoneNumber.slice(-4),
         message: error && error.message ? error.message : String(error),
+        twilioCode: error && error.twilioCode ? error.twilioCode : null,
+        status: error && error.status ? error.status : null,
       });
+      if (isTwilioOtpFraudBlock(error)) {
+        throw new HttpsError(
+          "permission-denied",
+          "Please contact +968 7728 3599",
+        );
+      }
+      if (isTwilioOtpSendRateLimit(error)) {
+        throw new HttpsError("resource-exhausted", "Try after 15mins");
+      }
       throw new HttpsError("internal", "Could not send OTP. Please try again.");
     }
   },
@@ -1442,9 +1453,23 @@ async function twilioVerifyRequest(action, params) {
     data = { message: text };
   }
   if (!response.ok) {
-    throw new Error(data.message || `Twilio request failed with ${response.status}`);
+    const error = new Error(data.message || `Twilio request failed with ${response.status}`);
+    error.status = response.status;
+    error.twilioCode = data.code;
+    error.twilioMoreInfo = data.more_info;
+    throw error;
   }
   return data;
+}
+
+function isTwilioOtpSendRateLimit(error) {
+  const twilioCode = Number(error && error.twilioCode);
+  return twilioCode === 60203 || twilioCode === 60245 || (error && error.status === 429);
+}
+
+function isTwilioOtpFraudBlock(error) {
+  const twilioCode = Number(error && error.twilioCode);
+  return twilioCode === 60410 || twilioCode === 60412;
 }
 
 function normalizedLimit(value) {
